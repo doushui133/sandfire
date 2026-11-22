@@ -1,0 +1,52 @@
+[
+  {
+    "id": "spawn",
+    "name": "Attacker spawn (T)",
+    "x": -1,
+    "y": 1.7,
+    "z": 39,
+    "yaw": 0,
+    "pitch": -0.05,
+    "note": "Map cell (24, 44); facing north along mid street."
+  },
+  {
+    "id": "mid",
+    "name": "Mid street gate",
+    "x": 1,
+    "y": 1.7,
+    "z": -5,
+    "yaw": 1.57,
+    "pitch": 0,
+    "note": "Map cell (25, 22) on the upper mid connector."
+  },
+  {
+    "id": "siteA",
+    "name": "Bomb site A (market)",
+    "x": 27,
+    "y": 1.7,
+    "z": -21,
+    "yaw": -1.2,
+    "pitch": 0,
+    "note": "Near M.sites.A center at cell (38, 14)."
+  },
+  {
+    "id": "siteB",
+    "name": "Bomb site B (colonnade)",
+    "x": -31,
+    "y": 1.7,
+    "z": -23,
+    "yaw": 0.6,
+    "pitch": 0,
+    "note": "Near M.sites.B center at cell (9, 13)."
+  },
+  {
+    "id": "bot",
+    "name": "Defender lane (bot sightline)",
+    "x": 1,
+    "y": 1.7,
+    "z": -35,
+    "yaw": -1.57,
+    "pitch": 0,
+    "note": "North of attacker push; live bots often visible toward def spawn after autostart."
+  }
+]
