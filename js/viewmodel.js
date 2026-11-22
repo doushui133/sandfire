@@ -17,8 +17,9 @@
     p10: [0.085, -0.112, -0.41], h50: [0.085, -0.117, -0.43], knife: [0.15, -0.16, -0.3], bomb: [0.0, -0.22, -0.36],
   };
   const SLEEVE = { atk: { c: 0x5e533c, r: 0.88, z: 1 }, def: { c: 0x2b323d, r: 0.86, z: 1, w: 1 } };
-  const GLOVE = { atk: { c: 0x2b2723, r: 0.66, z: 0.35 }, def: { c: 0x26282c, r: 0.66, z: 0.35 } };
+  const GLOVE = { atk: { c: 0x2b2723, r: 0.66, z: 0.35 }, def: { c: 0x1e2126, r: 0.62, z: 0.45 } };
   const CUFF = { atk: { c: 0x5a4a33, r: 0.8, z: 0.6 }, def: { c: 0x1a1c20, r: 0.8, z: 0.6 } };
+  const SKIN = { c: 0xc48b62, r: 0.72, m: 0 };
 
   VM.init = function (aspect) {
     scene = new THREE.Scene();
@@ -39,30 +40,59 @@
   // ---------- hands: gloves with curled fingers, and the forearms ----------
   // A gripping hand built around a local axis: the grip runs along local Y, the palm sits on +X,
   // fingers wrap round the front (-Z) to the left, the thumb lies along the left side.
-  function gripHand(b, surf, cuffSurf, gripR) {
+  function gripHand(b, surf, cuffSurf, gripR, team) {
     const v3 = (x, y, z) => new THREE.Vector3(x, y, z), Y = new THREE.Vector3(0, 1, 0);
-    const seam = { c: surf.c, r: surf.r, z: surf.z, w: surf.w, dark: true };
-    seam.c = (typeof surf.c === 'number' ? K.lin(surf.c) : surf.c).map((v) => v * 0.45);
-    b.add(K.at(K.rbox(0.034, 0.088, 0.074, 0.015, 2), gripR + 0.015, -0.002, 0.012), surf);         // palm and back of the hand
-    // the four fingers as one curled band around the grip, with shallow seams between them
-    const r = gripR + 0.0085, arc = [];
-    for (let k = 0; k <= 10; k++) { const a = 0.15 - k / 10 * 2.55; arc.push(v3(Math.cos(a) * r, -0.005, Math.sin(a) * r)); }
-    b.add(K.tube(arc, arc.map((_, k) => [0.0088 - k * 0.0003, 0.037 - k * 0.0012]), 12, Y), surf);
-    for (let s = -1; s <= 1; s++) {
-      const line = arc.slice(1, 10).map((p) => v3(p.x * (r + 0.0083) / r, -0.005 + s * 0.0185, p.z * (r + 0.0083) / r));
-      b.add(K.tube(line, line.map(() => 0.0014), 4), seam);
+    const fingerless = team === 'atk', bulk = fingerless ? 1 : 1.08;
+    const seam = { c: (typeof surf.c === 'number' ? K.lin(surf.c) : surf.c).map((v) => v * 0.45), r: surf.r, z: surf.z };
+    b.add(K.at(K.rbox(0.036 * bulk, 0.09, 0.076 * bulk, 0.012, 1), gripR + 0.016, -0.002, 0.012), surf);
+    const r = gripR + 0.0085;
+    for (let f = 0; f < 4; f++) {
+      const y = -0.02 + f * 0.0132;
+      const arc = [], n = fingerless ? 4 : 6;
+      for (let k = 0; k <= n; k++) {
+        const a = 0.22 - k / n * (fingerless ? 1.65 : 2.4);
+        arc.push(v3(Math.cos(a) * r, y, Math.sin(a) * r));
+      }
+      b.add(K.tube(arc, arc.map((_, k) => 0.0074 * bulk - k * 0.0003), 6, Y), surf);
+      if (fingerless) {
+        const tip = [];
+        for (let k = 0; k <= 3; k++) {
+          const a = 0.22 - 1.65 - k / 3 * 0.75;
+          tip.push(v3(Math.cos(a) * r, y, Math.sin(a) * r));
+        }
+        b.add(K.tube(tip, tip.map((_, k) => 0.0064 - k * 0.0004), 5, Y), SKIN);
+      } else if (f > 0) {
+        const seamLine = arc.slice(1, 5).map((p) => v3(p.x * (r + 0.006) / r, y - 0.0066, p.z * (r + 0.006) / r));
+        b.add(K.tube(seamLine, seamLine.map(() => 0.0013), 4, Y), seam);
+      }
+      b.add(K.at(K.sphere(0.009 * bulk, 0.008, 0.011, 6, 4), gripR + 0.03, y, 0.01), surf);
     }
-    // knuckle ridge on the back of the hand, and the thumb along the far side
-    b.add(K.tube([v3(gripR + 0.027, 0.03, 0.0), v3(gripR + 0.027, -0.04, 0.0)], [0.009, 0.009], 8), surf);
-    b.add(K.tube([v3(gripR + 0.012, 0.04, 0.026), v3(0.003, 0.047, -0.008), v3(-gripR - 0.004, 0.044, -0.028), v3(-gripR - 0.006, 0.041, -0.046)], [0.0115, 0.0105, 0.0095, 0.0085], 8), surf);
-    b.add(K.at(K.cyl(0.036, 0.034, 0.03, 12, 'y'), gripR * 0.5 + 0.012, -0.074, 0.024, 0, 0, 0.15), cuffSurf);
+    if (!fingerless) b.add(K.at(K.rbox(0.016, 0.052, 0.012, 0.004, 1), gripR + 0.034, -0.004, 0.02), surf);
+    b.add(K.tube([v3(gripR + 0.012, 0.042, 0.026), v3(0.004, 0.048, -0.006), v3(-gripR * 0.4, 0.046, -0.03), v3(-gripR - 0.006, 0.04, -0.048)], [0.011 * bulk, 0.01, 0.009, 0.0075], 6, Y), surf);
+    b.add(K.at(K.sphere(0.01, 0.009, 0.01, 6, 4), gripR * 0.15, 0.046, -0.02), surf);
+    if (fingerless) b.add(K.at(K.cyl(0.032, 0.03, 0.014, 8, 'y'), gripR * 0.45 + 0.01, -0.068, 0.02, 0, 0, 0.12), cuffSurf);
+    else {
+      b.add(K.at(K.cyl(0.04, 0.042, 0.042, 10, 'y'), gripR * 0.45 + 0.01, -0.084, 0.022, 0, 0, 0.12), cuffSurf);
+      b.add(K.at(K.cyl(0.044, 0.044, 0.008, 10, 'y'), gripR * 0.45 + 0.01, -0.066, 0.022), { c: 0x121316, r: 0.75 });
+    }
   }
-  function forearm(b, surf, cuffSurf, from, dir, len) {
-    const d = dir.clone().normalize(), pts = [], rad = [];
-    // slightly creased fabric: the radius ripples a little along the sleeve
-    for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(from.clone().addScaledVector(d, len * t)); rad.push((0.03 + 0.013 * Math.pow(t, 0.8)) * (1 + 0.06 * Math.sin(t * 23))); }
-    b.add(K.tube(pts, rad, 12), surf);
-    b.add(K.tube([from.clone().addScaledVector(d, 0.015), from.clone().addScaledVector(d, 0.045)], [0.035, 0.036], 12), cuffSurf);
+  function forearm(b, surf, cuffSurf, from, dir, len, team) {
+    const d = dir.clone().normalize(), rolled = team === 'atk';
+    const bare = rolled ? 0.1 : 0, L = rolled ? len * 0.78 : len;
+    if (rolled) b.add(K.tube([from.clone(), from.clone().addScaledVector(d, bare)], [0.026, 0.031], 8), SKIN);
+    const pts = [], rad = [], steps = 12;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      pts.push(from.clone().addScaledVector(d, bare + (L - bare) * t));
+      let radius = (0.03 + 0.012 * Math.pow(t, 0.75)) * (1 + 0.04 * Math.sin(t * 21));
+      radius *= 1 + 0.08 * Math.exp(-Math.pow((t - 0.38) * 7, 2)) + 0.06 * Math.exp(-Math.pow((t - 0.66) * 7, 2));
+      if (rolled && t < 0.16) radius *= 1.22;
+      rad.push(radius);
+    }
+    b.add(K.tube(pts, rad, 10), surf);
+    const cuffAt = rolled ? bare + 0.012 : 0.012;
+    b.add(K.tube([from.clone().addScaledVector(d, cuffAt), from.clone().addScaledVector(d, cuffAt + (rolled ? 0.045 : 0.05))], rolled ? [0.046, 0.04] : [0.038, 0.04], 10), cuffSurf);
+    if (!rolled) b.add(K.tube([from.clone().addScaledVector(d, 0.055), from.clone().addScaledVector(d, 0.078)], [0.034, 0.033], 8), cuffSurf);
   }
   // hand placement per weapon: [position from the gun data, Euler of the grip axis, forearm direction]
   function buildArms(id, team) {
@@ -75,25 +105,25 @@
     };
     const rh = gm.rightHand, lh = gm.leftHand;
     if (gm.hold === 'rifle' || gm.hold === 'pistol') {
-      place((s) => gripHand(s, gv, cf, 0.017), rh, [-0.28, 0, 0, 1.12]);
+      place((s) => gripHand(s, gv, cf, 0.017, team), rh, [-0.28, 0, 0, 1.12]);
       const wristR = rh.clone().add(new THREE.Vector3(0.02, -0.07, 0.045));
-      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.28, -0.42, 1), 0.55), wristR, [0, 0, 0]);
+      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.28, -0.42, 1), 0.55, team), wristR, [0, 0, 0]);
       if (gm.hold === 'rifle') {
         // support hand under the handguard: grip axis along the barrel, palm below
-        place((s) => gripHand(s, gv, cf, 0.027), lh, [Math.PI / 2, 0, -Math.PI / 2 - 0.35, 1.12]);
-        place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.78, -0.4, 0.48), 0.62), lh.clone().add(new THREE.Vector3(-0.05, -0.035, 0.025)), [0, 0, 0]);
+        place((s) => gripHand(s, gv, cf, 0.027, team), lh, [Math.PI / 2, 0, -Math.PI / 2 - 0.35, 1.12]);
+        place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.78, -0.4, 0.48), 0.62, team), lh.clone().add(new THREE.Vector3(-0.05, -0.035, 0.025)), [0, 0, 0]);
       } else {
-        place((s) => gripHand(s, gv, cf, 0.026), lh, [-0.28, Math.PI, 0, 0.92]);
-        place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.42, -0.4, 0.8), 0.6), lh.clone().add(new THREE.Vector3(-0.03, -0.06, 0.05)), [0, 0, 0]);
+        place((s) => gripHand(s, gv, cf, 0.026, team), lh, [-0.28, Math.PI, 0, 0.92]);
+        place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.42, -0.4, 0.8), 0.6, team), lh.clone().add(new THREE.Vector3(-0.03, -0.06, 0.05)), [0, 0, 0]);
       }
     } else if (gm.hold === 'knife') {
-      place((s) => gripHand(s, gv, cf, 0.015), rh, [Math.PI / 2 - 0.2, 0, 0]);
-      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.3, -0.5, 1), 0.55), rh.clone().add(new THREE.Vector3(0.02, -0.035, 0.06)), [0, 0, 0]);
+      place((s) => gripHand(s, gv, cf, 0.015, team), rh, [Math.PI / 2 - 0.2, 0, 0]);
+      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.3, -0.5, 1), 0.55, team), rh.clone().add(new THREE.Vector3(0.02, -0.035, 0.06)), [0, 0, 0]);
     } else {
-      place((s) => gripHand(s, gv, cf, 0.02), new THREE.Vector3(0.1, 0.02, 0.0), [0, 0, -0.3]);
-      place((s) => gripHand(s, gv, cf, 0.02), new THREE.Vector3(-0.1, 0.02, 0.0), [0, Math.PI, 0.3]);
-      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.3, -0.45, 0.8), 0.55), new THREE.Vector3(0.12, -0.05, 0.04), [0, 0, 0]);
-      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.3, -0.45, 0.8), 0.55), new THREE.Vector3(-0.12, -0.05, 0.04), [0, 0, 0]);
+      place((s) => gripHand(s, gv, cf, 0.02, team), new THREE.Vector3(0.1, 0.02, 0.0), [0, 0, -0.3]);
+      place((s) => gripHand(s, gv, cf, 0.02, team), new THREE.Vector3(-0.1, 0.02, 0.0), [0, Math.PI, 0.3]);
+      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.3, -0.45, 0.8), 0.55, team), new THREE.Vector3(0.12, -0.05, 0.04), [0, 0, 0]);
+      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.3, -0.45, 0.8), 0.55, team), new THREE.Vector3(-0.12, -0.05, 0.04), [0, 0, 0]);
     }
     return b.build();
   }

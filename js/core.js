@@ -204,6 +204,7 @@ window.G = window.G || {};
     input.freeLook = true; fb.has = false;
     if (G.onFallback) G.onFallback();
   }
+  G.enterFallback = enterFallback;
   document.addEventListener('pointerlockchange', () => {
     const el = G.renderer && G.renderer.domElement;
     const was = input.locked;
