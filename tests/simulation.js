@@ -34,7 +34,7 @@ Object.assign(global,{window:global, top:global, document, innerWidth:740,innerH
   setTimeout:noop, clearTimeout:noop, THREE:require('../vendor/three.min.js')});
 Object.defineProperty(global,'navigator',{value:{userAgent:'simulation'},configurable:true});
 function load(name) { vm.runInThisContext(fs.readFileSync(path.join(root,'js',name+'.js'),'utf8'),{filename:name+'.js'}); }
-for (const id of ['look','core','audio','touch','map','mapgeo','gfx','geom','gunmodels','fx','weapons','nades','viewmodel','player','bots','game','hud','main']) load(id);
+for (const id of ['look','core','audio','touch','map','mapgeo','gfx','video','geom','gunmodels','fx','weapons','nades','viewmodel','player','bots','game','hud','main']) load(id);
 const G=global.G, W=G.Weapons, N=G.Nades, game=G.Game;
 const V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
 Math.random=G.seeded(20261122);
@@ -254,14 +254,15 @@ console.log('24 calculated control layouts passed at four viewports, three scale
 // Boot with a renderer stub so wireMenu registers its actual capture and settings listeners.
 async function captureChecks() {
   class Renderer {
-    constructor(){ this.domElement=new Element(); this.capabilities={isWebGL2:true}; }
+    constructor(){ this.domElement=new Element(); this.capabilities={isWebGL2:true,maxSamples:4,getMaxAnisotropy:()=>16}; this.info={autoReset:true,render:{calls:0,triangles:0},memory:{},reset:noop}; this.shadowMap={}; }
   }
-  for (const method of ['setPixelRatio','setSize','setClearColor','compile','render','clear','clearDepth']) Renderer.prototype[method]=noop;
+  for (const method of ['setPixelRatio','setSize','setClearColor','compile','render','clear','clearDepth','setRenderTarget','setViewport','setScissor','setScissorTest','dispose','initTexture']) Renderer.prototype[method]=noop;
   THREE.WebGLRenderer=Renderer; G.Gfx.detect=()=>({webgl2:true,soft:true});
   G.Gfx.loadLightmaps=G.Gfx.buildShadow=G.Gfx.makeSky=noop;
   G.MapMesh={build:noop}; G.MapGeo.build=()=>({}); G.Map.buildRadar=()=>elem('radar');
-  G.Tex.init=noop; G.Tex.worldBuilder=()=>({total:1,step:()=>true,result:()=>({})});
-  G.HUD.init=noop; global.location={search:''};
+  G.Tex.init=noop; G.Tex.worldBuilder=()=>({total:1,step:()=>true,result:()=>({})}); G.Tex.buildWorld=async()=>({});
+  G.Video.init=noop; G.Gfx.initMovingShadow=noop;
+  G.HUD.init=noop; global.location={search:'',href:'http://localhost/'};
   global.setTimeout=(fn,ms)=>{ if (!ms) queueMicrotask(fn); };
   await G.boot();
   let clock=10000, pointerCalls=0, fullCalls=0, keyCalls=0;
