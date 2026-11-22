@@ -28,6 +28,8 @@
     box: { c: 0x3c4a34, r: 0.55, m: 0.1, w: 0.3 },
     wireR: { c: 0xb0281e, r: 0.5, m: 0 }, wireB: { c: 0x2a4e9a, r: 0.5, m: 0 }, wireY: { c: 0xc8a42a, r: 0.5, m: 0 },
     blade: { c: 0xc6c9cc, r: 0.18, m: 1, w: 0.1 },
+    worn: { c: 0x8d9096, r: 0.28, m: 1, w: 1 },
+    blued: { c: 0x23262c, r: 0.34, m: 0.92, w: 0.85 },
   };
   const qbez = (p0, p1, p2, n) => { const o = []; for (let i = 0; i <= n; i++) { const t = i / n, a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t; o.push([a * p0[0] + b * p1[0] + c * p2[0], a * p0[1] + b * p1[1] + c * p2[1]]); } return o; };
   const box = (b, s, w, h, d, x, y, z, rx, ry, rz) => b.add(K.at(K.box(w, h, d), x, y, z, rx, ry, rz), s);
@@ -46,6 +48,10 @@
     box(b, s, 0.009, 0.006, 0.07, 0, y - 0.044, z - 0.012);
     box(b, s, 0.009, 0.046, 0.006, 0, y - 0.022, z - 0.048);
     b.add(K.at(K.torus(0.012, 0.0028, 5, 8, Math.PI), 0, y - 0.016, z - 0.004, 0, Math.PI / 2, Math.PI / 2 + 0.25), S.steel);
+  }
+  function pinX(b, y, z, len) { cylX(b, S.silver, 0.0026, len || 0.052, 0, y, z, 6); }
+  function gripRibs(b, surf, y0, z, n) {
+    for (let i = 0; i < n; i++) box(b, surf, 0.033, 0.0032, 0.016, 0, y0 - i * 0.011, z + i * 0.002);
   }
 
   const builders = {};
@@ -85,6 +91,12 @@
       const [z0, y0] = rib[i], [z1, y1] = rib[i + 1];
       mg.add(K.at(K.box(0.034, Math.hypot(z1 - z0, y1 - y0) + 0.002, 0.012), 0, (y0 + y1) / 2, (z0 + z1) / 2, -Math.atan2(z1 - z0, -(y1 - y0)), 0, 0), S.steel);
     }
+    for (let i = 0; i < 4; i++) pinX(b, 0.048, -0.02 - i * 0.07, 0.05);
+    gripRibs(b, S.woodDark, -0.018, 0.018, 5);
+    box(b, S.steel, 0.022, 0.008, 0.02, 0, 0.114, -0.74);
+    box(b, S.worn, 0.007, 0.018, 0.006, -0.008, 0.11, -0.74);
+    box(b, S.worn, 0.007, 0.018, 0.006, 0.008, 0.11, -0.74);
+    for (let i = 0; i < 3; i++) box(b, S.black, 0.003, 0.014, 0.012, 0, 0.055, -0.8, 0, i * 0.8, 0);
     return { b, mg, muzzle: [0, 0.055, -0.845], eject: [0.026, 0.06, -0.15], rightHand: [0, -0.035, 0.06], leftHand: [0, 0.028, -0.42], magPivot: [0, -0.05, -0.11], sight: 0.105, hold: 'rifle' };
   };
   // ---------- TR-4: modular carbine with rail handguard, red-dot sight, telescoping stock ----------
@@ -119,6 +131,9 @@
     const front = qbez([-0.152, 0.0], [-0.152, -0.09], [-0.17, -0.19], 6), back = qbez([-0.098, 0.0], [-0.098, -0.09], [-0.112, -0.2], 6);
     mg.add(K.at(K.profile(front.concat(back.slice().reverse()), 0.028, 0.0025), 0, 0, 0), S.dark);
     mg.add(K.at(K.box(0.034, 0.016, 0.07), 0, -0.198, -0.142, 0.12), S.black);
+    for (let i = 0; i < 5; i++) box(b, S.dark, 0.03, 0.003, 0.012, 0, -0.02 - i * 0.012, 0.01);
+    for (let i = 0; i < 3; i++) pinX(b, 0.03, -0.02 - i * 0.06, 0.044);
+    cylY(b, S.worn, 0.004, 0.004, 0.02, 0.1, -0.11, 6);
     return { b, mg, muzzle: [0, 0.06, -0.755], eject: [0.024, 0.066, -0.12], rightHand: [0, -0.035, 0.05], leftHand: [0, 0.026, -0.41], magPivot: [0, -0.04, -0.125], sight: 0.134, hold: 'rifle' };
   };
   // ---------- V9: compact SMG with foregrip and folding stock ----------
@@ -139,6 +154,9 @@
     box(b, S.rubber, 0.05, 0.08, 0.012, 0, 0.03, 0.29);
     mg.add(K.at(K.rbox(0.026, 0.19, 0.034, 0.004, 1), 0, -0.07, -0.085, 0.12), S.dark);
     mg.add(K.at(K.box(0.03, 0.012, 0.04), 0, -0.165, -0.074, 0.12), S.black);
+    for (let i = 0; i < 6; i++) box(mg, S.steel, 0.028, 0.004, 0.036, 0, -0.04 - i * 0.02, -0.085, 0.12);
+    gripRibs(b, S.black, -0.02, 0.02, 4);
+    for (let i = 0; i < 3; i++) pinX(b, 0.04, -0.04 - i * 0.06, 0.05);
     return { b, mg, muzzle: [0, 0.05, -0.36], eject: [0.024, 0.06, -0.08], rightHand: [0, -0.035, 0.045], leftHand: [0, -0.05, -0.2], magPivot: [0, -0.03, -0.085], sight: 0.1, hold: 'rifle' };
   };
   // ---------- R-90: bolt-action sniper rifle with chassis stock and large scope ----------
@@ -168,6 +186,10 @@
     prof(b, S.black, [[0.0, 0.0], [0.03, 0.0], [0.06, -0.075], [0.03, -0.085], [0.0, -0.01]], 0.03);
     triggerGroup(b, 0.02, -0.01, S.black);
     mg.add(K.at(K.rbox(0.03, 0.06, 0.09, 0.004, 1), 0, -0.035, -0.05), S.black);
+    for (let i = 0; i < 3; i++) box(mg, S.olive, 0.032, 0.004, 0.07, 0, -0.02 - i * 0.012, -0.05);
+    gripRibs(b, S.black, -0.02, 0.02, 4);
+    pinX(b, 0.07, -0.08, 0.046); pinX(b, 0.07, 0.06, 0.046);
+    cylY(b, S.worn, 0.008, 0.006, 0, 0.186, -0.02, 6);
     return { b, mg, muzzle: [0, 0.07, -0.935], eject: [0.024, 0.08, 0.0], rightHand: [0, -0.04, 0.07], leftHand: [0, -0.02, -0.3], magPivot: [0, -0.03, -0.05], sight: 0.14, hold: 'rifle' };
   };
   // ---------- pistols ----------
@@ -183,7 +205,12 @@
     box(b, S.black, silver ? 0.028 : 0.023, 0.02, L * 0.65, 0, 0.016, -L * 0.42);
     prof(b, silver ? S.rubber : S.black, [[0.032, 0.008], [-0.012, 0.008], [-0.022, -0.1], [0.022, -0.112], [0.042, -0.01]], silver ? 0.032 : 0.028);
     triggerGroup(b, -0.006, 0.006, S.black);
+    box(b, S.steel, 0.004, 0.01, 0.045, (silver ? 0.016 : 0.013), 0.03 + H * 0.35, -0.04);
+    pinX(b, -0.03, 0.01, silver ? 0.034 : 0.028);
+    for (let i = 0; i < 4; i++) box(b, S.black, silver ? 0.03 : 0.026, 0.0035, 0.012, 0, -0.018 - i * 0.016, 0.02);
     mg.add(K.at(K.box(silver ? 0.028 : 0.024, 0.012, 0.05), 0, -0.112, 0.006, 0.12), S.black);
+    for (let i = 0; i < 3; i++) box(mg, silver ? S.silver : S.dark, silver ? 0.03 : 0.026, 0.003, 0.04, 0, -0.1 - i * 0.012, 0.006);
+    box(mg, S.black, silver ? 0.032 : 0.028, 0.01, 0.022, 0, -0.122, 0.01);
     return { b, mg, muzzle: [0, 0.026 + H * 0.45, -L - 0.004], eject: [0.016, 0.026 + H * 0.8, -0.03], rightHand: [0, -0.04, 0.012], leftHand: [-0.026, -0.05, 0.0], magPivot: [0, -0.06, 0.0], sight: 0.026 + H + 0.008, hold: 'pistol' };
   }
   builders.p10 = () => pistol(false);
@@ -198,6 +225,9 @@
     rbox(b, S.rubber, 0.024, 0.032, 0.11, 0.009, 0, -0.002, 0.026);
     for (let i = 0; i < 4; i++) box(b, S.black, 0.026, 0.006, 0.006, 0, -0.016, 0.0 + i * 0.022);
     rbox(b, S.steel, 0.026, 0.034, 0.016, 0.005, 0, -0.002, 0.085);
+    cylX(b, S.brass, 0.0032, 0.026, 0, 0.002, 0.02, 6);
+    cylX(b, S.brass, 0.0032, 0.026, 0, 0.002, 0.05, 6);
+    box(b, S.worn, 0.006, 0.004, 0.03, 0, 0.012, -0.1);
     return { b, mg: null, muzzle: [0, 0, -0.2], eject: [0, 0, 0], rightHand: [0, 0, 0.03], leftHand: null, magPivot: [0, 0, 0], sight: 0, hold: 'knife' };
   };
   // ---------- bomb: putty blocks, tape, keypad device, wires ----------
@@ -214,6 +244,8 @@
     wire(S.wireB, [[0.05, 0.065, 0.0], [0.085, 0.07, 0.0], [0.098, 0.03, 0.01]]);
     wire(S.wireY, [[0.05, 0.065, 0.02], [0.075, 0.07, 0.035], [0.09, 0.03, 0.04]]);
     cylY(b, S.black, 0.002, 0.07, -0.045, 0.11, 0.028, 5);
+    box(b, S.wireY, 0.1, 0.004, 0.008, 0, 0.078, 0.03);
+    for (let i = 0; i < 4; i++) cylY(b, S.silver, 0.0022, 0.004, -0.04 + (i % 2) * 0.08, 0.08, -0.028 + (i > 1 ? 0.04 : 0), 5);
     return { b, mg: null, muzzle: [0, 0.05, -0.05], eject: [0, 0, 0], rightHand: [0.06, 0.03, 0.04], leftHand: [-0.06, 0.03, 0.04], magPivot: [0, 0, 0], sight: 0, hold: 'bomb' };
   };
 
@@ -289,27 +321,73 @@
       } else if (compact) cylY(b,S.rubber,.016,.095,0,-.035,grip);
       else if (id==='u45') cylZ(b,S.dark,.027,.027,.12,0,.053,-reach+.08);
     }
+    for (let i = 0; i < 3; i++) pinX(b, 0.04, front * 0.3 - i * length * 0.18, width + 0.004);
+    gripRibs(b, S.black, -0.028, 0.04, 4);
+    if (!bolt) {
+      box(b, S.dark, 0.006, 0.02, 0.008, -0.007, 0.1, 0.02);
+      box(b, S.dark, 0.006, 0.02, 0.008, 0.007, 0.1, 0.02);
+    }
+    if (id === 'u45') for (let i = 0; i < 4; i++) cylZ(b, S.blued, 0.03, 0.03, 0.008, 0, 0.056, -reach + 0.05 + i * 0.022, 10);
+    if (id === 'fa2') box(b, S.tan, 0.014, 0.028, 0.1, 0, 0.115, -0.02);
+    if (id === 'k5') for (let i = 0; i < 3; i++) box(b, S.black, 0.004, 0.02, 0.012, 0, 0.056, -reach + 0.02, 0, i * 0.7, 0);
+    if (id === 'l60') box(b, S.worn, 0.04, 0.006, 0.08, 0, 0.108, -0.05);
     return {b,mg,action, muzzle:[0,.056,-reach],eject:[width/2,.055,-.08],rightHand:[0,-.034,.047],
       leftHand:[0,pump ? .005 : -.006,pump ? -.46 : grip],magPivot:[0,-.035,magazineZ],sight:bolt ? .135 : .1,hold:'rifle'};
   }
   for (const id in frames) builders[id]=()=>longGun(id);
-  const coats={he:S.olive, flash:S.silver, smoke:S.clay, molotov:S.woodDark, incendiary:S.wireR};
-  for (const id in coats) builders[id]=function () {
-    const b=new K.Builder(), mg=new K.Builder(), bottle=id==='molotov';
-    const shape=bottle ? [[.026,-.097],[.039,-.09],[.039,.033],[.017,.062],[.015,.11],[0,.11]] :
-      id==='he' ? [[.018,-.055],[.04,-.04],[.047,-.005],[.038,.033],[.02,.05],[0,.05]] :
-      [[.024,-.066],[.036,-.06],[.036,.044],[.028,.054],[0,.054]];
-    b.add(K.lathe(shape,16),coats[id]);
-    if (bottle) {
-      cylY(b,S.tape,.04,.04,0,-.022,0);
-      rbox(mg,S.clay,.015,.064,.018,.003,.009,.13,0,0,0,-.4);
-    } else {
-      cylY(b,S.steel,.018,.021,0,.058,0);
-      for (let i=0;i<3;i++) cylY(b,id==='flash' ? S.dark : S.tape,id==='he' ? .043 : .037,.005,0,-.035+i*.026,0);
-      box(b,S.steel,.011,.075,.012,.031,.028,0,0,0,.28);
-      mg.add(K.at(K.torus(.014,.002,5,14),-.018,.066,0),S.brass);
+  const nadeAnchor = { muzzle: [0, 0.07, 0], eject: [0, 0, 0], rightHand: [0, -0.015, 0], leftHand: [-0.031, 0.053, 0], magPivot: [0, 0.064, 0], sight: 0, hold: 'pistol' };
+  builders.he = function () {
+    const b = new K.Builder(), mg = new K.Builder();
+    b.add(K.lathe([[0, -0.058], [0.03, -0.05], [0.048, -0.012], [0.05, 0.016], [0.04, 0.04], [0.018, 0.056], [0, 0.06]], 12), S.olive);
+    for (let i = 0; i < 5; i++) b.add(K.at(K.torus(0.046 - i * 0.003, 0.0042, 4, 10), 0, -0.034 + i * 0.016, 0, Math.PI / 2, 0, 0), S.dark);
+    cylY(b, S.steel, 0.013, 0.014, 0, 0.064, 0, 8);
+    box(b, S.steel, 0.01, 0.068, 0.012, 0.032, 0.02, 0, 0, 0, 0.2);
+    mg.add(K.at(K.torus(0.016, 0.0022, 5, 10), -0.02, 0.072, 0), S.brass);
+    box(mg, S.steel, 0.008, 0.02, 0.01, -0.032, 0.06, 0);
+    return { b, mg, muzzle: nadeAnchor.muzzle.slice(), eject: nadeAnchor.eject.slice(), rightHand: nadeAnchor.rightHand.slice(), leftHand: nadeAnchor.leftHand.slice(), magPivot: nadeAnchor.magPivot.slice(), sight: 0, hold: 'pistol' };
+  };
+  builders.flash = function () {
+    const b = new K.Builder(), mg = new K.Builder();
+    b.add(K.lathe([[0, -0.07], [0.03, -0.066], [0.034, 0.042], [0.02, 0.056], [0, 0.06]], 12), S.silver);
+    cylY(b, S.dark, 0.0355, 0.014, 0, -0.008, 0, 12);
+    cylX(b, S.black, 0.007, 0.02, 0.026, 0, 0, 6); cylX(b, S.black, 0.007, 0.02, -0.026, 0, 0, 6);
+    cylZ(b, S.black, 0.007, 0.007, 0.02, 0, 0, 0.026, 6); cylZ(b, S.black, 0.007, 0.007, 0.02, 0, 0, -0.026, 6);
+    cylY(b, S.steel, 0.012, 0.012, 0, 0.062, 0, 8);
+    box(b, S.blued, 0.008, 0.05, 0.01, 0.03, 0.016, 0);
+    mg.add(K.at(K.torus(0.014, 0.002, 5, 10), -0.016, 0.068, 0), S.brass);
+    return { b, mg, muzzle: [0, 0.07, 0], eject: [0, 0, 0], rightHand: [0, -0.015, 0], leftHand: [-0.031, 0.053, 0], magPivot: [0, 0.064, 0], sight: 0, hold: 'pistol' };
+  };
+  builders.smoke = function () {
+    const b = new K.Builder(), mg = new K.Builder();
+    b.add(K.lathe([[0, -0.074], [0.028, -0.07], [0.034, 0.02], [0.03, 0.05], [0.012, 0.068], [0, 0.074]], 12), S.clay);
+    cylY(b, S.olive, 0.035, 0.022, 0, 0.008, 0, 12);
+    cylY(b, S.dark, 0.016, 0.01, 0, 0.066, 0, 8);
+    for (let i = 0; i < 4; i++) cylY(b, S.dark, 0.004, 0.006, Math.cos(i * 1.57) * 0.01, 0.07, Math.sin(i * 1.57) * 0.01, 5);
+    box(b, S.steel, 0.008, 0.05, 0.01, 0.03, 0, 0);
+    mg.add(K.at(K.torus(0.015, 0.0022, 5, 10), -0.018, 0.078, 0), S.brass);
+    return { b, mg, muzzle: [0, 0.07, 0], eject: [0, 0, 0], rightHand: [0, -0.015, 0], leftHand: [-0.031, 0.053, 0], magPivot: [0, 0.064, 0], sight: 0, hold: 'pistol' };
+  };
+  builders.molotov = function () {
+    const b = new K.Builder(), mg = new K.Builder();
+    b.add(K.lathe([[0, -0.1], [0.022, -0.098], [0.042, -0.07], [0.044, 0.02], [0.026, 0.055], [0.014, 0.1], [0.012, 0.125], [0, 0.125]], 12), S.woodDark);
+    cylY(b, S.tape, 0.032, 0.04, 0, -0.01, 0, 10);
+    cylY(b, S.olive, 0.016, 0.045, 0, 0.07, 0, 8);
+    rbox(mg, S.clay, 0.014, 0.07, 0.016, 0.003, 0.01, 0.145, 0, 0, 0, -0.35);
+    box(mg, S.wireR, 0.012, 0.028, 0.012, 0.014, 0.175, 0);
+    return { b, mg, muzzle: [0, 0.07, 0], eject: [0, 0, 0], rightHand: [0, -0.015, 0], leftHand: [-0.031, 0.053, 0], magPivot: [0, 0.064, 0], sight: 0, hold: 'pistol' };
+  };
+  builders.incendiary = function () {
+    const b = new K.Builder(), mg = new K.Builder();
+    b.add(K.lathe([[0, -0.048], [0.04, -0.044], [0.042, 0.028], [0.028, 0.046], [0, 0.05]], 12), S.wireR);
+    cylY(b, S.wireY, 0.043, 0.012, 0, 0, 0, 12);
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      box(b, S.dark, 0.004, 0.046, 0.02, Math.cos(a) * 0.044, -0.004, Math.sin(a) * 0.044, 0, -a, 0);
     }
-    return {b,mg,muzzle:[0,.07,0],eject:[0,0,0],rightHand:[0,-.015,0],leftHand:[-.031,.053,0],magPivot:[0,.064,0],sight:0,hold:'pistol'};
+    cylY(b, S.steel, 0.012, 0.012, 0, 0.052, 0, 8);
+    box(b, S.steel, 0.008, 0.055, 0.01, 0.034, 0.01, 0);
+    mg.add(K.at(K.torus(0.013, 0.002, 5, 10), -0.016, 0.06, 0), S.brass);
+    return { b, mg, muzzle: [0, 0.07, 0], eject: [0, 0, 0], rightHand: [0, -0.015, 0], leftHand: [-0.031, 0.053, 0], magPivot: [0, 0.064, 0], sight: 0, hold: 'pistol' };
   };
 
   // ---------- cache and public API ----------

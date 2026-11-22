@@ -144,8 +144,7 @@
       if (M.clearLine(p,c) && !N.blocks(c,c)) cells.push({ pos:c.clone(), delay:d/3.6 });
     }
     if (!cells.length) return;
-    N.fires.push({ id:g.id,owner:g.owner,pos:p,cells,age:0,tick:0,visual:0,stop:G.Audio.fireLoop(p) });
-    G.FX.scorch(p);
+    N.fires.push({ id:g.id,owner:g.owner,pos:p,cells,age:0,tick:0,visual:0,stop:G.Audio.fireLoop(p),scorch:G.FX.scorch(p) });
   }
   function burst(g) {
     const p = g.pos;
@@ -167,7 +166,7 @@
         const facing = G.forward(a.yaw,a.pitch,direction).dot(point.copy(p).sub(eye).normalize());
         const duration = 4.5*(1-dist/26)*(0.12+0.88*Math.max(0,(facing+0.1)/1.1));
         a.blindUntil = Math.max(a.blindUntil || 0,G.time+duration);
-        if (a.isPlayer) G.Audio.ring(a.blindUntil-G.time);
+        if (a.isPlayer) { G.Audio.ring(a.blindUntil-G.time); if (G.FX.flashGhost) G.FX.flashGhost(a.blindUntil-G.time); }
       }
     }
   }
@@ -186,7 +185,7 @@
   N.clear = function () {
     for (const g of N.flying) recycle(g);
     for (const s of N.smokes) G.FX.recycleCloud(s.cloud);
-    for (const f of N.fires) if (f.stop) f.stop();
+    for (const f of N.fires) { if (f.stop) f.stop(); if (f.scorch && G.FX.fadeScorch) G.FX.fadeScorch(f.scorch); }
     N.flying.length = N.smokes.length = N.fires.length = 0;
     if (dots) dots.visible = false;
     overlay.hidden = white.hidden = true;
@@ -209,7 +208,7 @@
     for (let i=N.fires.length-1; i>=0; i--) {
       const f=N.fires[i]; f.age+=dt; f.tick-=dt; f.visual-=dt;
       for (let j=f.cells.length-1; j>=0; j--) if (N.blocks(f.cells[j].pos,f.cells[j].pos)) f.cells.splice(j,1);
-      if (!f.cells.length || f.age>=7) { if (f.stop) f.stop(); N.fires.splice(i,1); continue; }
+      if (!f.cells.length || f.age>=7) { if (f.stop) f.stop(); if (f.scorch) G.FX.fadeScorch(f.scorch); N.fires.splice(i,1); continue; }
       if (f.tick<=0) {
         f.tick+=0.2;
         for (const a of G.Game.agents) if (a.alive && N.hot(a.pos)===f) areaDamage(a,f,6);

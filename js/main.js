@@ -179,12 +179,20 @@
       }, () => {}); } catch (e) { }
     }
   }
+  function syncFallbackOffer() {
+    const b = $('btnFallback');
+    if (!b) return;
+    const inp = G.input;
+    const show = !G.embedded && !(G.Touch && G.Touch.enabled) && !inp.freeLook && !inp.locked && inp.lockFails >= 2;
+    b.hidden = !show;
+  }
   function showPause(kind, hint) {
     $('pause').hidden = !kind;
     if (!kind) return;
     $('pauseTitle').textContent = G.Touch.enabled ? '已暂停' : '点击继续';
     $('pauseHint').textContent = hint || (G.Touch.enabled ? '' : '虚拟机或远程桌面中，浏览器可能无法锁定鼠标。');
     $('sens2').value = G.settings.sens;
+    syncFallbackOffer();
   }
   function pause(auto) {
     const inp = G.input;
@@ -220,7 +228,7 @@
     $('game').classList.toggle('freelook', inp.freeLook);
     if (!requesting || !inp.active) { if (ok) G.releaseLock(); return; }
     requesting = false;
-    if (ok || (G.embedded && inp.freeLook)) {
+    if (ok || inp.freeLook) {
       showPause(null); G.paused = false; keyboardOn();
     } else {
       G.paused = true;
@@ -295,6 +303,16 @@
     $('btnAtk').addEventListener('click', () => startMatch('atk'));
     $('btnDef').addEventListener('click', () => startMatch('def'));
     $('btnResume').addEventListener('click', resume);
+    $('btnFallback').addEventListener('click', (e) => {
+      if (e.stopPropagation) e.stopPropagation();
+      if (e.preventDefault) e.preventDefault();
+      G.enterFallback();
+      requesting = false;
+      G.input.releaseAll(); G.input.endFrame();
+      G.Audio.init();
+      showPause(null); G.paused = false;
+      $('game').classList.toggle('freelook', !!G.input.freeLook);
+    });
     $('btnQuit').addEventListener('click', toMenu);
     $('btnRestart').addEventListener('click', () => startMatch(lastTeam));
     $('pause').addEventListener('click', (e) => {
