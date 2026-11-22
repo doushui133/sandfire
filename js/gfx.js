@@ -301,6 +301,7 @@
     GLSL_COMMON,
     'uniform sampler2D uDetail; uniform float uDetailScale; uniform vec3 uCamoA; uniform vec3 uCamoB; uniform float uSunVis;',
     'uniform sampler2D map; uniform float uOpacity;',
+    'uniform sampler2D normalMap; uniform vec2 normalScale; uniform sampler2D roughnessMap;',
     'varying vec3 vW; varying vec3 vN; varying vec3 vCol; varying vec4 vRM; varying vec3 vObj; varying vec3 vObjN; varying vec3 vAmb; varying vec2 vUv; varying float vSh; varying vec4 vFog;',
     'void main() {',
     '  vec3 alb = vCol; float rough = vRM.x, metal = vRM.y;',
@@ -309,9 +310,21 @@
     '  if ( mt.a < 0.5 ) discard;',
     '  alb *= mt.rgb * mt.rgb;',
     '#endif',
+    '#ifdef USE_ROUGHNESSMAP',
+    '  rough = texture2D( roughnessMap, vUv ).g;',
+    '#endif',
     '  vec3 N = normalize( vN );',
     '#ifdef DOUBLE_SIDED',
     '  N *= gl_FrontFacing ? 1.0 : -1.0;',
+    '#endif',
+    '#ifdef USE_NORMALMAP',
+    // tangent frame from screen-space derivatives (no tangent attribute needed)
+    '  vec3 mapN = texture2D( normalMap, vUv ).xyz * 2.0 - 1.0; mapN.xy *= normalScale;',
+    '  vec3 q0 = dFdx( vW ), q1 = dFdy( vW ); vec2 st0 = dFdx( vUv ), st1 = dFdy( vUv );',
+    '  vec3 q1p = cross( q1, N ), q0p = cross( N, q0 );',
+    '  vec3 Tn = q1p * st0.x + q0p * st1.x, Bn = q1p * st0.y + q0p * st1.y;',
+    '  float tdet = max( dot( Tn, Tn ), dot( Bn, Bn ) );',
+    '  if ( tdet > 0.0 ) N = normalize( Tn * ( mapN.x * inversesqrt( tdet ) ) + Bn * ( mapN.y * inversesqrt( tdet ) ) + N * mapN.z );',
     '#endif',
     '  vec3 emit = vec3( 0.0 );',
     '#if defined( CLOTH ) || defined( GUN )',
@@ -383,6 +396,8 @@
     if (opts.detail === 'gun') defines.GUN = ''; else if (opts.detail) defines.CLOTH = '';
     if (opts.viewmodel) defines.VIEWMODEL = '';
     if (opts.map) defines.USE_MAP = '';
+    if (opts.normalMap) defines.USE_NORMALMAP = '';
+    if (opts.roughnessMap) defines.USE_ROUGHNESSMAP = '';
     if (Gfx.preset && Gfx.preset.pcf9) defines.PCF9 = '';
     if (Gfx.preset && Gfx.preset.key === 'low') defines.LOW = '';
     const det = opts.detail === 'gun' ? G.Tex.gunDetail() : G.Tex.detail();
@@ -394,6 +409,8 @@
         uCamoA: { value: new THREE.Color().fromArray(camo[0]) }, uCamoB: { value: new THREE.Color().fromArray(camo[1]) },
         uSunVis: { value: 1 }, uAmbient: { value: new THREE.Color(0.5, 0.5, 0.52) },
         map: { value: opts.map || null }, uOpacity: { value: 1 },
+        normalMap: { value: opts.normalMap || null }, normalScale: { value: new THREE.Vector2(1, opts.normalFlipY ? -1 : 1) },
+        roughnessMap: { value: opts.roughnessMap || null },
       }, U),
       vertexShader: LIT_VS, fragmentShader: LIT_FS,
       side: opts.doubleSide ? THREE.DoubleSide : THREE.FrontSide,

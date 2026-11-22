@@ -1,0 +1,157 @@
+{
+ "name": "def2",
+ "source": "Microsoft Rocketbox (MIT) Military_Male_04.fbx",
+ "vertexCount": 11721,
+ "indexCount": 44721,
+ "index32": false,
+ "layout": [
+  "position f32x3",
+  "normal i8x4",
+  "uv f32x2",
+  "skinIndex u8x4",
+  "skinWeight u8x4",
+  "index"
+ ],
+ "groups": [
+  {
+   "start": 0,
+   "count": 16923,
+   "material": 0
+  },
+  {
+   "start": 16923,
+   "count": 8832,
+   "material": 1
+  },
+  {
+   "start": 25755,
+   "count": 8616,
+   "material": 2
+  },
+  {
+   "start": 34371,
+   "count": 10350,
+   "material": 3
+  }
+ ],
+ "materials": [
+  {
+   "name": "sm005_body",
+   "map": "def2_body_mc.jpg",
+   "normalMap": "def2_body_nn.jpg",
+   "roughnessMap": "def2_body_rr.jpg"
+  },
+  {
+   "name": "sm005_head",
+   "map": "def2_head_mc.jpg",
+   "normalMap": "def2_head_nn.jpg",
+   "roughnessMap": "def2_head_rr.jpg"
+  },
+  {
+   "name": "sm005_helmet",
+   "map": "def2_helmet_mc.jpg",
+   "normalMap": "def2_helmet_nn.jpg",
+   "roughnessMap": "def2_helmet_rr.jpg"
+  },
+  {
+   "name": "sm005_equipment",
+   "map": "def2_equipment_mc.jpg",
+   "normalMap": "def2_equipment_nn.jpg",
+   "roughnessMap": "def2_equipment_rr.jpg"
+  }
+ ],
+ "joints": {
+  "uarmL": [
+   -0.2038,
+   1.3889,
+   0.0246
+  ],
+  "farmL": [
+   -0.2038,
+   1.112,
+   0.0246
+  ],
+  "handL": [
+   -0.2038,
+   0.8495,
+   0.0246
+  ],
+  "thighL": [
+   -0.0856,
+   0.8726,
+   0
+  ],
+  "shinL": [
+   -0.0856,
+   0.486,
+   0
+  ],
+  "footL": [
+   -0.0856,
+   0.1017,
+   0
+  ],
+  "uarmR": [
+   0.2038,
+   1.3889,
+   0.0246
+  ],
+  "farmR": [
+   0.2038,
+   1.112,
+   0.0246
+  ],
+  "handR": [
+   0.2038,
+   0.8495,
+   0.0246
+  ],
+  "thighR": [
+   0.0856,
+   0.8726,
+   0
+  ],
+  "shinR": [
+   0.0856,
+   0.486,
+   0
+  ],
+  "footR": [
+   0.0856,
+   0.1017,
+   0
+  ],
+  "pelvis": [
+   0,
+   0.8726,
+   0
+  ],
+  "spine": [
+   0,
+   0.9891,
+   0.0016
+  ],
+  "chest": [
+   0,
+   1.2853,
+   0.0191
+  ],
+  "head": [
+   0,
+   1.5428,
+   -0.0079
+  ]
+ },
+ "lengths": {
+  "uarm": 0.2769,
+  "farm": 0.2625,
+  "thigh": 0.3866,
+  "shin": 0.3843
+ },
+ "headCenter": [
+  0.0057,
+  1.63,
+  -0.085
+ ],
+ "scale": 0.9687
+}

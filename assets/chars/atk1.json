@@ -1,0 +1,135 @@
+{
+ "name": "atk1",
+ "source": "Microsoft Rocketbox (MIT) Military_Male_02.fbx",
+ "vertexCount": 5166,
+ "indexCount": 24693,
+ "index32": false,
+ "layout": [
+  "position f32x3",
+  "normal i8x4",
+  "uv f32x2",
+  "skinIndex u8x4",
+  "skinWeight u8x4",
+  "index"
+ ],
+ "groups": [
+  {
+   "start": 0,
+   "count": 14691,
+   "material": 0
+  },
+  {
+   "start": 14691,
+   "count": 10002,
+   "material": 1
+  }
+ ],
+ "materials": [
+  {
+   "name": "sm024_body",
+   "map": "atk1_body_mc.jpg",
+   "normalMap": "atk1_body_nn.jpg",
+   "roughnessMap": "atk1_body_rr.jpg"
+  },
+  {
+   "name": "sm024_head",
+   "map": "atk1_head_mc.jpg",
+   "normalMap": "atk1_head_nn.jpg",
+   "roughnessMap": "atk1_head_rr.jpg"
+  }
+ ],
+ "joints": {
+  "uarmL": [
+   -0.2049,
+   1.3961,
+   0.0247
+  ],
+  "farmL": [
+   -0.2049,
+   1.1178,
+   0.0247
+  ],
+  "handL": [
+   -0.2049,
+   0.854,
+   0.0247
+  ],
+  "thighL": [
+   -0.0861,
+   0.8771,
+   0
+  ],
+  "shinL": [
+   -0.0861,
+   0.4886,
+   0
+  ],
+  "footL": [
+   -0.0861,
+   0.1023,
+   0
+  ],
+  "uarmR": [
+   0.2049,
+   1.3961,
+   0.0247
+  ],
+  "farmR": [
+   0.2049,
+   1.1178,
+   0.0247
+  ],
+  "handR": [
+   0.2049,
+   0.854,
+   0.0247
+  ],
+  "thighR": [
+   0.0861,
+   0.8771,
+   0
+  ],
+  "shinR": [
+   0.0861,
+   0.4886,
+   0
+  ],
+  "footR": [
+   0.0861,
+   0.1023,
+   0
+  ],
+  "pelvis": [
+   0,
+   0.8771,
+   0
+  ],
+  "spine": [
+   0,
+   0.9943,
+   0.0016
+  ],
+  "chest": [
+   0,
+   1.292,
+   0.0192
+  ],
+  "head": [
+   0,
+   1.5509,
+   -0.0079
+  ]
+ },
+ "lengths": {
+  "uarm": 0.2783,
+  "farm": 0.2638,
+  "thigh": 0.3886,
+  "shin": 0.3863
+ },
+ "headCenter": [
+  0,
+  1.63,
+  -0.0691
+ ],
+ "scale": 0.9738
+}
