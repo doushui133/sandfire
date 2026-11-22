@@ -7,7 +7,14 @@
   const S = 512;
 
   // ---------- noise ----------
-  const rngOf = (seed) => G.seeded(seed);
+  const rngOf = G.seeded || function (seed) {
+    return function () {
+      seed=(seed+0x6D2B79F5)>>>0;
+      let t=Math.imul(seed^(seed>>>15),seed|1);
+      t^=t+Math.imul(t^(t>>>7),t|61);
+      return ((t^(t>>>14))>>>0)/4294967296;
+    };
+  };
   function vnoise(size, cells, seed) {
     const out = new Float32Array(size * size), r = rngOf(seed), lat = new Float32Array(cells * cells);
     for (let i = 0; i < lat.length; i++) lat[i] = r();
@@ -114,7 +121,15 @@
       let col = mix3(B, A, sstep(0.3, 0.7, n1[i]));
       col = mix3(col, C, sstep(0.55, 0.9, n2[i]) * 0.35 + (rip > 0.6 ? 0.08 : 0));
       setC(L, i, col, 0.92 + n2[i] * 0.16);
-      L.a[i] = 0.05;
+      // A pair of shallow wheel grooves with interrupted chevrons pressed into the dust.
+      const u=(i%S)/S, v=y/S, bend=.015*Math.sin(v*Math.PI*2);
+      const edge=Math.min(Math.abs(u-.32-bend),Math.abs(u-.66-bend));
+      const rut=1-sstep(.017,.032,edge);
+      const tread=.5+.5*Math.cos((v*32+edge*18)*Math.PI*2);
+      const mark=rut*(.36+.64*tread)*(1-sstep(.54,.71,n1[i]));
+      for(let ch=0;ch<3;ch++) L.c[i*3+ch]*=1-.17*mark;
+      L.h[i]-=.105*mark;
+      L.a[i] = 0.05+.09*mark;
     }
     for (let k = 0; k < 1300; k++) {
       const x = r() * S, y = r() * S, rad = 1.2 + Math.pow(r(), 3) * 5, tone = r();
@@ -193,9 +208,9 @@
   };
   gen.plaster = function () {
     const L = layer(), n = fbm(S, 3, 5, 51), fine = fbm(S, 48, 2, 52), stain = fbm(S, 5, 4, 53), hole = fbm(S, 6, 4, 54), r = rngOf(55);
-    const base = lin(0xe4d3b4), dirt = lin(0xb59a74), brickA = lin(0xa8643f), brickB = lin(0x8f5636), mort = lin(0xb9a383);
+    const base = lin(0xdfcba7), dirt = lin(0xb59a74), brickA = lin(0xa8643f), brickB = lin(0x8f5636), mort = lin(0xb9a383);
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-      const i = y * S + x, fall = hole[i] > 0.76 && y < S * 0.5;
+      const i = y * S + x, fall = hole[i] + .08*(fine[i]-.5) > .708;
       if (fall) {
         const by = (y / 14) | 0, bx = ((x + (by % 2) * 14) / 28) | 0, lx = (x + (by % 2) * 14) % 28, ly = y % 14;
         const brick = lx > 2 && ly > 2;
@@ -203,7 +218,7 @@
         setC(L, i, brick ? ((bx * 7 + by * 3) % 5 < 2 ? brickB : brickA) : mort, 0.85 + 0.25 * fine[i]);
         L.a[i] = 0.04;
       } else {
-        const edge = sstep(0.76, 0.68, hole[i]);
+        const edge = sstep(.71,.64,hole[i]);
         L.h[i] = 0.6 + 0.06 * n[i] + 0.03 * fine[i] + (1 - edge) * 0.08;
         let col = mix3(base, dirt, sstep(0.45, 0.85, stain[i]) * 0.55);
         setC(L, i, col, (0.9 + 0.12 * n[i]) * (0.96 + 0.08 * fine[i]) * (0.75 + 0.25 * edge));
@@ -269,6 +284,13 @@
   gen.wood = function () {
     const L = layer();
     planks(L, 6, true, 91, [lin(0x8a6440), lin(0x7a5434), lin(0x96704a)], lin(0x2a1c10));
+    const wear=fbm(S,9,4,93), pigment=lin(0x537876);
+    for(let i=0;i<L.h.length;i++) {
+      if(L.h[i]<.48 || wear[i]<.39) continue;
+      const coat=sstep(.39,.47,wear[i])*.85;
+      for(let k=0;k<3;k++) L.c[i*3+k]=L.c[i*3+k]*(1-coat)+pigment[k]*(.68+L.h[i]*.60)*coat;
+      L.a[i]+=.08*coat;
+    }
     return L;
   };
   gen.crate = function () {
@@ -344,16 +366,16 @@
       if (alphaToA) L.a[i] = d[s + 3] / 255;
     }
   }
-  function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h || w; return c; }
+  function canvas(w, h) { const c = typeof document === 'undefined' ? new OffscreenCanvas(w,h||w) : document.createElement('canvas'); c.width = w; c.height = h || w; return c; }
   gen.sign = function () {
     const L = layer(), c = canvas(S), g = c.getContext('2d'), r = rngOf(151);
-    const names = ['茶馆', '杂货', '旅店', '五金', '药房', '面包', '电器', '修车'];
+    const names = ['沙棠茶社', '南井杂货', '风栈客舍', '双砧五金', '石榴药房', '早炉饼坊', '青灯电器', '长辙车行'];
     const boards = ['#7a2e22', '#2d4a5e', '#3e5a2e', '#6a4a24', '#1f3c4a', '#7a5a1e', '#4a2a3a', '#5a5248'];
     names.forEach((name, k) => {
       const x = (k % 2) * 256, y = ((k / 2) | 0) * 128;
       g.fillStyle = boards[k]; g.fillRect(x, y, 256, 128);
       g.strokeStyle = 'rgba(240,220,170,.8)'; g.lineWidth = 5; g.strokeRect(x + 8, y + 8, 240, 112);
-      g.fillStyle = '#f0e2bd'; g.font = 'bold 66px "Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif';
+      g.fillStyle = '#f0e2bd'; g.font = 'bold 48px "Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif';
       g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, x + 128, y + 68);
       for (let i = 0; i < 500; i++) { g.fillStyle = 'rgba(40,25,10,' + (r() * 0.35) + ')'; g.fillRect(x + r() * 256, y + r() * 128, 1 + r() * 3, 1 + r() * 3); }
     });
@@ -395,7 +417,7 @@
       const dx = L.h[y * S + ((x + 1) % S)] - L.h[y * S + ((x + S - 1) % S)];
       const dy = L.h[((y + 1) % S) * S + x] - L.h[((y + S - 1) % S) * S + x];
       let k = 1 - sat((cav[i] - L.h[i]) * 1.6) * 0.45;
-      if (relief) k *= 1 + G.clamp((-dx * 0.6 + dy * 0.9) * relief * 2, -0.22, 0.22);
+      if (relief) k *= 1 + Math.min(.22,Math.max(-.22,(-dx*.6+dy*.9)*relief*2));
       const o = off + i * 4;
       out[o] = Math.round(255 * Math.sqrt(sat(L.c[i * 3] * k)));
       out[o + 1] = Math.round(255 * Math.sqrt(sat(L.c[i * 3 + 1] * k)));
@@ -408,37 +430,105 @@
       const i = y * S + x;
       const dx = (L.h[y * S + ((x + 1) % S)] - L.h[y * S + ((x + S - 1) % S)]) * strength;
       const dy = (L.h[((y + 1) % S) * S + x] - L.h[((y + S - 1) % S) * S + x]) * strength;
-      const l = Math.sqrt(dx * dx + dy * dy + 1), o = off + i * 4;
+      const l = Math.sqrt(dx * dx + dy * dy + 1), o = off + i * 2;
       out[o] = Math.round((-dx / l * 0.5 + 0.5) * 255); out[o + 1] = Math.round((-dy / l * 0.5 + 0.5) * 255);
-      out[o + 2] = Math.round((1 / l * 0.5 + 0.5) * 255); out[o + 3] = 255;
+      // The shader reconstructs positive tangent-space Z from XY.
     }
   }
   const NSTR = { sand: 3, cobble: 7, tiles: 5, blocks: 6, plaster: 3, rubble: 8, trim: 3, roof: 3, wood: 4, crate: 4, door: 4, window: 2, metal: 3, cloth: 2, sign: 1, decal: 1 };
 
-  // Builds the world texture arrays one layer per call to `step`, so the page can show progress.
-  T.worldBuilder = function (withNormals, aniso) {
-    const n = ORDER.length, albedo = new Uint8Array(S * S * 4 * n), normal = withNormals ? new Uint8Array(S * S * 4 * n) : null;
-    let k = 0;
-    const finish = (data) => {
-      const t = new THREE.DataTexture2DArray(data, S, S, n);
-      t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
-      t.generateMipmaps = true; t.anisotropy = aniso; t.needsUpdate = true;
-      t.onUpdate = () => { t.image.data = null; };   // the GPU keeps its copy; free ours
+  // Keep the authored stone courses, boards and lettering at a consistent physical scale.
+  // Large surfaces get another octave of relief at the destination texel density. XY normals
+  // occupy RG8. Roughness is packed as gloss in the albedo alpha (coverage for decals).
+  function resizeLayer(src, channels, dst, offset, size, grain, normal) {
+    if (size === S) { dst.set(src,offset); return; }
+    const ratio=S/size, mask=S-1;
+    for(let y=0;y<size;y++) {
+      const py=(y+.5)*ratio-.5, iy=Math.floor(py), fy=py-iy;
+      const row0=(iy&mask)*S, row1=((iy+1)&mask)*S;
+      for(let x=0;x<size;x++) {
+        const px=(x+.5)*ratio-.5, ix=Math.floor(px), fx=px-ix;
+        const a=(row0+(ix&mask))*channels, b=(row0+((ix+1)&mask))*channels;
+        const c=(row1+(ix&mask))*channels, d=(row1+((ix+1)&mask))*channels;
+        const o=offset+(y*size+x)*channels;
+        const g=(y&255)*256+(x&255), relief=grain ? grain[g] : 0;
+        for(let k=0;k<channels;k++) {
+          const top=src[a+k]+fx*(src[b+k]-src[a+k]), bottom=src[c+k]+fx*(src[d+k]-src[c+k]);
+          let value=top+fy*(bottom-top);
+          if (grain) {
+            if(normal) value+=(relief-grain[k ? ((g+256)&65535) : (g&65280)|((x+1)&255)])*.80;
+            else value+=relief*(k===3 ? .20 : .55);
+          }
+          dst[o+k]=Math.max(0,Math.min(255,Math.round(value)));
+        }
+      }
+    }
+  }
+  // This pure-data builder also runs in a dedicated worker on HTTP(S).
+  T.worldBuilder = function (withNormals, aniso, surfaceSize) {
+    const large=surfaceSize || (G.Gfx && G.Gfx.preset.surfaceSize) || S;
+    const split=large>S, small=Math.min(S,large);
+    function bank(size,count) {
+      return {size,count,albedo:new Uint8Array(size*size*4*count),
+        normal:withNormals ? new Uint8Array(size*size*2*count) : null};
+    }
+    const data={base:bank(small,split ? ORDER.length-5 : ORDER.length), large:split ? bank(large,5) : null};
+    let k=0;
+    return {total:ORDER.length, data,
+      step() {
+        const name=ORDER[k], L=gen[name](), useLarge=split && k<5;
+        const dest=useLarge ? data.large : data.base, index=k-(split&&!useLarge ? 5 : 0);
+        const grain=useLarge ? new Int8Array(65536) : null;
+        if (grain) {
+          const rng=rngOf(901+k), pores=vnoise(256,k===0 ? 64 : 90,124+k);
+          for(let i=0;i<grain.length;i++) grain[i]=(rng()-.5)*10+(pores[i]-.5)*16;
+        }
+        const alb=new Uint8Array(S*S*4); pack(L,alb,0,withNormals ? .25 : .7);
+        resizeLayer(alb,4,dest.albedo,index*dest.size*dest.size*4,dest.size,grain,false);
+        if (withNormals) {
+          const norm=new Uint8Array(S*S*2); packNormal(L,norm,0,NSTR[name]*2);
+          resizeLayer(norm,2,dest.normal,index*dest.size*dest.size*2,dest.size,grain,true);
+        }
+        return ++k===ORDER.length;
+      },
+      result() {return T.worldArrays(data,aniso);}
+    };
+  };
+  T.worldArrays = function (data,aniso) {
+    const finish = (bank,key) => {
+      if (!bank || !bank[key]) return null;
+      const t=new THREE.DataTexture2DArray(bank[key],bank.size,bank.size,bank.count);
+      t.format=key==='normal' ? THREE.RGFormat : THREE.RGBAFormat;
+      t.wrapS=t.wrapT=THREE.RepeatWrapping;
+      t.minFilter=THREE.LinearMipmapLinearFilter; t.magFilter=THREE.LinearFilter;
+      t.generateMipmaps=true; t.anisotropy=Math.min(aniso,T.aniso||1); t.needsUpdate=true;
+      t.onUpdate=()=>{ t.image.data=null; };
       return t;
     };
-    return {
-      total: n,
-      step() {
-        const name = ORDER[k], L = gen[name]();
-        pack(L, albedo, k * S * S * 4, withNormals ? 0.3 : 0.75);
-        if (normal) packNormal(L, normal, k * S * S * 4, NSTR[name] * 2);
-        k++;
-        return k >= n;
-      },
-      result() { return { albedo: finish(albedo), normal: normal ? finish(normal) : null }; },
-    };
+    return {albedo:finish(data.base,'albedo'), normal:finish(data.base,'normal'),
+      largeAlbedo:finish(data.large,'albedo'), largeNormal:finish(data.large,'normal')};
+  };
+  T.buildWorld = async function (p,progress) {
+    if (typeof Worker!=='undefined' && typeof OffscreenCanvas!=='undefined' && location.protocol!=='file:') {
+      let worker;
+      try {
+        const data=await new Promise((resolve,reject)=>{
+          worker=new Worker('js/surfaces-worker.js');
+          worker.onerror=reject;
+          worker.onmessage=e=>{if(e.data.error) reject(Error(e.data.error)); else if(e.data.bank) resolve(e.data.bank); else progress(e.data.step,ORDER.length);};
+          worker.postMessage({size:p.surfaceSize,normals:p.normals});
+        });
+        return T.worldArrays(data,p.aniso);
+      } catch(e) { /* Restricted workers and missing worker canvas support use the yielding builder. */ }
+      finally { if(worker) worker.terminate(); }
+    }
+    const wb=T.worldBuilder(p.normals,p.aniso,p.surfaceSize);
+    for(let i=1;i<=wb.total;i++) {
+      progress(i,wb.total);
+      await new Promise(resolve=>setTimeout(resolve,0));
+      wb.step();
+    }
+    return wb.result();
   };
 
   // ---------- small detail maps (RGBA, tiled, linear data) ----------
@@ -446,6 +536,7 @@
     const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true;
+    t.anisotropy=T.aniso || 1;
     if (opt && opt.srgb) t.encoding = THREE.sRGBEncoding;
     t.needsUpdate = true;
     return t;
@@ -572,6 +663,6 @@
     return (T.cache[key] = t);
   };
   T.init = function (renderer) {
-    T.aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4);
+    T.aniso = Math.min(G.Gfx.preset.aniso, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4);
   };
-})(window.G);
+})(typeof window === 'undefined' ? self.G : window.G);

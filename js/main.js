@@ -12,18 +12,18 @@
   const DR = { base: 1, scale: 1, acc: 0, n: 0, t: 0, good: 0, auto: true };
   G.DR = DR;
   function baseRatio(preset) {
-    const cap = G.Touch.primary() && preset.key === 'low' ? 1.25 : preset.dprMax;
+    // A software rasteriser stays at 1x on the low preset. Real GPUs keep the preset cap,
+    // so high and ultra still fill 1x and 1.25x–1.5x displays.
+    const cap = G.gpu && G.gpu.soft && preset.key === 'low' ? 1 : preset.dprMax;
     return Math.min(window.devicePixelRatio || 1, cap);
   }
   function applySize() {
-    const r = G.renderer;
     DR.base = baseRatio(G.Gfx.preset);
-    r.setPixelRatio(DR.base * DR.scale);
-    r.setSize(innerWidth, innerHeight);
+    G.Video.resize(G.renderer, DR.base, G.settings.renderScale * DR.scale);
     G.camera.aspect = innerWidth / innerHeight; G.camera.updateProjectionMatrix();
     G.VM.resize(innerWidth / innerHeight);
   }
-  G.setRenderScale = function (s) { DR.scale = G.clamp(s, G.Gfx.preset.scaleMin, G.Gfx.preset.scaleMax); applySize(); };
+  G.setRenderScale = function (s) { DR.acc = DR.n = DR.t = DR.good = 0; DR.scale = G.clamp(s, G.Gfx.preset.scaleMin, G.Gfx.preset.scaleMax); applySize(); };
   function trackFrame(ms) {
     if (!DR.auto || ms <= 0 || ms > 120) return;   // ignore stalls and hidden-tab gaps
     DR.acc += ms; DR.n++; DR.t += ms;
@@ -34,14 +34,17 @@
     if (avg > 19.5) { s = Math.max(p.scaleMin, s * Math.max(0.8, Math.sqrt(16.7 / avg))); DR.good = 0; }
     else if (avg < 17.6 && s < p.scaleMax) { if (++DR.good >= 3) { s = Math.min(p.scaleMax, s * 1.07); DR.good = 0; } }
     else DR.good = 0;
-    if (Math.abs(s - DR.scale) > 0.015) { DR.scale = s; applySize(); }
+    if (s !== DR.scale) { DR.scale = s; applySize(); }
   }
 
   // Compile every shader the game uses later (guns, soldiers, bomb, effects) before play, so the
   // first time one appears the frame does not stall.
   function warmUp(renderer, scene, camera) {
     const g = new THREE.Group();
-    ['knife', 'p10', 'h50', 'v9', 'ar7', 'tr4', 'r90', 'bomb'].forEach((id) => g.add(G.Weapons.makeGunMesh(id)));
+    G.GunModels.IDS.forEach((id) => {
+      const gun = G.GunModels.mesh(id);
+      gun.layers.enable(4); g.add(gun);
+    });
     g.add(new THREE.Mesh(new THREE.SphereGeometry(0.01, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff2a1a })));   // bomb light
     scene.add(g);
     const dummy = { team: 'atk', name: '·', inv: {}, cur: 'knife', pos: new THREE.Vector3(), vel: new THREE.Vector3() };
@@ -50,6 +53,7 @@
     G.FX.warm();
     renderer.compile(scene, camera);
     renderer.render(scene, camera);
+    G.Gfx.drawMovingShadow(renderer, scene, camera);
     G.BotModel.remove(dummy);
     scene.remove(g);
     G.FX.clear();
@@ -59,19 +63,25 @@
   G.boot = async function () {
     const status = $('status');
     const det = G.Gfx.detect();
+    $('gpuWarning').hidden = !det.soft;
+    const touch = G.Touch.primary();
+    G.gpu = det;
+    G.Video.defaults(touch, det.soft);
+    DR.auto = G.settings.dynamicResolution;
+    const query = new URLSearchParams(location.search);
     const needGL = '需要支持 WebGL2 的浏览器（新版 Chrome / Edge / Safari）。';
     if (!det.webgl2) { status.textContent = needGL; return; }
-    const q = G.settings.quality || 'auto';
-    const preset = G.Gfx.preset = G.Gfx.PRESETS[q === 'auto' ? (det.soft || G.Touch.primary() ? 'low' : 'high') : q] || G.Gfx.PRESETS.high;
-    G.gpu = det;
+    const q = query.get('quality') || G.settings.quality || 'auto';
+    const preset = G.Gfx.preset = G.Gfx.PRESETS[q === 'auto' ? G.Gfx.autoQuality(det, touch) : q] || G.Gfx.PRESETS.high;
     let renderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: preset.aa, powerPreference: 'high-performance', stencil: false }); }
+    try { renderer = new THREE.WebGLRenderer({ antialias: preset.key === 'medium', powerPreference: 'high-performance', stencil: false }); }
     catch (e) { status.textContent = '无法启动 3D 渲染。' + needGL; return; }
     if (!renderer.capabilities.isWebGL2) { renderer.dispose(); status.textContent = needGL; return; }
     // the tone curve applies the display gamma itself (cheaper than the sRGB curve per pixel)
     renderer.outputEncoding = THREE.LinearEncoding;
     renderer.toneMapping = THREE.CustomToneMapping;
-    renderer.toneMappingExposure = 0.8;
+    renderer.toneMappingExposure = 0.71;
+    renderer.info.autoReset = false;
     renderer.autoClear = false;
     renderer.setClearColor(0xbfae92, 1);
     DR.base = baseRatio(preset);
@@ -91,16 +101,15 @@
     sun.position.copy(G.sunDir).multiplyScalar(90);
     scene.add(sun, sun.target);
 
-    const wb = G.Tex.worldBuilder(preset.normals, preset.aniso);
-    for (let i = 1; ; i++) {
-      status.textContent = '正在生成材质 ' + i + ' / ' + wb.total + '…';
-      await yieldFrame();
-      if (wb.step()) break;
-    }
+    const materialStart = performance.now();
+    const surfaces = await G.Tex.buildWorld(preset,(i,n) => {
+      status.textContent = '正在生成材质 ' + i + ' / ' + n + '…';
+    });
+    G.Tex.buildMs = performance.now() - materialStart;
     status.textContent = '正在搭建小镇…';
     await yieldFrame();
     const geo = G.MapGeo.build();
-    G.MapMesh.build(scene, geo, wb.result(), preset);
+    G.MapMesh.build(scene, geo, surfaces, preset);
     status.textContent = '正在载入光照…';
     await G.Gfx.loadLightmaps(geo);
     G.Gfx.buildShadow(renderer, scene, preset.shadow, G.MapMesh.frondTex);
@@ -111,6 +120,9 @@
     G.HUD.init();
     status.textContent = '正在编译着色器…';
     await yieldFrame();
+    G.Video.init(renderer, preset);
+    G.Gfx.initMovingShadow(preset.movingShadow);
+    applySize();
     warmUp(renderer, scene, camera);
 
     window.addEventListener('resize', applySize);
@@ -118,12 +130,18 @@
     status.textContent = '准备就绪 · 选择阵营开始';
     $('btnAtk').disabled = $('btnDef').disabled = false;
     if (/autostart=(atk|def)/.test(location.search)) startMatch(RegExp.$1, true);
+    const view = (query.get('view') || '').split(',').map(Number);
+    if (query.has('autostart') && view.length === 5 && view.every(Number.isFinite)) {
+      frame(1 / 60, 0);
+      camera.position.set(view[0], view[1], view[2]); camera.rotation.set(view[4], view[3], 0, 'YXZ');
+      G.paused = true; G.loopOn = false; frame(0, 0);
+    }
     let last = performance.now();
     requestAnimationFrame(function loop(now) {
       requestAnimationFrame(loop);
       const ms = now - last; last = now;
       const dt = Math.min(0.05, ms / 1000);
-      if (G.loopOn) { frame(dt, now / 1000); trackFrame(ms); }
+      if (G.loopOn) { frame(dt, now / 1000); trackFrame(ms); G.Video.stats(ms); }
     });
   };
 
@@ -147,10 +165,16 @@
     }
     inp.endFrame();
     const r = G.renderer;
+    r.info.reset();
+    G.BotModel.updateLOD(cam);
+    G.MapMesh.updateDetail(cam);
+    G.Gfx.drawMovingShadow(r, G.scene, cam);
+    G.Video.begin(r);
     r.clear();
     r.render(G.scene, cam);
     const p = G.Player.agent;
     if (inp.active && p && p.alive) G.VM.render(r);
+    G.Video.end(r);
   }
   G.frame = frame;
 
@@ -255,21 +279,7 @@
     const setDiff = (i) => { G.settings.diff = i; diffBtns.forEach((b, k) => b.classList.toggle('on', k === i)); G.saveSettings(); };
     diffBtns.forEach((b, i) => b.addEventListener('click', () => setDiff(i)));
     setDiff(G.settings.diff | 0);
-    const qBtns = { auto: $('qAuto'), low: $('qLow'), high: $('qHigh') }, cur = G.settings.quality || 'auto';
-    for (const k in qBtns) {
-      qBtns[k].classList.toggle('on', k === cur);
-      qBtns[k].addEventListener('click', () => {
-        if ((G.settings.quality || 'auto') === k) return;
-        G.settings.quality = k;
-        if (!G.saveSettings()) {
-          try { history.replaceState(Object.assign({}, history.state, { sandfireReload: G.settings }), ''); } catch (e) { }
-        }
-        $('status').textContent = '正在切换画质…';
-        setTimeout(() => location.reload(), 60);
-      });
-    }
-    const p = G.Gfx.preset;
-    $('qNote').textContent = (p.key === 'low' ? '当前：流畅' : '当前：高') + (G.gpu.soft ? ' · 检测到没有可用显卡（软件渲染），推荐「流畅」' : '');
+    G.Video.wire();
     const sens = $('sens'), sens2 = $('sens2'), sv = $('sensVal'), vol = $('vol'), raw = $('raw');
     const setSens = (v) => { G.settings.sens = +v; sv.textContent = (+v).toFixed(2); sens.value = v; sens2.value = v; G.saveSettings(); };
     sens.addEventListener('input', () => setSens(sens.value));

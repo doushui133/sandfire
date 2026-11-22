@@ -1,0 +1,8 @@
+#gpuWarning { margin:10px 0; padding:10px 12px; border-left:4px solid #ffb45f; background:#3f2c1d; color:#ffe1b7; line-height:1.5; font-size:14px }
+.video-row { flex-wrap:wrap }
+.video-row select { font:inherit; padding:5px 9px; color:#f0e2c9; background:#27231c; border:1px solid #82725b; border-radius:3px }
+.video-row label:has(input) { min-width:0; cursor:pointer }
+#videoStats { position:fixed; z-index:4; left:calc(14px + env(safe-area-inset-left,0px)); top:calc(232px + env(safe-area-inset-top,0px)); max-width:220px; pointer-events:none; padding:3px 6px; border-radius:3px; background:#17140fba; color:#efe9d8; font:11px/1.35 Consolas,monospace; font-variant-numeric:tabular-nums; white-space:pre }
+@media (max-width:700px) { #videoStats { top:calc(152px + env(safe-area-inset-top,0px)) } }
+.touch #videoStats { left:calc(var(--left) + 58px); top:calc(var(--top) + 76px); max-width:34vw; font-size:10px }
+.touch .video-row select { min-height:38px }

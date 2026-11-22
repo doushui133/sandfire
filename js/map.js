@@ -148,6 +148,24 @@
     else if (ch === 'p') addBox(x0 + 0.78, 0, z0 + 0.78, x0 + 1.22, 6, z0 + 1.22, 'palm');
   }
 
+  // Small fixtures are bolted above door height. Collision and rendering use these same bounds.
+  // The feet of the stalls occupy existing blocked crate cells along the edge of the market.
+  M.lamps = [];
+  for (let r = 1; r < H - 1; r++) for (let c = 1; c < W - 1; c++) {
+    if (!'#%'.includes(M.ch(c,r)) || (c * 13 + r * 17) % 11) continue;
+    for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      if (!M.walkable(c+dx,r+dz) || M.floorH(c+dx,r+dz)) continue;
+      const x = M.cellX(c) + dx*1.15, z = M.cellZ(r) + dz*1.15;
+      M.lamps.push(addBox(x-.12,2.78,z-.12,x+.12,3.18,z+.12,'lamp'));
+      break;
+    }
+  }
+  for (const [c,r] of [[45,8],[33,8]]) {
+    const x=M.cellX(c), z=M.cellZ(r);
+    for (const s of [-1,1]) addBox(x+s*.72-.035,1.05,z-.75,x+s*.72+.035,2.43,z-.68,'stallPost');
+    addBox(x-.84,2.43,z-.84,x+.84,2.53,z+.84,'stallCanopy');
+  }
+
   // spatial hash: cell → box indices
   const bins = Array.from({ length: W * H }, () => []);
   M.boxes.forEach((b, i) => {

@@ -63,7 +63,7 @@
       if (key === 'decal') m.renderOrder = 1; else m.layers.enable(2);
       root.add(m);
     }
-    buildProps(root, geo.props);
+    buildProps(root, geo.props, preset);
     buildDistant(root);
     scene.add(root);
     MM.root = root;
@@ -89,20 +89,15 @@
     return t;
   }
   MM.frondTex = null;
-  function buildProps(root, props) {
+  const detailGroups = [];
+  function buildProps(root, props, preset) {
     const metalGeos = [], trunkGeos = [], frondGeos = [], darkGeos = [];
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
+    const sacks = props.filter(p => p.type === 'sack'), barrels = props.filter(p => p.type === 'barrel');
     const BARREL_COLS = [0x3f6a8a, 0x8a3a2c, 0x4a6a3a, 0xb08a2a, 0x5a5f63];
     for (const p of props) {
       const rng = G.seeded(p.seed || 7);
-      if (p.type === 'barrel') {
-        const prof = [[0, 0], [0.4, 0], [0.41, 0.02], [0.41, 0.27], [0.43, 0.29], [0.41, 0.31], [0.41, 0.84], [0.43, 0.86], [0.41, 0.88], [0.41, 1.13], [0.39, 1.15], [0.36, 1.15], [0.36, 1.13], [0, 1.13]];
-        const g = new THREE.LatheGeometry(prof.map(([a, b]) => new THREE.Vector2(a, b)), 22);
-        const c = lin(BARREL_COLS[Math.floor(rng() * BARREL_COLS.length)]);
-        G.Gfx.paint(g, c, 0.55, 0.55);
-        g.applyMatrix4(m4.makeRotationY(rng() * 6.28).setPosition(p.x, 0, p.z));
-        metalGeos.push(g);
-      } else if (p.type === 'palm') {
+      if (p.type === 'palm') {
         const h = 5.6 + rng() * 1.3, lean = (rng() - 0.5) * 0.5, leanDir = rng() * 6.28;
         const pts = [];
         for (let i = 0; i <= 8; i++) { const t = i / 8; pts.push(new THREE.Vector3(Math.cos(leanDir) * lean * t * t, h * t, Math.sin(leanDir) * lean * t * t)); }
@@ -146,7 +141,11 @@
         const mid = a.clone().add(b).multiplyScalar(0.5); mid.y -= p.sag; mid.z += 0.3;
         const g = new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 24, 0.014, 4, false);
         G.Gfx.paint(g, lin(0x1c1a18), 0.7, 0);
-        darkGeos.push(g);
+        if (!preset.movingShadow) {
+          g.computeBoundingSphere();
+          const cable = new THREE.Mesh(g,MM.propMat || (MM.propMat=G.Gfx.litMaterial({})));
+          cable.matrixAutoUpdate=false; root.add(cable); detailGroups.push(cable);
+        } else darkGeos.push(g);
       }
     }
     const add = (geos, mat, layer) => {
@@ -155,7 +154,31 @@
       m.matrixAutoUpdate = false; if (layer) m.layers.enable(layer);
       root.add(m); return m;
     };
-    MM.propMat = G.Gfx.litMaterial({});
+    MM.propMat = MM.propMat || G.Gfx.litMaterial({});
+    const instance = (list,geo,transform) => {
+      if (!list.length) return;
+      G.Gfx.paint(geo,[1,1,1],list === barrels ? .52 : .94, list === barrels ? .48 : 0);
+      const mesh = new THREE.InstancedMesh(geo,MM.propMat,list.length);
+      list.forEach((p,i) => {
+        const shade=transform(p,i);
+        mesh.setMatrixAt(i,m4); mesh.setColorAt(i,new THREE.Color(shade).convertSRGBToLinear());
+      });
+      mesh.layers.enable(2); root.add(mesh);
+    };
+    const prof=[[0,0],[.39,0],[.41,.025],[.41,.27],[.432,.29],[.41,.31],[.41,.84],[.432,.86],[.41,.88],[.41,1.13],[.39,1.15],[.36,1.15],[.36,1.13],[0,1.13]];
+    instance(barrels,new THREE.LatheGeometry(prof.map(p=>new THREE.Vector2(p[0],p[1])),18),p=>{
+      m4.makeTranslation(p.x,0,p.z); return BARREL_COLS[p.seed%BARREL_COLS.length];
+    });
+    const sack=G.Geo.rbox(1,1,1,.23,3), sp=sack.attributes.position;
+    for(let i=0;i<sp.count;i++){
+      const x=sp.getX(i), y=sp.getY(i), z=sp.getZ(i);
+      sp.setXYZ(i,x*(1-.13*y*y),y*(.97-.1*Math.cos(x*11+z*3)),z*(.98+.03*Math.sin(x*12)));
+    }
+    sack.computeVertexNormals();
+    instance(sacks,sack,p=>{
+      m4.makeScale(p.w,p.h,p.d).setPosition(p.x,p.y,p.z);
+      return [0x9e9069,0xb4a47e,0x95896c][p.seed%3];
+    });
     MM.frondTex = frondTexture();
     MM.frondMat = G.Gfx.litMaterial({ map: MM.frondTex, doubleSide: true });
     add(metalGeos, MM.propMat, 2);
@@ -163,6 +186,10 @@
     add(darkGeos, MM.propMat, 0);
     add(frondGeos, MM.frondMat, 3);
   }
+
+  MM.updateDetail = function (camera) {
+    for (const m of detailGroups) m.visible = m.geometry.boundingSphere.center.distanceToSquared(camera.position) < 48*48;
+  };
 
   // ---------- distant scenery: sand plain, dunes and the rest of the town ----------
   function buildDistant(root) {
@@ -199,6 +226,16 @@
       const w = 5 + r() * 9, dd = 5 + r() * 9, h = 4 + r() * 6;
       box(x, z, w, dd, h, lin(tints[Math.floor(r() * tints.length)]));
       if (r() < 0.25) box(x + (r() - 0.5) * w * 0.5, z + (r() - 0.5) * dd * 0.5, w * 0.4, dd * 0.4, h + 1.5 + r() * 2, lin(tints[Math.floor(r() * tints.length)]));
+    }
+    // Eroded mesas: flat cap rock above sloping scree, with an irregular silhouette.
+    for (let i=0;i<28;i++) {
+      const a=i*.73, dist=165+r()*88, x=Math.cos(a)*dist, z=Math.sin(a)*dist;
+      const w=9+r()*17, h=9+r()*13, rock=new THREE.CylinderGeometry(w*.61,w,h,9,2);
+      rock.scale(1,1,.65); rock.rotateY(a); rock.translate(x,h*.47,z);
+      G.Gfx.paint(rock,lin(0xa88669),1,0); geos.push(rock);
+      const cap=new THREE.CylinderGeometry(w*.54,w*.62,h*.18,9);
+      cap.scale(1,1,.65); cap.rotateY(a); cap.translate(x,h*1.05,z);
+      G.Gfx.paint(cap,lin(0x91765e),.94,0); geos.push(cap);
     }
     // a water tower and a radio mast break the skyline
     box(-78, 64, 1.2, 1.2, 16, lin(0x7a7266)); box(-78, 64, 7, 7, 4, lin(0x9aa4a8)); geos[geos.length - 1].translate(0, 16, 0);

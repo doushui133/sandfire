@@ -20,13 +20,24 @@
         name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
         const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
       }
-      soft = /swiftshader|basic render|llvmpipe|softpipe|software|warp|mesa offscreen/i.test(name);
+      soft = /swiftshader|basic render|llvmpipe|softpipe|software|warp|mesa offscreen|hyper-v|vmware|virtualbox/i.test(name);
     } catch (e) { /* keep defaults */ }
     return { name, soft, webgl2 };
   };
+  function preset(key, label, dprMax, aniso, shadow, movingShadow, surfaceSize, particles) {
+    return {key, label, dprMax, aniso, shadow, movingShadow, surfaceSize, particles,
+      aa: key !== 'low', normals: key !== 'low', spec: true, pcf9: key === 'ultra', scaleMin: 0.75, scaleMax: 1};
+  }
   Gfx.PRESETS = {
-    low: { key: 'low', aa: false, dprMax: 1, scaleMax: 1, scaleMin: 0.5, shadow: 1536, normals: false, spec: false, pcf9: false, aniso: 1, particles: 0.55 },
-    high: { key: 'high', aa: true, dprMax: 1.5, scaleMax: 1, scaleMin: 0.6, shadow: 2048, normals: true, spec: true, pcf9: true, aniso: 8, particles: 1 },
+    low: preset('low', '流畅', 1.25, 4, 1024, 0, 256, 0.55),
+    medium: preset('medium', '均衡', 1.75, 8, 1536, 0, 512, 0.72),
+    high: preset('high', '高', 2, 16, 2048, 512, 1024, 1),
+    ultra: preset('ultra', '极致', 2.5, 16, 2560, 768, 2048, 1),
+  };
+  Gfx.autoQuality = function (gpu, touch) {
+    if (gpu.soft) return 'low';
+    if (touch) return /adreno\D{0,12}(?:7[3-9]\d|8\d\d)|immortalis|mali-g(?:72[05]|92[05])|apple (?:a(?:1[7-9]|2\d)|m[1-9])/i.test(gpu.name) ? 'high' : 'medium';
+    return /rtx\s*(?:[3-5]0[7-9]0|[45]060)|rx\s*(?:[67][789]\d0|9[07]70)/i.test(gpu.name) ? 'ultra' : 'high';
   };
 
   // ---------- shared uniforms (one object, referenced by every material) ----------
@@ -51,6 +62,10 @@
     uFlashColor: { value: new THREE.Color(0, 0, 0) },
     uFlashRange: { value: 8 },
     uTime: { value: 0 },
+    uSharpen: { value: 0 },
+    uMovingMatrix: { value: new THREE.Matrix4() },
+    uMovingMap: { value: null },
+    uMovingTexel: { value: 0 },
   };
   function neutral(r, g, b) {
     const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1, THREE.RGBAFormat);
@@ -136,23 +151,49 @@
   const WORLD_FS = [
     'precision highp sampler2DArray;',
     GLSL_COMMON,
-    'uniform sampler2DArray uAlbedo;',
+    'uniform sampler2DArray uAlbedo; uniform float uSharpen;',
+    '#ifdef MOVING_SHADOW',
+    'uniform mat4 uMovingMatrix; uniform sampler2D uMovingMap; uniform float uMovingTexel;',
+    'float movingShadow(vec3 wp){vec3 p=(uMovingMatrix*vec4(wp,1.)).xyz;',
+    ' if(max(abs(p.x),abs(p.y))>=.992 || abs(p.z)>1.) return 1.;',
+    ' p=p*.5+.5; vec2 t=p.xy/uMovingTexel-.5, f=fract(t), b=(floor(t)+.5)*uMovingTexel;',
+    ' vec2 d=vec2(uMovingTexel,0.); float z=p.z-.001;',
+    ' return mix(mix(step(z,unpackRGBAToDepth(texture2D(uMovingMap,b))),step(z,unpackRGBAToDepth(texture2D(uMovingMap,b+d.xy))),f.x),',
+    ' mix(step(z,unpackRGBAToDepth(texture2D(uMovingMap,b+d.yx))),step(z,unpackRGBAToDepth(texture2D(uMovingMap,b+d.xx))),f.x),f.y);}',
+    '#endif',
+    '#ifdef LARGE_SURFACES',
+    'uniform sampler2DArray uLargeAlbedo; uniform sampler2DArray uLargeNormal;',
+    '#endif',
     '#ifdef NORMALMAP',
     'uniform sampler2DArray uNormal;',
     '#endif',
     'uniform sampler2D uLightMap; uniform sampler2D uMacro; uniform float uLMScale; uniform float uIndirect;',
     'varying vec3 vUvL; varying vec2 vUv2; varying vec3 vN; varying vec3 vT; varying vec3 vW; varying vec3 vTint; varying vec3 vMat; varying vec4 vFog;',
     'void main() {',
-    '  vec4 tex = texture( uAlbedo, vUvL );',
+    '#ifdef LARGE_SURFACES',
+    '  vec3 bankUV=vec3(vUvL.xy,vUvL.z-5.);',
+    '  vec4 tex=vUvL.z<4.5 ? texture(uLargeAlbedo,vUvL) : texture(uAlbedo,bankUV);',
+    '#else',
+    '  vec4 tex=texture(uAlbedo,vUvL);',
+    '#endif',
     '#ifdef DECAL',
     '  if ( tex.a < 0.02 ) discard;',
+    '#endif',
+    '#ifdef LOW',
+    '  if (uSharpen>0.) {vec3 blur=texture(uAlbedo,vUvL,1.25).rgb; vec3 diff=tex.rgb-blur;',
+    '    tex.rgb=clamp(tex.rgb+uSharpen*diff/(1.+4.*abs(diff)),0.,1.);}',
     '#endif',
     '  vec3 alb = tex.rgb * tex.rgb * vTint;',
     '  vec4 mac = texture2D( uMacro, vW.xz * 0.021 + vec2( vW.y * 0.017, 0.0 ) );',
     '  alb *= 0.86 + 0.3 * mac.r;',
     '  vec3 Ng = normalize( vN ); vec3 N = Ng;',
     '#ifdef NORMALMAP',
-    '  vec3 nm = texture( uNormal, vUvL ).xyz * 2.0 - 1.0;',
+    '#ifdef LARGE_SURFACES',
+    '  vec2 slope=(vUvL.z<4.5 ? texture(uLargeNormal,vUvL).rg : texture(uNormal,bankUV).rg)*2.-1.;',
+    '#else',
+    '  vec2 slope=texture(uNormal,vUvL).rg*2.-1.;',
+    '#endif',
+    '  vec3 nm=vec3(slope,sqrt(max(.001,1.-dot(slope,slope))));',
     '  vec3 T = normalize( vT ); vec3 B = cross( Ng, T );',
     '  N = normalize( T * nm.x + B * nm.y + Ng * nm.z );',
     '#endif',
@@ -161,19 +202,24 @@
     '    alb *= mix( 0.7, 1.0, smoothstep( 0.0, 0.9 + mac.b * 0.9, hb ) );',
     '#ifndef LOW',
     '    float st = texture2D( uMacro, vec2( ( vW.x + vW.z ) * 0.31, 0.37 ) ).g;',
-    '    alb *= 1.0 - 0.32 * st * smoothstep( 2.6, 0.15, vMat.z - vW.y );',
+    '    float top=1.-smoothstep(.15,2.6,vMat.z-vW.y);',
+    '    alb = mix(alb,alb*vec3(1.04,1.03,1.015)+.014,top*.65);',
+    '    alb *= 1.0 - .29 * st * top;',
     '#endif',
     '  }',
     '  float sh = sunShadow( vW, Ng );',
+    '#ifdef MOVING_SHADOW',
+    '  sh *= movingShadow(vW + Ng*.02);',
+    '#endif',
     '  float ndl = max( dot( N, uSunDir ), 0.0 ) * step( 0.0, dot( Ng, uSunDir ) );',
     '  vec3 ind = texture2D( uLightMap, vUv2 ).rgb; ind = ind * ind * uLMScale * uIndirect;',
     '  vec3 V = normalize( cameraPosition - vW );',
-    '  float gloss = vMat.x * tex.a;',
+    '  float gloss = mix(0.015, vMat.x, sqrt(tex.a));',
     '  float occ = clamp( dot( ind, vec3( 0.73 ) ), 0.0, 1.0 );',
     '#ifdef SPECULAR',
     '  vec3 c = alb * ( uSunColor * ndl * sh + ind + flashLight( vW, Ng ) );',
     '  float fres = pow( 1.0 - max( dot( N, V ), 0.0 ), 5.0 );',
-    '  c += skyColor( reflect( -V, N ) ) * ( 0.04 + 0.96 * fres ) * gloss * occ;',
+    '  c += skyColor( reflect( -V, N ) ) * ( 0.055 + 0.75 * fres ) * gloss * occ;',
     '  vec3 H = normalize( V + uSunDir );',
     '  c += uSunColor * pow( max( dot( N, H ), 0.0 ), 10.0 + 160.0 * gloss ) * gloss * 0.9 * sh * ndl;',
     '#else',
@@ -193,14 +239,16 @@
   ].join('\n');
   Gfx.worldMaterial = function (tex, preset, decal) {
     const defines = {};
+    if (tex.largeAlbedo) defines.LARGE_SURFACES = '';
     if (preset.normals && tex.normal) defines.NORMALMAP = '';
+    if (preset.movingShadow) defines.MOVING_SHADOW = '';
     if (preset.spec) defines.SPECULAR = '';
     if (preset.pcf9) defines.PCF9 = '';
     if (preset.key === 'low') defines.LOW = '';
     if (decal) defines.DECAL = '';
     const m = new THREE.ShaderMaterial({
       defines,
-      uniforms: Object.assign({ uAlbedo: { value: tex.albedo }, uNormal: { value: tex.normal }, uMacro: { value: G.Tex.macro() } }, U),
+      uniforms: Object.assign({ uAlbedo: { value: tex.albedo }, uNormal: { value: tex.normal }, uLargeAlbedo: {value:tex.largeAlbedo}, uLargeNormal: {value:tex.largeNormal}, uMacro: { value: G.Tex.macro() } }, U),
       vertexShader: WORLD_VS, fragmentShader: WORLD_FS,
     });
     if (decal) { m.transparent = true; m.depthWrite = false; m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2; }
@@ -230,6 +278,9 @@
     '  vN = normalize( mat3( modelMatrix ) * objectNormal );',
     '#endif',
     '  vW = wp.xyz; vCol = color; vRM = rm; vObj = position; vObjN = normal; vUv = uv; vSh = 1.0; vFog = vec4( 0.0 );',
+    '#ifdef USE_INSTANCING_COLOR',
+    '  vCol *= instanceColor;',
+    '#endif',
     '#ifdef VIEWMODEL',
     '  vAmb = uAmbient;',
     '#else',
@@ -412,7 +463,7 @@
     ct.wrapS = ct.wrapT = THREE.RepeatWrapping; ct.magFilter = THREE.LinearFilter; ct.minFilter = THREE.LinearMipmapLinearFilter; ct.generateMipmaps = true; ct.needsUpdate = true;
     const mat = new THREE.ShaderMaterial({
       uniforms: Object.assign({ uClouds: { value: ct } }, U),
-      defines: Gfx.preset && Gfx.preset.key === 'high' ? { CLOUD2: '' } : {},
+      defines: Gfx.preset && Gfx.preset.movingShadow ? { CLOUD2: '' } : {},
       side: THREE.BackSide, depthWrite: false,
       // the smooth gradient is worked out per vertex; only the sun and the clouds per pixel
       vertexShader: [
@@ -423,7 +474,7 @@
         '  vec3 c = mix( uSkyHorizon, uSkyTop, pow( max( h, 0.0 ), 0.42 ) );',
         '  c = mix( c, uFogColor, smoothstep( 0.18, 0.0, h ) * 0.55 );',
         '  vBase = mix( c, uGround * 0.8, smoothstep( 0.0, -0.06, h ) );',
-        '  vec4 p = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );',
+        '  vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0);',
         '  gl_Position = vec4( p.xy, p.w * 0.99999, p.w );',
         '}',
       ].join('\n'),
@@ -435,7 +486,7 @@
         '  vec3 c = vBase;',
         '  float s = max( dot( d, uSunDir ), 0.0 );',
         '  float s8 = s * s; s8 *= s8; s8 *= s8;',
-        '  c += uSunColor * ( pow( s, 1800.0 ) * 30.0 + pow( s8, 11.0 ) * 0.22 + s8 * 0.07 );',
+        '  c += uSunColor * ( smoothstep(.99979,.99990,s)*12.0 + pow(s,550.0)*0.48 + pow( s8, 11.0 ) * 0.18 + s8 * 0.07 );',
         '  if ( h > 0.0 ) {',
         '    vec2 cuv = d.xz / ( h + 0.12 ) * 0.11 + vec2( uTime * 0.0015, uTime * 0.0006 );',
         '#ifdef CLOUD2',
@@ -506,6 +557,38 @@
     U.uShadowTexel.value.set(1 / size, 1 / size);
     Gfx.shadowCam = cam; Gfx.shadowTarget = out;
     return out;
+  };
+
+  // Layer four contains visible soldier bodies, held weapons and dropped guns. Snap the light
+  // centre in its own XY plane so slow camera motion cannot crawl across texels.
+  let moving, depth, shadowCam;
+  const centre = new THREE.Vector3(), lightRight = new THREE.Vector3(), lightUp = new THREE.Vector3();
+  const savedClear = new THREE.Color();
+  Gfx.initMovingShadow = function (size) {
+    if (!size) return;
+    shadowCam = new THREE.OrthographicCamera(-18,18,18,-18,.2,72);
+    shadowCam.position.copy(U.uSunDir.value).multiplyScalar(36);
+    shadowCam.lookAt(0,0,0); shadowCam.updateMatrixWorld(); shadowCam.layers.set(4);
+    lightRight.setFromMatrixColumn(shadowCam.matrixWorld,0);
+    lightUp.setFromMatrixColumn(shadowCam.matrixWorld,1);
+    moving = new THREE.WebGLRenderTarget(size,size,{minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter,stencilBuffer:false});
+    depth = new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,skinning:true});
+    U.uMovingMap.value = moving.texture; U.uMovingTexel.value = 1/size;
+  };
+  Gfx.drawMovingShadow = function (r, scene, camera) {
+    if (!moving) return;
+    const texel = 36 / moving.width;
+    camera.getWorldDirection(centre).multiplyScalar(7).add(camera.position);
+    const x = centre.dot(lightRight), y = centre.dot(lightUp);
+    centre.addScaledVector(lightRight,Math.round(x/texel)*texel-x);
+    centre.addScaledVector(lightUp,Math.round(y/texel)*texel-y);
+    shadowCam.position.copy(centre).addScaledVector(U.uSunDir.value,36);
+    shadowCam.updateMatrixWorld(); U.uMovingMatrix.value.multiplyMatrices(shadowCam.projectionMatrix,shadowCam.matrixWorldInverse);
+    for (const d of G.Weapons.drops) d.mesh.layers.enable(4);
+    const prev = scene.overrideMaterial, alpha = r.getClearAlpha();
+    r.getClearColor(savedClear); r.setRenderTarget(moving); r.setClearColor(0xffffff,1); r.clear();
+    scene.overrideMaterial = depth; r.render(scene,shadowCam); scene.overrideMaterial = prev;
+    r.setClearColor(savedClear,alpha); r.setRenderTarget(null);
   };
 
   // ---------- baked light assets ----------

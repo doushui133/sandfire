@@ -139,6 +139,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 @media (prefers-reduced-motion:reduce){#hitmarker{transition:none}}
 </style>
 <link rel="stylesheet" href="touch.css">
+<link rel="stylesheet" href="video.css">
 </head>
 <body>
 
@@ -188,6 +189,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 </div>
 <div id="rotateNotice" role="status">请将手机横屏游玩</div>
 
+<output id="videoStats" hidden></output>
 <div id="menu" class="overlay">
   <div class="slab">
     <h1>烈沙<span>行动</span></h1>
@@ -197,11 +199,15 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
       <button class="chip on" data-diff="1" id="d1">老兵</button>
       <button class="chip" data-diff="2" id="d2">精英</button>
     </div>
-    <div class="row"><label>画质</label>
-      <button class="chip" id="qAuto">自动</button>
-      <button class="chip" id="qLow">流畅</button>
-      <button class="chip" id="qHigh">高</button>
+    <div id="gpuWarning" role="status" hidden>当前浏览器没有使用显卡（可能在虚拟机或远程桌面中，或浏览器关闭了硬件加速），画面和帧率会很低，鼠标也可能锁不住。请在有显卡的电脑上用 Chrome 或 Edge 打开，并在浏览器「设置 → 系统」里开启「使用图形加速」。</div>
+    <div class="row video-row"><label for="videoQuality">画质</label>
+      <select id="videoQuality"><option value="auto">自动</option><option value="low">流畅</option><option value="medium">均衡</option><option value="high">高</option><option value="ultra">极致</option></select>
       <span class="inline-note" id="qNote"></span>
+    </div>
+    <div class="row video-row"><label for="videoScale">渲染分辨率</label>
+      <select id="videoScale"><option value="1">100%</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.5">50%</option></select>
+      <label><input type="checkbox" id="videoDynamic"> 动态分辨率</label>
+      <label><input type="checkbox" id="videoFPS"> 显示帧率</label>
     </div>
     <div class="row"><label>操作</label>
       <button class="chip" data-mode="auto">自动</button>
@@ -263,7 +269,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
             'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
             'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
             'https://unpkg.com/three@0.128.0/build/three.min.js'];
-  var mods=['look','core','audio','touch','textures','map','mapgeo','gfx','geom','gunmodels','mapmesh','fx','weapons','viewmodel','player','ragdoll','soldier','bots','game','hud','main'];
+  var mods=['look','core','audio','touch','textures','map','mapgeo','gfx','video','geom','gunmodels','mapmesh','fx','weapons','viewmodel','player','ragdoll','soldier','bots','game','hud','main'];
   var status=document.getElementById('status');
   function load(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
   (async function(){

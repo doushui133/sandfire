@@ -12,9 +12,9 @@
   // Lighting shared with the baker. Linear "shader units": surface colour = albedo × irradiance.
   MG.LIGHT = {
     sunDir: norm([-0.5, 0.62, 0.6]),
-    sun: [3.1, 2.7, 2.15],
-    skyTop: [0.26, 0.4, 0.72],
-    skyHorizon: [0.8, 0.76, 0.68],
+    sun: [3.0, 2.58, 2.03],
+    skyTop: [0.20, 0.37, 0.68],
+    skyHorizon: [0.78, 0.755, 0.69],
     ground: [0.42, 0.33, 0.22],
   };
 
@@ -322,6 +322,14 @@
         const sw = w * 0.55, tint = [[0.55, 0.75, 0.85], [0.6, 0.85, 0.6], [1, 0.9, 0.75], [0.85, 0.62, 0.5]][Math.floor(rng() * 4)];
         f.box('wood', c - hw - 0.1 - sw, c - hw - 0.1, y - 0.02, y + h + 0.02, 0, 0.05, { tint });
         f.box('wood', c + hw + 0.1, c + hw + 0.1 + sw, y - 0.02, y + h + 0.02, 0, 0.05, { tint });
+        // Painted louvres are thin relief on the face of the existing shutters.
+        for (const side of [-1,1]) {
+          const mid=c+side*(hw+.1+sw*.5);
+          for (let j=1;j<=5;j++) {
+            const yy=y+h*j/6;
+            f.quad('wood',mid-sw*.41,mid+sw*.41,yy,yy+.045,.053,{tint:tint.map(v=>v*.62)});
+          }
+        }
       } else if (!low && rng() < 0.22) {
         f.box('trim', c - hw - 0.3, c + hw + 0.3, y - 0.3, y - 0.12, 0, 0.75);
         f.box('metal', c - hw - 0.3, c + hw + 0.3, y + 0.6, y + 0.65, 0.69, 0.75, { occ: false });
@@ -346,7 +354,35 @@
     for (const b of M.boxes) {
       const { x0, y0, z0, x1, y1, z1, kind } = b;
       if (kind === 'crate') {
-        box('crate', x0, y0, z0, x1, y1, z1, { skip: 'ny', uv: [0, 0, 1, 1] });
+        // Raised shipping crates share their footprint with the timber pallet below.
+        const base = y0 === 0 ? .135 : 0;
+        if (base) {
+          for (let k=0;k<3;k++) {
+            const x=x0+(x1-x0-.20)*k/2;
+            box('wood',x,0,z0,x+.20,.10,z1,{skip:'ny'});
+          }
+          box('wood',x0,.10,z0,x1,base,z1);
+        }
+        box('crate', x0, y0+base, z0, x1, y1, z1, { skip: 'ny', uv: [0, 0, 1, 1] });
+      } else if (kind === 'lamp') {
+        box('metal',x0,y0,z0,x1,y0+.06,z1);
+        box('trim',x0+.02,y0+.06,z0+.02,x1-.02,y1-.07,z1-.02,{tint:[1.15,.94,.62]});
+        box('metal',x0,y1-.07,z0,x1,y1,z1);
+        for (const x of [x0,x1-.019]) for (const z of [z0,z1-.019])
+          box('metal',x,y0+.06,z,x+.019,y1-.07,z+.019,{occ:false});
+      } else if (kind === 'stallPost') {
+        box('wood',x0,y0,z0,x1,y1,z1);
+      } else if (kind === 'stallCanopy') {
+        box('cloth',x0,y0,z0,x1,y1,z1,{uv:[0,.06,1,.48]});
+      } else if (kind === 'lowwall' && x1-x0 > 2) {
+        // Three courses on the old cover volume. Rounded sacks are shared across courses.
+        const rows=3, wide=x1-x0, n=Math.ceil(wide/.85);
+        for (let row=0;row<rows;row++) {
+          const count=n+(row%2), w=wide/count;
+          for (let k=0;k<count;k++) props.push({type:'sack',x:x0+w*(k+.5),y:(row+.5)*y1/rows,z:(z0+z1)/2,
+            w:w*.99,h:y1/rows,d:z1-z0,seed:row*31+k});
+        }
+        occ.push([x0,y0,z0,x1,y1,z1]);
       } else if (kind === 'lowwall') {
         box('rubble', x0, 0, z0, x1, y1 - 0.12, z1, { skip: 'ny' });
         box('trim', x0 - 0.05, y1 - 0.12, z0 - 0.05, x1 + 0.05, y1, z1 + 0.05);
