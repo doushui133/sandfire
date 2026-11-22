@@ -164,62 +164,76 @@
   };
 
   // ---------- pause and mouse capture ----------
-  const PAUSE_TEXT = {
-    pause: ['已暂停', ''],
-    lockfail: ['点击「继续游戏」开始', '游戏需要锁定鼠标来转动视角。刚按过 Esc 的话，浏览器会要求等一秒左右再点。'],
-  };
+  let requesting = false, retryAt = 0, keyboardGeneration = 0;
+  function keyboardOff() {
+    keyboardGeneration++;
+    G.input.keyboardLocked = false;
+    try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) { }
+  }
+  function keyboardOn() {
+    if (!document.fullscreenElement || !G.input.locked || !G.input.active || G.paused || G.Touch.enabled) return;
+    const generation = ++keyboardGeneration;
+    if (navigator.keyboard && navigator.keyboard.lock) {
+      try { Promise.resolve(navigator.keyboard.lock()).then(() => {
+        if (generation === keyboardGeneration) G.input.keyboardLocked = true;
+      }, () => {}); } catch (e) { }
+    }
+  }
   function showPause(kind, hint) {
-    if (!kind) { $('pause').hidden = true; return; }
-    $('pauseTitle').textContent = PAUSE_TEXT[kind][0];
-    $('pauseHint').textContent = hint !== undefined ? hint : PAUSE_TEXT[kind][1];
+    $('pause').hidden = !kind;
+    if (!kind) return;
+    $('pauseTitle').textContent = G.Touch.enabled ? '已暂停' : '点击继续';
+    $('pauseHint').textContent = hint || (G.Touch.enabled ? '' : '虚拟机或远程桌面中，浏览器可能无法锁定鼠标。');
     $('sens2').value = G.settings.sens;
-    $('pause').hidden = false;
   }
   function pause(auto) {
     const inp = G.input;
-    if (!inp.active || G.paused || G.Game.phase === 'over' || (auto && inp.test && !G.Touch.enabled)) return;
-    G.paused = true;
-    inp.releaseAll();
-    G.HUD.toggleBuy(false);
-    if (G.Touch.enabled) { G.HUD.showScores(false); G.Touch.sync(); }
-    showPause('pause', !G.Touch.enabled && inp.freeLook ? '当前是普通鼠标模式（这个环境不允许锁定鼠标）。' : '');
+    if (!inp.active || G.Game.phase === 'over' || (auto && inp.test)) return;
+    requesting = false; G.paused = true; G.Audio.pause();
+    keyboardOff(); G.releaseLock();
+    inp.releaseAll(); inp.endFrame(); G.look.reset();
+    G.Nades.cancel(G.Player.agent);
+    G.HUD.toggleBuy(false); G.HUD.showScores(false); G.Touch.sync();
+    showPause('pause');
   }
   G.pauseGame = () => pause(false);
   function resume() {
     const inp = G.input;
     if (!inp.active || G.Touch.portrait) return;
-    if (G.Touch.enabled) {
-      G.Audio.init(); G.Touch.enterDisplay();
+    inp.releaseAll(); inp.endFrame();
+    if (G.Touch.enabled || inp.test) {
+      if (G.Touch.enabled) { G.Audio.init(); G.Touch.enterDisplay(); }
       showPause(null); G.paused = false; G.Touch.sync();
       return;
     }
-    inp.left = inp.right = inp.leftPressed = inp.rightPressed = false;   // the click on the button is not a shot
-    if (inp.locked || inp.freeLook || inp.test) {
-      showPause(null); G.paused = false;
-      if (inp.freeLook) G.requestLock();   // switches to full capture if it has become possible
-      return;
-    }
-    $('pauseHint').textContent = '正在锁定鼠标…';
+    if (G.now() < retryAt) { showPause('wait', '稍等一秒再点击。虚拟机或远程桌面可能无法锁定鼠标。'); return; }
+    requesting = true; G.Audio.init();
+    showPause('lock', '正在锁定鼠标…');
     G.requestLock();
+    const root = document.documentElement;
+    if (G.settings.fullscreen && !document.fullscreenElement && root.requestFullscreen) {
+      try { Promise.resolve(root.requestFullscreen()).catch(() => {}); } catch (e) { }
+    }
   }
   G.onLockResult = function (ok) {
-    $('game').classList.toggle('freelook', G.input.freeLook);
-    if (!G.input.active) return;
-    if (ok || G.input.freeLook) { showPause(null); G.paused = false; return; }
-    G.paused = true;
-    showPause('lockfail');
+    const inp = G.input;
+    $('game').classList.toggle('freelook', inp.freeLook);
+    if (!requesting || !inp.active) { if (ok) G.releaseLock(); return; }
+    requesting = false;
+    if (ok || (G.embedded && inp.freeLook)) {
+      showPause(null); G.paused = false; keyboardOn();
+    } else {
+      G.paused = true;
+      showPause('retry', '稍等一秒再点击。虚拟机或远程桌面可能无法锁定鼠标。');
+    }
   };
-  G.onFallback = function () {
-    $('game').classList.add('freelook');
-    G.HUD.message('', '这个环境不允许锁定鼠标，已改用普通鼠标模式：移动鼠标转动视角，鼠标停在画面左右边缘会持续转身。用 Chrome 或 Edge 浏览器直接打开本页可获得完整的鼠标锁定。', 9);
+  G.onFallback = () => G.HUD.message('', '当前使用普通鼠标模式，直接打开游戏可完整锁定鼠标。', 5);
+  G.onUnlock = () => {
+    retryAt = G.now() + 1000;
+    pause(false);
+    showPause('wait', '稍等一秒再点击。虚拟机或远程桌面可能无法锁定鼠标。');
   };
-  G.onUnlock = () => pause(false);
-  // Esc while the mouse is not captured (fallback mode, or the buy menu there)
-  G.onEscape = function () {
-    if (G.HUD.buyOpen) { G.HUD.toggleBuy(false); return; }
-    if (!G.input.freeLook) return;
-    if (G.paused) resume(); else pause(false);
-  };
+  G.onEscape = () => { if (G.HUD.buyOpen) G.HUD.toggleBuy(false); else pause(false); };
 
   function startMatch(team, test) {
     if (G.Touch.portrait) return;
@@ -232,13 +246,12 @@
     G.Game.start(team, G.settings.diff);
     if (G.Touch.enabled) { G.paused = false; G.Touch.sync(); return; }
     if (test) { G.paused = false; return; }
-    if (G.input.freeLook) { G.paused = false; G.requestLock(); return; }
-    G.paused = true;   // the round starts once the mouse is captured
-    G.requestLock();
+    G.paused = true; resume();
   }
   G.startMatch = startMatch;
   function toMenu() {
     const inp = G.input;
+    requesting = false; keyboardOff();
     inp.active = false; inp.test = false; G.paused = true;
     if (G.Touch.enabled) G.Touch.sync();
     showPause(null); G.HUD.toggleBuy(false); G.HUD.showScores(false);
@@ -284,12 +297,15 @@
     $('btnResume').addEventListener('click', resume);
     $('btnQuit').addEventListener('click', toMenu);
     $('btnRestart').addEventListener('click', () => startMatch(lastTeam));
-    // safety net: a click on the view captures the mouse if a running match somehow lost it
-    G.renderer.domElement.addEventListener('click', () => {
-      const inp = G.input;
-      if (!G.Touch.enabled && inp.active && !G.paused && !inp.locked && !inp.freeLook && !inp.test) G.requestLock();
+    $('pause').addEventListener('click', (e) => {
+      if (!G.Touch.enabled && !e.target.closest('input,label,button,.direct-address')) resume();
+    });
+    document.addEventListener('pointerlockchange', () => { if (!G.input.locked) keyboardOff(); });
+    document.addEventListener('fullscreenchange', () => {
+      if (document.fullscreenElement) keyboardOn();
+      else { keyboardOff(); if (!G.Touch.enabled && G.input.active) pause(true); }
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) pause(true); });
-    window.addEventListener('blur', () => { if (G.Touch.enabled || G.input.freeLook) pause(true); });
+    window.addEventListener('blur', () => pause(true));
   }
 })(window.G);

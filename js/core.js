@@ -61,7 +61,8 @@ window.G = window.G || {};
   };
 
   // ---------- settings (per-viewer convenience only) ----------
-  G.settings = { sens: 1, vol: 0.7, diff: 1, raw: true };
+  G.settings = { sens: 1, vol: 0.7, diff: 1, raw: true, fullscreen: true,
+    buttonSize: 1, leftFire: true, aimAssist: true, autoFire: false, gyro: false };
   try {
     const saved = JSON.parse(localStorage.getItem('sandfire.settings') || 'null');
     if (saved) Object.assign(G.settings, saved);
@@ -114,14 +115,15 @@ window.G = window.G || {};
     input.left = input.right = false;
   };
 
-  const blockKeys = new Set(['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'Backquote', 'KeyB', 'KeyG']);
+  G.embedded = window.top !== window;
+  const blockKeys = /^(Tab|Space|Arrow(Up|Down|Left|Right)|Digit[0-9]|Key[WASDCQRBEG]|Shift(Left|Right)|Control(Left|Right)|Escape)$/;
   const touchMode = () => G.Touch && G.Touch.enabled;
   window.addEventListener('keydown', (e) => {
-    if (!input.active || touchMode()) return;
-    if (!G.paused && (blockKeys.has(e.code) || e.ctrlKey)) e.preventDefault();
+    if (!input.active || touchMode() || G.paused) return;
+    if (blockKeys.test(e.code)) e.preventDefault();
+    if (e.code === 'Escape') { if (!e.repeat && G.onEscape) G.onEscape(); return; }
     if (!e.repeat) input.pressed[e.code] = true;
     input.keys[e.code] = true;
-    if (e.code === 'Escape' && !input.locked && G.onEscape) G.onEscape();
   });
   window.addEventListener('keyup', (e) => { if (!touchMode()) input.keys[e.code] = false; });
 
@@ -149,7 +151,7 @@ window.G = window.G || {};
   window.addEventListener('blur', () => { input.releaseAll(); cursorLeft(); });
 
   window.addEventListener('mousedown', (e) => {
-    if (!input.active || touchMode() || !input.canAim()) return;   // a click that only captures the mouse never fires
+    if (!input.active || G.paused || touchMode() || !input.canAim()) return;   // a click that only captures the mouse never fires
     if (e.button === 0) { input.left = true; input.leftPressed = true; }
     if (e.button === 2) { input.right = true; input.rightPressed = true; }
   });
@@ -194,8 +196,7 @@ window.G = window.G || {};
       at.done = true; clearTimeout(at.timer); attempt = null;
     }
     input.lockFails++;
-    // a page that has never been allowed to capture the mouse, twice in a row, probably never will
-    if (why === 'unsupported' || (!input.everLocked && input.lockFails >= 2)) enterFallback();
+    if (G.embedded) enterFallback();
     if (G.onLockResult) G.onLockResult(false, why);
   }
   function enterFallback() {
@@ -222,6 +223,7 @@ window.G = window.G || {};
     if (attempt && !attempt.promise) lockFailed(attempt, 'error');
   });
   G.releaseLock = function () {
+    if (attempt) { attempt.done = true; clearTimeout(attempt.timer); attempt = null; }
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
   };
 

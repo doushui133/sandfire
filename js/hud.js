@@ -17,6 +17,8 @@
     for (let i = 0; i < 5; i++) pips += '<i></i>';
     el.aliveAtk.innerHTML = pips; el.aliveDef.innerHTML = pips;
     el.buymenu.addEventListener('click', (e) => {
+      const cat=e.target.closest('[data-category]');
+      if (cat) { category=Number(cat.dataset.category); renderBuy(); return; }
       const b = e.target.closest('[data-buy]');
       if (b) buy(b.dataset.buy);
       if (e.target.closest('[data-close]')) H.toggleBuy(false);
@@ -25,9 +27,14 @@
       if (e.target.closest('[data-close-scores]')) H.showScores(false);
     });
     window.addEventListener('keydown', (e) => {
-      if (!H.buyOpen || G.Touch.enabled) return;
+      if (!H.buyOpen || G.Touch.enabled || e.repeat) return;
       const n = parseInt(e.key, 10);
-      if (n >= 1 && n <= 9) { const list = buyList(); if (list[n - 1]) buy(list[n - 1].id); }
+      if (n===0) { category=-1; renderBuy(); return; }
+      if (n>=1 && n<=9) {
+        e.preventDefault(); delete G.input.pressed[e.code];
+        if (category<0) { if (n<=categories.length) { category=n-1; renderBuy(); } }
+        else { const id=buyList()[n-1]; if (id) buy(id); }
+      }
     });
   };
 
@@ -107,44 +114,40 @@
   };
 
   // ---------- buy menu ----------
+  const categories = [
+    ['手枪','p10','m18','h50'], ['冲锋枪','k5','u45','v9'], ['霰弹枪','s8'], ['机枪','l60'],
+    ['步枪','fa2','ar7','tr4'], ['狙击步枪','s40','r90'], ['投掷物'].concat(W.grenades), ['装备','vest','vesthelm','kit'],
+  ];
+  let category=-1;
   function buyList() {
-    const p = G.Player.agent, rifle = p.team === 'atk' ? 'ar7' : 'tr4';
-    const list = [
-      { id: 'p10', cat: '手枪' }, { id: 'h50', cat: '手枪' }, { id: 'v9', cat: '冲锋枪' }, { id: rifle, cat: '步枪' }, { id: 'r90', cat: '步枪' },
-      { id: 'vest', cat: '装备' }, { id: 'vesthelm', cat: '装备' },
-    ];
-    if (p.team === 'def') list.push({ id: 'kit', cat: '装备' });
-    return list;
+    return categories[category].slice(1).filter((id) => {
+      const d=W.defs[id] || W.equipment[id]; return !d.team || d.team===G.Player.agent.team;
+    });
   }
   function buy(id) {
-    const p = G.Player.agent;
-    if (!G.Game.buy(p, id)) G.Audio.click('deny');
+    if (!G.Game.buy(G.Player.agent,id)) G.Audio.click('deny');
     renderBuy();
   }
   function renderBuy() {
-    const p = G.Player.agent, list = buyList();
-    const cats = {};
-    list.forEach((it, i) => { (cats[it.cat] = cats[it.cat] || []).push(Object.assign({ n: i + 1 }, it)); });
-    const touch = G.Touch.enabled;
-    let html = '<div class="slab"><div class="bm-head"><h2>购买装备</h2><span class="num" style="font-size:22px;color:var(--ok)">$' + p.money + '</span>' +
-      (touch ? '<button data-close>关闭</button>' : '') + '</div><div class="bm-grid">';
-    for (const c in cats) {
-      html += '<div class="bm-col"><h3>' + c + '</h3>';
-      for (const it of cats[c]) {
-        const d = W.defs[it.id] || W.equipment[it.id], price = G.Game.priceOf(p, it.id), own = G.Game.owns(p, it.id);
-        html += '<button class="bm-item' + (own ? ' own' : p.money < price ? ' no' : '') + '" data-buy="' + it.id + '"><span><span class="k">' + it.n + '</span>' + d.name +
-          '</span><span class="p">' + (own ? '已拥有' : '$' + price) + '</span></button>';
-      }
-      html += '</div>';
-    }
-    const left = Math.max(0, Math.ceil(G.Game.buyUntil - G.time));
-    html += '</div><div class="row" style="justify-content:space-between;margin-top:14px"><span style="color:var(--muted);font-size:13px">' +
-      (touch ? '' : '数字键快速购买 · ') + '购买时间剩余 <span id="buySeconds">' + left + '</span> 秒 · 死亡后会失去武器</span>' +
-      (touch ? '' : '<button data-close="1">关闭（B）</button>') + '</div></div>';
-    const scroll = touch && el.buymenu.firstElementChild ? el.buymenu.firstElementChild.scrollTop : 0;
-    el.buymenu.innerHTML = html;
-    if (scroll) el.buymenu.firstElementChild.scrollTop = scroll;
-    if (vc.on) { vc.hover = null; H.moveCursor(0, 0, false); }   // the old buttons were replaced
+    const p=G.Player.agent, title=category<0 ? '购买装备' : categories[category][0];
+    let html='<div class="slab"><div class="bm-head"><h2>'+title+'</h2><span class="num">$'+p.money+
+      '</span><button data-close>关闭</button></div><div class="bm-grid">';
+    if (category<0) categories.forEach((c,i) => {
+      html+='<button data-category="'+i+'">'+(i+1)+' · '+c[0]+'</button>';
+    });
+    else buyList().forEach((id,i) => {
+      const d=W.defs[id] || W.equipment[id], price=G.Game.priceOf(p,id), own=G.Game.owns(p,id);
+      const full=d.slot==='grenade' && !W.canCarry(p,id);
+      const state=own ? '已拥有' : full ? '携带已满' : p.money<price ? '余额不足' : '';
+      const count=d.slot==='grenade' && p.nades[id] ? ' ×'+p.nades[id] : '';
+      html+='<button class="bm-item '+(own ? 'own' : state ? 'no' : '')+'" data-buy="'+id+'"'+(state ? ' disabled' : '')+
+        '><span>'+(i+1)+' · '+d.name+count+'</span><span class="p">'+state+' $'+price+'</span></button>';
+    });
+    const left=Math.max(0,Math.ceil(G.Game.buyUntil-G.time));
+    html+='</div><div class="row">'+(category>=0 ? '<button data-category="-1">'+(G.Touch.enabled ? '' : '0 · ')+'返回分类</button>' : '')+
+      '<span>购买时间剩余 <b id="buySeconds">'+left+'</b> 秒</span></div></div>';
+    el.buymenu.innerHTML=html;
+    if (vc.on) { vc.hover=null; H.moveCursor(0,0,false); }
   }
   // The mouse stays captured while buying: an in-game cursor follows it. Releasing and
   // re-capturing the mouse around the menu is what used to make the view jump afterwards.
@@ -175,6 +178,7 @@
     vc.on = want && !G.Touch.enabled && G.input.locked;
     el.vcursor.hidden = !vc.on;
     if (want) {
+      G.Nades.cancel(p); category=-1;
       vc.x = window.innerWidth / 2; vc.y = window.innerHeight / 2;
       renderBuy();
     } else setHover(null);
@@ -243,6 +247,26 @@
   function cls(e, name, on) { const k = '_c' + name; if (e[k] !== on) { e[k] = on; e.classList.toggle(name, on); } }
   function sty(e, prop, v) { const k = '_s' + prop; if (e[k] !== v) { e[k] = v; e.style[prop] = v; } }
   function hid(e, h) { if (e._h !== h) { e._h = h; e.hidden = h; } }
+  const slotCache = {};
+  function updateSlots(view,p) {
+    let counts=0;
+    for (const id of W.grenades) counts=counts*3+(view.nades[id] || 0);
+    const c=slotCache, inv=view.inv;
+    if (c.primary===inv.primary && c.pistol===inv.pistol && c.grenade===inv.grenade && c.bomb===inv.bomb &&
+        c.counts===counts && c.cur===view.cur && c.alive===p.alive && c.touch===G.Touch.enabled) return;
+    c.primary=inv.primary; c.pistol=inv.pistol; c.grenade=inv.grenade; c.bomb=inv.bomb;
+    c.counts=counts; c.cur=view.cur; c.alive=p.alive; c.touch=G.Touch.enabled;
+    const slotTxt = ['primary', 'pistol', 'knife', 'grenade', 'bomb'].map((s, i) => {
+      const has = s === 'bomb' ? view.inv.bomb : view.inv[s];
+      if (!has) return '';
+      const name = s === 'grenade' ? W.grenades.filter((id) => view.nades[id]).map((id) =>
+        '<span class="nade-icon icon-'+id+(id===has.id ? ' selected' : '')+'" title="'+W.defs[id].name+'">'+W.defs[id].icon+'×'+view.nades[id]+'</span>').join('') :
+        s === 'bomb' ? '炸弹' : G.Touch.enabled ? (s==='knife' ? '匕首' : has.def.name.split(' ')[0]) : has.def.name;
+      if (G.Touch.enabled) return '<button data-slot="' + s + '" class="' + (view.cur === s ? 'on' : '') + '"' + (p.alive ? '' : ' disabled') + '>' + name + '</button>';
+      return '<div class="' + (view.cur === s ? 'on' : '') + '">' + (i + 1) + ' · ' + name + '</div>';
+    }).join('');
+    if (el.slots._t !== slotTxt) { el.slots.innerHTML = slotTxt; el.slots._t = slotTxt; }
+  }
   let radarTick = 0;
   H.update = function (dt) {
     const p = G.Player.agent;
@@ -253,18 +277,11 @@
     txt(el.money, '$' + p.money);
     if (moneyT > 0) { moneyT -= dt; if (moneyT <= 0) el.moneyDelta.textContent = ''; }
     const it = W.current(view);
-    if (it && !it.def.melee) {
+    if (it && it.def.rpm) {
       txt(el.clip, it.reloading ? '…' : it.clip); txt(el.reserve, '/ ' + it.reserve);
       cls(el.clip, 'low', it.clip <= Math.ceil(it.def.clip * 0.2));
     } else { txt(el.clip, view.cur === 'bomb' ? '炸弹' : '—'); txt(el.reserve, ''); cls(el.clip, 'low', false); }
-    const slotTxt = ['primary', 'pistol', 'knife', 'bomb'].map((s, i) => {
-      const has = s === 'bomb' ? view.inv.bomb : view.inv[s];
-      if (!has) return '';
-      const name = s === 'bomb' ? '炸弹' : view.inv[s].def.name;
-      if (G.Touch.enabled) return '<button data-slot="' + s + '" class="' + (view.cur === s ? 'on' : '') + '"' + (p.alive ? '' : ' disabled') + '>' + name + '</button>';
-      return '<div class="' + (view.cur === s ? 'on' : '') + '">' + (i + 1) + ' · ' + name + '</div>';
-    }).join('');
-    if (el.slots._t !== slotTxt) { el.slots.innerHTML = slotTxt; el.slots._t = slotTxt; }
+    updateSlots(view,p);
 
     // timer & score
     const b = Gm.bomb;
@@ -287,7 +304,7 @@
     hid(el.crosshair, !showCh);
     if (showCh) {
       let gap = 4;
-      if (it && !it.def.melee) {
+      if (it && it.def.rpm) {
         const sp = W.spread(p, it), half = Math.tan(G.camera.fov * Math.PI / 360);
         gap = G.clamp(Math.tan(sp) / half * (innerHeight / 2), 3, 90);
       }
@@ -317,8 +334,7 @@
       if (!Gm.canBuy(p)) H.toggleBuy(false);
       else if ((buyRefresh -= dt) <= 0) {
         buyRefresh = 0.5;
-        if (G.Touch.enabled) txt($('buySeconds'), Math.max(0, Math.ceil(Gm.buyUntil - G.time)));
-        else renderBuy();
+        txt($('buySeconds'), Math.max(0, Math.ceil(Gm.buyUntil - G.time)));
       }
     }
     if (G.Touch.enabled) G.Touch.sync();

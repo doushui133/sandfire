@@ -106,7 +106,7 @@
     death: { pos: new THREE.Vector3(), floor: 0, yaw: 0, pitch: 0, yaw0: 0, pitch0: 0, spot: new THREE.Vector3(), spotSet: false },
   };
   const eye = new THREE.Vector3();
-  const SLOTKEYS = { Digit1: 'primary', Digit2: 'pistol', Digit3: 'knife', Digit4: 'bomb' };
+  const SLOTKEYS = { Digit1: 'primary', Digit2: 'pistol', Digit3: 'knife', Digit4: 'grenade', Digit5: 'bomb' };
   const setFov = (cam, fov) => { if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); } };
 
   // how far the visible cursor sits inside the left/right turning strip (fallback mode only), -1..1
@@ -115,6 +115,46 @@
     if (x < zone) return -G.clamp(1 - x / zone, 0, 1);
     if (x > w - zone) return G.clamp((x - (w - zone)) / zone, 0, 1);
     return 0;
+  }
+
+  const assistPoint = new THREE.Vector3(), assistEye = new THREE.Vector3(), assistDir = new THREE.Vector3();
+  const assist = { yaw:0, pitch:0, found:false };
+  function acquire(a) {
+    assist.found = false;
+    let best = Math.PI * 3.5 / 180;
+    G.eyePos(a,assistEye);
+    for (const e of G.Game.agents) {
+      if (!e.alive || e.team===a.team) continue;
+      const dx=e.pos.x-assistEye.x, dz=e.pos.z-assistEye.z, horizontal=Math.hypot(dx,dz);
+      const y=G.wrapAngle(G.yawTo(dx,dz)-a.yaw);
+      for (let k=0;k<2;k++) {
+        const height=e.pos.y+(k ? 1.165-.425*e.crouch : 1.63-.5*e.crouch);
+        const pitch=Math.atan2(height-assistEye.y,horizontal)-a.pitch;
+        const distance=Math.hypot(y*Math.cos(a.pitch),pitch);
+        if (distance<best && G.Nades.visible(assistEye,assistPoint.set(e.pos.x,height,e.pos.z))) {
+          best=distance; assist.yaw=y; assist.pitch=pitch; assist.found=true;
+        }
+      }
+    }
+    return assist.found;
+  }
+  P.touchLook = function (a,dt,sens) {
+    const active=G.Touch.enabled && G.Touch.realTouch && G.settings.aimAssist && a.blindUntil<=G.time;
+    const slow=active && acquire(a) ? 0.6 : 1, inp=G.input;
+    a.yaw=G.wrapAngle(a.yaw-inp.dx*sens*slow);
+    a.pitch=G.clamp(a.pitch-inp.dy*sens*slow,-1.53,1.53);
+    if (active && (inp.dx || inp.dy || G.Touch.joystick.x || G.Touch.joystick.y) && acquire(a)) {
+      const scale=Math.min(1,dt*Math.PI/30/(Math.hypot(assist.yaw,assist.pitch)||1));
+      a.yaw=G.wrapAngle(a.yaw+assist.yaw*scale);
+      a.pitch=G.clamp(a.pitch+assist.pitch*scale,-1.53,1.53);
+    }
+  };
+  function autoTarget(a,it) {
+    if (!G.Touch.realTouch || !G.settings.autoFire || !it || !it.def.rpm || !it.clip ||
+        it.reloading || G.time<it.nextFire || G.time<a.switchEnd || G.time<a.blindUntil) return false;
+    G.eyePos(a,assistEye); G.forward(a.yaw,a.pitch,assistDir);
+    const hit=G.Weapons.trace(a,assistEye.x,assistEye.y,assistEye.z,assistDir.x,assistDir.y,assistDir.z,220);
+    return !!hit.agent && !G.Nades.blocks(assistEye,assistPoint.set(hit.wx,hit.wy,hit.wz));
   }
 
   P.update = function (dt) {
@@ -134,8 +174,8 @@
     if (G.HUD.buyOpen) {
       if (inp.locked) G.HUD.moveCursor(inp.dx, inp.dy, inp.leftPressed);
     } else if (touch || inp.canAim()) {
-      a.yaw = G.wrapAngle(a.yaw - inp.dx * sens);
-      a.pitch = G.clamp(a.pitch - inp.dy * sens, -1.53, 1.53);
+      if (touch) P.touchLook(a,dt,sens);
+      else { a.yaw = G.wrapAngle(a.yaw - inp.dx * sens); a.pitch = G.clamp(a.pitch - inp.dy * sens, -1.53, 1.53); }
       if (!touch && inp.freeLook && inp.cursorIn) {
         edge = edgeTurn(inp.cursorX);
         a.yaw = G.wrapAngle(a.yaw - edge * 2.6 * G.settings.sens * zf * dt);
@@ -160,7 +200,7 @@
       wx = fx * c + fz * s; wz = -fx * s + fz * c;
     }
     a.walking = touch ? len > 0 && len <= 0.6 : inp.down('ShiftLeft') || inp.down('ShiftRight');
-    a.crouchWant = !frozen && (inp.down('ControlLeft') || inp.down('KeyC'));
+    a.crouchWant = !frozen && (inp.down('KeyC') || (inp.keyboardLocked && document.fullscreenElement && (inp.down('ControlLeft') || inp.down('ControlRight'))));
     // stick: up to 60 % push is a silent walk that tops out at the keyboard walk speed
     const pace = touch ? (len <= 0.6 ? 0.52 * len / 0.6 : 0.52 + (len - 0.6) / 0.4 * 0.48) : a.walking ? 0.52 : 1;
     let speed = G.Weapons.maxSpeed(a) * pace * G.lerp(1, 0.34, a.crouch);
@@ -174,7 +214,7 @@
       P.stepDist += hs * dt;
       if (P.stepDist > 2.1) {
         P.stepDist = 0;
-        const loud = hs > G.Weapons.maxSpeed(a) * 0.6 && a.crouch < 0.5;
+        const loud = !a.walking && hs > G.Weapons.maxSpeed(a) * 0.6 && a.crouch < 0.5;
         if (loud) { G.Audio.foot(a.pos, true); G.Bots.hearStep(a); }
       }
     }
@@ -183,7 +223,7 @@
     if (!G.HUD.buyOpen) for (const k in SLOTKEYS) if (inp.hit(k)) G.Weapons.switchTo(a, SLOTKEYS[k]);
     if (inp.hit('KeyQ') && a.prevSlot) G.Weapons.switchTo(a, a.prevSlot);
     if (inp.wheel) {
-      const order = ['primary', 'pistol', 'knife', 'bomb'].filter((s) => (s === 'bomb' ? a.inv.bomb : a.inv[s]));
+      const order = ['primary', 'pistol', 'knife', 'grenade', 'bomb'].filter((s) => (s === 'bomb' ? a.inv.bomb : a.inv[s]));
       const i = order.indexOf(a.cur);
       if (order.length > 1) G.Weapons.switchTo(a, order[(i + (inp.wheel > 0 ? 1 : order.length - 1)) % order.length]);
     }
@@ -192,10 +232,11 @@
       else G.Weapons.drop(a, a.cur);
     }
     G.Weapons.tryPickup(a);
-    const blockFire = G.HUD.buyOpen;
+    const blockFire = G.HUD.buyOpen || (touch && G.HUD.scoresOpen);
+    const automatic = touch && !blockFire && !frozen && autoTarget(a,G.Weapons.current(a));
     G.Weapons.update(a, dt, {
-      fire: inp.left && !blockFire && !frozen, firePressed: inp.leftPressed && !blockFire && !frozen,
-      alt: inp.right, altPressed: inp.rightPressed, reload: inp.hit('KeyR'),
+      fire: (inp.left || automatic) && !blockFire && !frozen, firePressed: (inp.leftPressed || automatic) && !blockFire && !frozen,
+      alt: inp.right && !blockFire && !frozen, altPressed: inp.rightPressed && !blockFire && !frozen, reload: inp.hit('KeyR'),
     });
     G.Game.handleUse(a, inp.down('KeyE'), dt);
 

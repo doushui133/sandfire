@@ -156,6 +156,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   <div id="edgeL" class="edge"></div><div id="edgeR" class="edge"></div>
   <div id="flash"></div>
   <div id="dmgdir"></div>
+  <div id="gasView" hidden></div><div id="flashView" hidden></div>
   <div id="scope" hidden></div>
   <div id="crosshair"><i class="h" id="chL"></i><i class="h" id="chR"></i><i class="v" id="chT"></i><i class="v" id="chB"></i><i class="d"></i></div>
   <div id="hitmarker"></div>
@@ -177,11 +178,11 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 
 <div id="touchLayer" hidden>
   <div id="stick"><i></i></div>
-  <div class="touch-tools"><button data-action="drop">丢弃</button><button data-action="scores">比分</button><button data-action="pause">暂停</button></div>
-  <button data-action="buy" hidden>购买</button>
+  <button data-action="leftFire">开火</button>
+  <div class="touch-tools"><button data-action="buy" hidden>购买</button><button data-action="scores">比分</button><button data-action="pause">暂停</button></div>
   <div class="touch-actions">
     <button data-action="scope" hidden>开镜</button><button data-action="heavy" hidden>重击</button>
-    <button data-action="cycle">切枪</button>
+    <button data-action="grenade">投掷物</button>
     <button data-action="use">使用</button><button data-action="fire">开火</button>
     <button data-action="reload">换弹</button><button data-action="crouch" aria-pressed="false">蹲</button><button data-action="jump">跳</button>
   </div>
@@ -210,6 +211,11 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
     </div>
     <div class="row mouse-only"><label for="sens">鼠标灵敏度</label><input type="range" id="sens" min="0.2" max="3" step="0.05" value="1"><span class="num" id="sensVal">1.00</span></div>
     <div class="row touch-only"><label for="touchSens">触屏灵敏度</label><input type="range" id="touchSens" min="0.5" max="3" step="0.05" value="1.5"><span class="num" id="touchSensVal">1.50</span></div>
+    <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
+    <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
+    <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+    <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
+    <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
     <div class="row"><label for="vol">音量</label><input type="range" id="vol" min="0" max="1" step="0.05" value="0.7"></div>
     <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
     <div class="row" style="margin-top:18px">
@@ -219,14 +225,14 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
     <div id="status">正在加载 3D 引擎…</div>
     <div class="keys mouse-only">
       <div><b>W A S D</b>移动</div><div><b>鼠标</b>瞄准 / 左键射击</div>
-      <div><b>右键</b>狙击开镜 / 匕首重击</div><div><b>空格</b>跳跃</div>
-      <div><b>Ctrl / C</b>蹲下</div><div><b>Shift</b>静步</div>
-      <div><b>R</b>换弹</div><div><b>1 2 3 4</b>主武器 / 手枪 / 匕首 / 炸弹</div>
+      <div><b>右键</b>狙击开镜 / 匕首重击 / 近抛</div><div><b>空格</b>跳跃</div>
+      <div><b>C</b>蹲下（全屏键盘锁定时也可用 Ctrl）</div><div><b>Shift</b>静步</div>
+      <div><b>R</b>换弹</div><div><b>1 至 5</b>主武器 / 手枪 / 匕首 / 投掷物 / 炸弹</div>
       <div><b>Q</b>切回上一把</div><div><b>E</b>按住安放 / 拆除炸弹</div>
-      <div><b>B</b>购买（回合开始时在出生点）</div><div><b>Tab</b>记分板</div>
+      <div><b>B</b>购买（依次按分类和商品数字）</div><div><b>Tab</b>记分板</div>
       <div><b>G</b>丢弃武器</div><div><b>Esc</b>暂停</div>
     </div>
-    <div class="note touch-only">左侧拖动摇杆移动，轻推静步。右侧滑动瞄准，也可以按住「开火」拖动瞄准。点「蹲」切换姿势，点武器栏选枪。在包点或炸弹旁按住「使用」安放或拆弹。</div>
+    <div class="note touch-only">左侧拖动摇杆移动，轻推静步。右侧滑动瞄准，也可以按住「开火」拖动瞄准。点「蹲」切换姿势，点武器栏选枪，长按当前栏丢弃。点「投掷物」切换种类，按住开火预览，松手投出。在包点或炸弹旁按住「使用」安放或拆弹。</div>
     <div class="note">进攻方：把炸弹安放在 A 点或 B 点并守住它，或消灭所有防守方。防守方：阻止安放、拆除炸弹，或撑到时间结束。先赢 8 局的一方获胜。<span class="mouse-only">需要键盘和鼠标。</span></div>
     <div id="iosTip" class="note" hidden>在 Safari 点「分享 → 添加到主屏幕」，从主屏幕打开即可全屏游玩。</div>
   </div>
@@ -237,6 +243,11 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
     <h2 id="pauseTitle" style="margin-top:0">已暂停</h2>
     <div class="row mouse-only" style="justify-content:center"><label for="sens2">灵敏度</label><input type="range" id="sens2" min="0.2" max="3" step="0.05" value="1"></div>
     <div class="row touch-only" style="justify-content:center"><label for="touchSens2">触屏灵敏度</label><input type="range" id="touchSens2" min="0.5" max="3" step="0.05" value="1.5"></div>
+    <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
+    <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
+    <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+    <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
+    <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
     <div class="row" style="justify-content:center">
       <button class="big" id="btnResume">继续游戏</button>
       <button class="big" id="btnQuit">退出到菜单</button>
@@ -263,7 +274,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
             'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
             'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
             'https://unpkg.com/three@0.128.0/build/three.min.js'];
-  var mods=['look','core','audio','touch','textures','map','mapgeo','gfx','geom','gunmodels','mapmesh','fx','weapons','viewmodel','player','ragdoll','soldier','bots','game','hud','main'];
+  var mods=['look','core','audio','touch','textures','map','mapgeo','gfx','geom','gunmodels','mapmesh','fx','weapons','nades','viewmodel','player','ragdoll','soldier','bots','game','hud','main'];
   var status=document.getElementById('status');
   function load(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
   (async function(){

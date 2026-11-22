@@ -20,6 +20,47 @@
     r90: { name: 'R-90 狙击步枪', slot: 'primary', price: 4750, dmg: 115, rpm: 41, auto: false, clip: 5, reserve: 30, reload: 3.6, pen: 0.97, fall: 0.99,
       inacc: { stand: 0.0007, crouch: 0.0005, move: 0.2, air: 0.3, shot: 0, rec: 2, unscoped: 0.085 }, rc: { up: 0.05, side: 0.005, decay: 0, sideStart: 99 }, speed: 5.0, scopeSpeed: 3.6, kill: 150, snd: 'sniper', model: 'sniper', scope: true },
   };
+  function gun(base, stats, accuracy, recoil) {
+    const d = W.defs[base];
+    return Object.assign({}, d, { team: null }, stats, {
+      inacc: Object.assign({}, d.inacc, accuracy), rc: Object.assign({}, d.rc, recoil),
+    });
+  }
+  Object.assign(W.defs, {
+    m18: gun('p10', { name:'M18 自动手枪', price:500, dmg:19, rpm:810, auto:true, clip:22, reserve:88, reload:1.9, snd:'m18' }, { move:0.105, shot:0.012 }, { up:0.016 }),
+    k5: gun('v9', { name:'K5 紧凑冲锋枪', price:1050, dmg:19, rpm:970, clip:32, speed:6.18, reload:2.05, snd:'k5' }, { move:0.024 }, { up:0.01 }),
+    u45: gun('v9', { name:'U45 冲锋枪', price:1200, dmg:35, rpm:525, clip:24, reserve:96, speed:5.75, snd:'u45' }, { shot:0.008 }, { up:0.025, side:0.011 }),
+    s8: gun('v9', { name:'S8 泵动霰弹枪', price:1100, dmg:21, rpm:68, auto:false, pellets:8, shell:true, clip:7, reserve:35, reload:0.6, pen:0.68, fall:0.25, speed:5.65, kill:900, snd:'s8', model:'pump' }, { stand:0.045, crouch:0.038, move:0.035 }, { up:0.065 }),
+    fa2: gun('ar7', { name:'FA-2 轻型步枪', price:2000, dmg:31, rpm:630, pen:0.68, speed:5.65, snd:'fa2' }, { stand:0.006, crouch:0.0045, shot:0.011 }, { side:0.011 }),
+    s40: gun('r90', { name:'S40 轻型狙击步枪', price:1700, dmg:88, rpm:57, clip:8, reserve:32, speed:5.85, scopeSpeed:4.45, reload:2.7, snd:'s40' }, { move:0.14 }, { up:0.038 }),
+    l60: gun('ar7', { name:'L60 轻机枪', price:5200, dmg:37, rpm:705, clip:100, reserve:200, reload:5.6, speed:4.4, snd:'l60', model:'box' }, { move:0.18, shot:0.012 }, { up:0.029, side:0.018, decay:0.035 }),
+  });
+  W.grenades = ['he','flash','smoke','molotov','incendiary'];
+  [['he','高爆手雷',300,'爆'], ['flash','闪光弹',200,'闪'], ['smoke','烟雾弹',300,'烟'],
+   ['molotov','燃烧瓶',400,'燃','atk'], ['incendiary','燃烧弹',600,'燃','def']].forEach(([id,name,price,icon,team]) => {
+    W.defs[id] = { name, price, icon, team, slot:'grenade', speed:6, limit:id === 'flash' ? 2 : 1, kill:300 };
+  });
+  W.grenadeCount = (a) => W.grenades.reduce((n, id) => n + (a.nades[id] || 0), 0);
+  W.canCarry = function (a, id) {
+    const fire = id === 'molotov' || id === 'incendiary';
+    return (a.nades[id] || 0) < W.defs[id].limit && W.grenadeCount(a) < 4 && !(fire && (a.nades.molotov || a.nades.incendiary));
+  };
+  W.addGrenade = function (a, id) {
+    if (!W.canCarry(a,id)) return false;
+    a.nades[id] = (a.nades[id] || 0) + 1;
+    if (!a.inv.grenade) a.inv.grenade = W.item(id);
+    return true;
+  };
+  W.takeGrenade = function (a, id) {
+    if (!a.nades[id]) return false;
+    a.nades[id]--;
+    if (!a.nades[id] && a.inv.grenade && a.inv.grenade.id === id) {
+      const next = W.grenades.find((key) => a.nades[key]);
+      a.inv.grenade = next ? W.item(next) : null;
+      if (!next && a.cur === 'grenade') W.switchTo(a, W.bestSlot(a));
+    }
+    return true;
+  };
   for (const k in W.defs) W.defs[k].id = k;
   W.equipment = {
     vest: { name: '防弹衣', price: 650 },
@@ -76,16 +117,20 @@
     const B = 2 * (lx * dx + lz * dz), C = lx * lx + lz * lz - r * r, disc = B * B - 4 * A * C;
     if (disc < 0) return -1;
     const sq = Math.sqrt(disc);
-    for (const t of [(-B - sq) / (2 * A), (-B + sq) / (2 * A)]) {
+    for (let i=0; i<2; i++) {
+      const t=(-B + (i ? sq : -sq))/(2*A);
       if (t <= 0) continue;
       const y = oy + dy * t;
       if (y >= y0 && y <= y1) return t;
     }
     return -1;
   }
-  W.hitboxes = function (a) {
+  const traceBox = {};
+  W.hitboxes = function (a, out) {
     const c = a.crouch, x = a.pos.x, y = a.pos.y, z = a.pos.z;
-    return { headY: y + 1.63 - 0.5 * c, legTop: y + 0.85 - 0.35 * c, bodyTop: y + 1.48 - 0.5 * c, x, z };
+    const h=out || {};
+    h.headY=y+1.63-0.5*c; h.legTop=y+0.85-0.35*c; h.bodyTop=y+1.48-0.5*c; h.x=x; h.z=z;
+    return h;
   };
   W.trace = function (shooter, ox, oy, oz, dx, dy, dz, maxDist) {
     const wh = G.Map.raycast(ox, oy, oz, dx, dy, dz, maxDist);
@@ -94,7 +139,7 @@
     if (wh) { res.nx = wh.nx; res.ny = wh.ny; res.nz = wh.nz; }
     for (const a of G.Game.agents) {
       if (!a.alive || a === shooter || a.team === shooter.team) continue;
-      const h = W.hitboxes(a);
+      const h = W.hitboxes(a,traceBox);
       // cheap reject
       const lx = h.x - ox, lz = h.z - oz, along = lx * dx + lz * dz;
       if (along < -1 || along > best + 1) continue;
@@ -110,8 +155,9 @@
     return res;
   };
 
+  W.baseDamage = (def, dist) => def.dmg * Math.pow(def.fall || 1, def.shell ? Math.max(0, dist - 6) / 5 : dist / 10);
   W.applyDamage = function (target, shooter, def, group, dist, dirx, dirz) {
-    let d = def.dmg * Math.pow(def.fall || 1, dist / 10);
+    let d = W.baseDamage(def, dist);
     d *= group === 'head' ? 4 : group === 'legs' ? 0.75 : 1;
     const armored = target.armor > 0 && (group === 'body' || (group === 'head' && target.helmet));
     if (armored) {
@@ -132,29 +178,51 @@
     return out.addScaledVector(fwd, a.isPlayer ? 0.7 : 0.65).addScaledVector(right, a.isPlayer ? 0.16 : 0.2).add(upv.set(0, -dn, 0));
   };
 
+  const barrel = new THREE.Vector3(), victims = [], pelletHits = new Map();
   function shoot(a, it) {
     const d = it.def;
     it.clip--; it.nextFire = G.time + 60 / d.rpm;
     G.eyePos(a, eye);
     const aimP = a.pitch + a.recoilP * (a.recoilComp !== undefined ? 1 - a.recoilComp : 1);
     const aimY = a.yaw + a.recoilY * (a.recoilComp !== undefined ? 1 - a.recoilComp : 1);
-    G.forward(aimY, aimP, fwd);
-    const spread = W.spread(a, it) + (a.aimNoise || 0);
-    const ang = Math.random() * Math.PI * 2, rad = spread * Math.sqrt(Math.random());
-    right.set(Math.cos(aimY), 0, -Math.sin(aimY));
-    upv.crossVectors(right, fwd).normalize();
-    fwd.addScaledVector(right, Math.cos(ang) * rad).addScaledVector(upv, Math.sin(ang) * rad).normalize();
-    const r = W.trace(a, eye.x, eye.y, eye.z, fwd.x, fwd.y, fwd.z, 220);
-    hitP.set(r.wx, r.wy, r.wz);
     W.muzzlePos(a, muz);
-    if (r.agent) {
-      const victim = r.agent, out = W.applyDamage(victim, a, d, r.group, r.t, fwd.x, fwd.z);
-      G.FX.blood(r.wx, r.wy, r.wz, fwd, r.group === 'head');
-      if (a.isPlayer) { G.HUD && G.HUD.hitmarker(r.group === 'head', out && out.killed); G.Audio.hit(r.group === 'head', out && out.helmet); }
-    } else if (r.world) {
-      G.FX.impact(r.wx, r.wy, r.wz, r.nx, r.ny, r.nz);
+    G.forward(aimY, aimP, barrel);
+    right.set(Math.cos(aimY), 0, -Math.sin(aimY)); upv.crossVectors(right, barrel).normalize();
+    const spread = W.spread(a, it) + (a.aimNoise || 0);
+    let marked = false, head = false, killed = false, helmet = false;
+    for (let i = 0; i < (d.pellets || 1); i++) {
+      const ang = Math.random() * Math.PI * 2, rad = spread * Math.sqrt(Math.random());
+      fwd.copy(barrel).addScaledVector(right, Math.cos(ang) * rad).addScaledVector(upv, Math.sin(ang) * rad).normalize();
+      const r = W.trace(a, eye.x, eye.y, eye.z, fwd.x, fwd.y, fwd.z, 220);
+      hitP.set(r.wx, r.wy, r.wz);
+      if (r.agent) {
+        const v = r.agent;
+        if (d.pellets) {
+          let h = pelletHits.get(v);
+          if (!h) { h = { dmg:0, armor:0, head:false }; pelletHits.set(v, h); victims.push(v); }
+          const raw = W.baseDamage(d, r.t) * (r.group === 'head' ? 4 : r.group === 'legs' ? 0.75 : 1);
+          const covered = v.armor > 0 && (r.group === 'body' || (r.group === 'head' && v.helmet));
+          h.dmg += covered ? raw * d.pen : raw;
+          h.armor += covered ? raw * (1 - d.pen) * 0.5 : 0;
+          h.head = h.head || r.group === 'head';
+        } else {
+          const out = W.applyDamage(v, a, d, r.group, r.t, fwd.x, fwd.z);
+          killed = out && out.killed; helmet = out && out.helmet;
+        }
+        head = head || r.group === 'head';
+        if (!marked) G.FX.blood(r.wx, r.wy, r.wz, fwd, head);
+        marked = true;
+      } else if (r.world && i < 3) G.FX.impact(r.wx, r.wy, r.wz, r.nx, r.ny, r.nz);
+      if (i === 0 && (!a.isPlayer || Math.random() < 0.5)) G.FX.tracer(muz, hitP);
     }
-    if (!a.isPlayer || Math.random() < 0.5) G.FX.tracer(muz, hitP);
+    for (const v of victims) {
+      const h = pelletHits.get(v);
+      v.armor = Math.max(0, Math.round(v.armor - h.armor));
+      const out = G.Game.damage(v, a, Math.max(1, Math.round(h.dmg)), { weapon:d.id, head:h.head, dirx:barrel.x, dirz:barrel.z });
+      killed = killed || (out && out.killed); helmet = helmet || (h.head && v.helmet);
+    }
+    victims.length = 0; pelletHits.clear();
+    if (a.isPlayer && marked) { G.HUD.hitmarker(head, killed); G.Audio.hit(head, helmet); }
     G.FX.muzzle(muz, fwd, d.model === 'sniper' || d.model === 'ar' || d.model === 'heavy', a.isPlayer);
     G.Audio.shot(d.snd, eye, a.isPlayer);
     if (G.Bots) G.Bots.hearShot(a);
@@ -195,9 +263,12 @@
     const it = W.current(a);
     if (!it) return;
     const d = it.def;
+    if (d.slot === 'grenade') { G.Nades.control(a, ctl); return; }
     if (it.reloading && G.time >= it.reloadEnd) {
-      const need = d.clip - it.clip, take = Math.min(need, it.reserve);
+      const need = d.shell ? 1 : d.clip - it.clip, take = Math.min(need, it.reserve);
       it.clip += take; it.reserve -= take; it.reloading = false;
+      if (d.shell && it.clip < d.clip && it.reserve && !ctl.fire && !ctl.firePressed) W.startReload(a, it);
+      else if (a.isPlayer) G.Audio.reload(d, true);
     }
     if (d.scope && it.rezoom && G.time >= it.nextFire && !it.reloading) { it.zoom = it.rezoom; it.rezoom = 0; }
     if (G.time < a.switchEnd) return;
@@ -207,6 +278,7 @@
       return;
     }
     if (ctl.altPressed && d.scope && !it.reloading) { it.zoom = (it.zoom + 1) % 3; it.rezoom = 0; G.Audio.click('switch'); }
+    if (d.shell && it.clip && (ctl.fire || ctl.firePressed)) it.reloading = false;
     if (ctl.reload && !it.reloading && it.clip < d.clip && it.reserve > 0) W.startReload(a, it);
     const wants = d.auto ? ctl.fire : ctl.firePressed;
     if (wants && !it.reloading && G.time >= it.nextFire) {
@@ -220,11 +292,20 @@
   };
   W.startReload = function (a, it) {
     it.reloading = true; it.reloadEnd = G.time + it.def.reload; it.zoom = 0; it.rezoom = 0;
-    if (a.isPlayer) { G.Audio.click('reload1'); setTimeout(() => G.Audio.click('reload2'), it.def.reload * 650); if (G.VM) G.VM.onReload(it.def.reload); }
+    if (a.isPlayer) { G.Audio.reload(it.def, false); if (G.VM) G.VM.onReload(it.def.reload); }
   };
   W.switchTo = function (a, slot) {
     if (slot === 'bomb' ? !a.inv.bomb : !a.inv[slot]) return false;
-    if (a.cur === slot) return false;
+    if (a.cur === slot) {
+      if (slot !== 'grenade') return false;
+      const i = W.grenades.indexOf(a.inv.grenade.id);
+      for (let n = 1; n < W.grenades.length; n++) {
+        const id = W.grenades[(i+n) % W.grenades.length];
+        if (a.nades[id]) { G.Nades.cancel(a); a.inv.grenade = W.item(id); if (a.isPlayer) G.VM.onSwitch(); return true; }
+      }
+      return false;
+    }
+    G.Nades.cancel(a);
     const old = W.current(a);
     if (old) { old.reloading = false; old.zoom = 0; old.rezoom = 0; }
     a.prevSlot = a.cur; a.cur = slot; a.switchEnd = G.time + (slot === 'knife' ? 0.35 : 0.6);
@@ -239,7 +320,8 @@
   W.drop = function (a, slot, scene) {
     const it = a.inv[slot];
     if (!it || slot === 'knife') return;
-    a.inv[slot] = null;
+    if (slot === 'grenade') { G.Nades.cancel(a); W.takeGrenade(a, it.id); }
+    else a.inv[slot] = null;
     const mesh = W.makeGunMesh(it.id);
     mesh.position.set(a.pos.x + G.rand(-0.3, 0.3), a.pos.y + 0.03, a.pos.z + G.rand(-0.3, 0.3));
     mesh.rotation.set(0, Math.random() * 6.28, Math.PI / 2, 'YXZ');
@@ -252,9 +334,11 @@
       const dr = W.drops[i];
       if (G.time - dr.t < 0.8) continue;
       const slot = dr.item.def.slot;
-      if (a.inv[slot]) continue;
+      if (slot !== 'grenade' && a.inv[slot]) continue;
       if (Math.hypot(dr.mesh.position.x - a.pos.x, dr.mesh.position.z - a.pos.z) < 1.1 && Math.abs(dr.mesh.position.y - a.pos.y) < 1.2) {
-        a.inv[slot] = dr.item; G.scene.remove(dr.mesh); W.drops.splice(i, 1);
+        if (slot === 'grenade') { if (!W.addGrenade(a, dr.item.id)) continue; }
+        else a.inv[slot] = dr.item;
+        G.scene.remove(dr.mesh); W.drops.splice(i, 1);
         if (a.isPlayer) G.Audio.click('switch');
         if (slot === 'primary' && a.cur !== 'primary') W.switchTo(a, 'primary');
         return true;

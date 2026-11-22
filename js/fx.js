@@ -5,7 +5,7 @@
   'use strict';
   const THREE = G.THREE, U = G.Gfx.U;
   const FX = G.FX = { shake: 0 };
-  let scene, smoke, glow, decals, tracers, shells;
+  let scene, smoke, glow, flamePool, decals, tracers, shells;
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), zAxis = new THREE.Vector3(0, 0, 1);
   const flashL = { t: 0, max: 0.06, peak: new THREE.Color() };
 
@@ -26,10 +26,15 @@
     '}',
   ].join('\n');
   const PFS = [
-    'uniform sampler2D map; uniform vec3 uFogColor;',
+    'uniform sampler2D map; uniform vec3 uFogColor; uniform float time;',
     'varying vec2 vUv; varying vec4 vCol; varying float vFog;',
     'void main() {',
-    '  vec4 t = texture2D( map, vUv );',
+    '  vec2 uv = vUv;',
+    '#ifdef FLAME',
+    '  uv.x = .5 + (uv.x-.5)/(1.-.78*uv.y) + .13*sin(time*8.+uv.y*7.)*uv.y;',
+    '  if (uv.x<0. || uv.x>1.) discard;',
+    '#endif',
+    '  vec4 t = texture2D( map, uv );',
     '#ifdef ADDITIVE',
     '  vec3 c = vCol.rgb * t.rgb * t.a * vCol.a * ( 1.0 - vFog );',
     '  gl_FragColor = vec4( c, 1.0 );',
@@ -50,7 +55,7 @@
     g.setAttribute('iPos', pos); g.setAttribute('iCol', col); g.setAttribute('iRot', rot);
     g.instanceCount = n;
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: tex }, uFogColor: U.uFogColor, uFogDensity: U.uFogDensity },
+      uniforms: { time:U.uTime, map: { value: tex }, uFogColor: U.uFogColor, uFogDensity: U.uFogDensity },
       vertexShader: PVS, fragmentShader: PFS, transparent: true, depthWrite: false,
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
       defines: additive ? { ADDITIVE: '' } : {},
@@ -65,7 +70,7 @@
     const it = P.items[P.idx]; P.idx = (P.idx + 1) % P.n;
     it.life = 0; it.max = o.life || 0.6;
     it.x = o.x; it.y = o.y; it.z = o.z; it.vx = o.vx || 0; it.vy = o.vy || 0; it.vz = o.vz || 0;
-    it.size = o.size || 0.3; it.grow = o.grow || 0; it.rot = Math.random() * 6.28; it.spin = o.spin || 0;
+    it.size = o.size || 0.3; it.grow = o.grow || 0; it.rot = o.rot === undefined ? Math.random() * 6.28 : o.rot; it.spin = o.spin || 0;
     const c = o.color || [1, 1, 1]; it.r = c[0]; it.g = c[1]; it.b = c[2]; it.a = o.alpha === undefined ? 1 : o.alpha;
     it.drag = o.drag || 0; it.rise = o.rise || 0; it.fade = o.fade || 0;
   }
@@ -167,6 +172,9 @@
     const k = G.Gfx.preset ? G.Gfx.preset.particles : 1;
     smoke = pool(Math.round(240 * k), G.Tex.tex('puff'), false);
     glow = pool(Math.round(120 * k), G.Tex.tex('puff'), true);
+    flamePool = pool(Math.round(200 * k),G.Tex.tex('puff'),true);
+    flamePool.mesh.material.defines.FLAME = ''; flamePool.mesh.visible=false;
+    scene.add(flamePool.mesh);
     glow.flashTex = G.Tex.tex('flash');
     decals = decalPool(200);
     tracers = tracerPool(40);
@@ -228,7 +236,54 @@
     s.t = 0; s.on = true; s.rest = false;
     S.mesh.count = Math.max(S.mesh.count, S.idx === 0 ? S.n : S.idx);
   };
-  FX.explosion = function (pos) {
+  // Cloud geometry stores only puff offsets. The renderer sorts whole clouds by depth.
+  const cloudPool = [];
+  let cloudGeometry, cloudMaterial;
+  FX.cloud = function (pos) {
+    if (!cloudGeometry) {
+      const base = new THREE.PlaneGeometry(1,1), g = new THREE.InstancedBufferGeometry();
+      g.index=base.index; g.setAttribute('position',base.attributes.position); g.setAttribute('uv',base.attributes.uv);
+      const n=G.gpu && G.gpu.soft || G.Touch.primary() ? 16 : 28, offsets=new Float32Array(n*4);
+      offsets[3]=2.12;
+      for (let i=1;i<n;i++) {
+        const y=1-2*i/n, r=Math.sqrt(1-y*y), theta=i*2.4;
+        offsets.set([0.69*r*Math.cos(theta),0.69*y,0.69*r*Math.sin(theta),0.84],4*i);
+      }
+      g.setAttribute('puff',new THREE.InstancedBufferAttribute(offsets,4)); g.instanceCount=n;
+      cloudGeometry=g;
+      cloudMaterial=new THREE.ShaderMaterial({ transparent:true, depthWrite:false,
+        uniforms:{ map:{value:G.Tex.tex('puff')}, sun:U.uSunDir },
+        vertexShader:`attribute vec4 puff; varying vec2 vUv; varying float lightness; varying float core;
+          uniform vec3 sun;
+          void main(){ vec4 p=modelViewMatrix*vec4(puff.xyz,1.);
+          p.xy+=position.xy*puff.w*length(modelMatrix[0].xyz);
+          vUv=uv; lightness=.45+.14*dot(puff.xyz, sun); core=step(2.,puff.w);
+          gl_Position=projectionMatrix*p; }`,
+        fragmentShader:`uniform sampler2D map; varying vec2 vUv; varying float lightness; varying float core;
+          void main(){float d=length(vUv-.5)*2.; float fluff=texture2D(map,vUv).a;
+          float a=mix(fluff,smoothstep(0.,.08,1.-d),core);
+          if(a<.005) discard; gl_FragColor=vec4(vec3(.98,.96,.93)*(lightness+.09*fluff),a);}`,
+      });
+    }
+    const m=cloudPool.pop() || new THREE.Mesh(cloudGeometry,cloudMaterial);
+    m.frustumCulled=false; m.renderOrder=3; m.position.copy(pos); m.scale.setScalar(0.18); scene.add(m); return m;
+  };
+  FX.sizeCloud = function (m,r,age) { m.scale.setScalar(r); m.rotation.y=age*0.08; };
+  FX.recycleCloud = function (m) { scene.remove(m); cloudPool.push(m); };
+  FX.scorch = (p) => putDecal('scorch',p.x,p.y-0.085,p.z,0,1,0,4,0.8);
+  const flameColor=[2.4,0.55,0.07], emberColor=[2,1.1,0.17];
+  const flame = {color:flameColor,life:.32,grow:-1,rot:0}, ember={color:emberColor,size:.055,life:.6,vy:2.6,vx:.4};
+  FX.flames = function (f) {
+    const p=f.pos; flamePool.mesh.visible=true; flamePool.until=G.time+0.4;
+    for (const c of f.cells) {
+      if (f.age<c.delay) continue;
+      const v=c.pos;
+      flame.x=v.x; flame.y=v.y+.2; flame.z=v.z; flame.size=G.rand(.64,1); flame.vy=G.rand(1.4,2.5); emit(flamePool,flame);
+      if (Math.random()<0.11) { ember.x=v.x; ember.y=v.y+.4; ember.z=v.z; emit(glow,ember); }
+    }
+    light(p.x,p.y+0.5,p.z,tmpC.setRGB(G.rand(2,3),0.75,0.18),0.23,7);
+  };
+  FX.explosion = function (pos, small) {
     light(pos.x, pos.y + 1.5, pos.z, tmpC.setRGB(14, 8, 3), 0.9, 22);
     for (let i = 0; i < 18; i++) emit(glow, {
       x: pos.x + G.rand(-1, 1), y: pos.y + G.rand(0.3, 2), z: pos.z + G.rand(-1, 1), color: G.pick([[2.4, 1.4, 0.5], [2.2, 0.9, 0.3], [2.6, 2.0, 1.1]]), size: G.rand(1.6, 3.2), grow: 2.2, life: G.rand(0.35, 0.75),
@@ -240,7 +295,7 @@
       vx: G.rand(-4, 4), vy: G.rand(1, 5), vz: G.rand(-4, 4), drag: 1.2, rise: 0.6, fade: 0.15,
     });
     putDecal('scorch', pos.x, pos.y + 0.01, pos.z, 0, 1, 0, 7, 0.95);
-    FX.shake = 1.4;
+    FX.shake = small ? Math.max(FX.shake,1.1*Math.max(0,1-G.camera.position.distanceTo(pos)/12)) : 1.4;
   };
   FX.warm = function () {
     emit(smoke, { x: 0, y: -50, z: 0, size: 1, life: 0.2 }); emit(glow, { x: 0, y: -50, z: 0, size: 1, life: 0.2 }); emit(FX.flashes, { x: 0, y: -50, z: 0, size: 1, life: 0.2 });
@@ -250,7 +305,8 @@
     stepPool(smoke, 0.01); stepPool(glow, 0.01); stepPool(FX.flashes, 0.01);
   };
   FX.clear = function () {
-    for (const P of [smoke, glow, FX.flashes]) { if (!P) continue; P.items.forEach((it) => (it.life = it.max)); stepPool(P, 0); }
+    if (flamePool) flamePool.mesh.visible=false;
+    for (const P of [smoke, glow, flamePool, FX.flashes]) { if (!P) continue; P.items.forEach((it) => (it.life = it.max)); stepPool(P, 0); }
     if (decals) { decals.used = 0; decals.idx = 0; decals.mesh.count = 0; }
     if (tracers) tracers.items.forEach((t) => (t.on = false));
     if (shells) { shells.items.forEach((s) => (s.on = false)); shells.mesh.count = 0; }
@@ -259,6 +315,8 @@
 
   const e3 = new THREE.Euler();
   FX.update = function (dt) {
+    G.Nades.updateView();
+    if (flamePool.mesh.visible) { stepPool(flamePool,dt); flamePool.mesh.visible=G.time<flamePool.until; }
     stepPool(smoke, dt); stepPool(glow, dt); stepPool(FX.flashes, dt);
     // tracers
     const T = tracers, A = T.a.array, B = T.b.array;

@@ -8,13 +8,13 @@
     { react: [0.3, 0.48], err: 0.045, track: 7, turn: 8, comp: 0.55, fov: 1.85, hs: 0.28, noise: 0.003 },
     { react: [0.18, 0.3], err: 0.025, track: 11, turn: 12, comp: 0.8, fov: 2.1, hs: 0.42, noise: 0.0012 },
   ];
-  let D = DIFF[1];
+  let level = 1, D = DIFF[1];
   const eye = new THREE.Vector3(), tv = new THREE.Vector3();
-  B.setDifficulty = (i) => { D = DIFF[i] || DIFF[1]; };
+  B.setDifficulty = (i) => { level = DIFF[i] ? i : 1; D = DIFF[level]; };
 
   function freshAI() {
     return {
-      mode: 'idle', path: null, pathIdx: 0, goal: new THREE.Vector3(1e9, 0, 0), repathT: 0, route: null, routeIdx: 0, siteTarget: null,
+      grenadeAt:G.time + G.rand(6,11), throwGoal:new THREE.Vector3(), throwId:null, mode: 'idle', path: null, pathIdx: 0, goal: new THREE.Vector3(1e9, 0, 0), repathT: 0, route: null, routeIdx: 0, siteTarget: null,
       target: null, targetVisible: false, reactUntil: 0, errY: 0, errP: 0, aimHead: false, lastSeenPos: new THREE.Vector3(), lastSeenT: -99,
       alertPos: new THREE.Vector3(), alertT: -99, strafe: 0, strafeT: 0, stuckCheck: 1, lastPos: new THREE.Vector3(), unstickUntil: 0,
       visT: Math.random() * 0.1, burstLeft: 0, burstShots: 0, prevShotT: -1, pauseUntil: 0, guardPos: null, guardYaw: 0, guardFor: null,
@@ -47,14 +47,18 @@
   };
   B.buy = function (a) {
     const Gm = G.Game, rifle = a.team === 'atk' ? 'ar7' : 'tr4';
-    if (!a.inv.primary) {
-      if (a.money >= 5750 && Math.random() < 0.18) Gm.buy(a, 'r90');
-      else if (a.money >= W.defs[rifle].price + 650) Gm.buy(a, rifle);
-      else if (a.money >= 1900 && Gm.round > 1 && Math.random() < 0.7) Gm.buy(a, 'v9');
+    if (!a.inv.primary && Gm.round>1) {
+      const options = ['k5','u45','s8','v9','fa2','s40',rifle,'r90','l60'].filter((id) => W.defs[id].price<=a.money);
+      if (options.length) {
+        const preferred=options.filter((id) => W.defs[id].price>=Math.min(2700,a.money*.45));
+        Gm.buy(a,G.pick(preferred.length && Math.random()<.72 ? preferred : options));
+      }
     }
-    if (a.armor < 70 || !a.helmet) { if (a.money >= 1000) Gm.buy(a, 'vesthelm'); else if (a.money >= 650 && a.armor < 70) Gm.buy(a, 'vest'); }
-    if (!a.inv.primary && a.money >= 700 && a.inv.pistol && a.inv.pistol.id === 'p10' && Math.random() < 0.5) Gm.buy(a, 'h50');
-    if (a.team === 'def' && !a.kit && a.money >= 400 && Math.random() < 0.6) Gm.buy(a, 'kit');
+    if (!a.inv.primary && a.inv.pistol.id==='p10' && Math.random()<.38) Gm.buy(a,G.pick(['h50','m18']));
+    if (a.armor<70 || !a.helmet) { if (a.money>=1000) Gm.buy(a,'vesthelm'); else if (a.armor<70) Gm.buy(a,'vest'); }
+    if (a.team==='def' && !a.kit && Math.random()<.45) Gm.buy(a,'kit');
+    const choices=G.shuffle(['he','flash','smoke',a.team==='atk' ? 'molotov' : 'incendiary']);
+    for (const id of choices) { if (W.grenadeCount(a)>=level+1) break; Gm.buy(a,id); }
   };
 
   // ---------- hearing / damage reactions ----------
@@ -86,9 +90,9 @@
       const inFov = (dx * fx + dz * fz) / (d || 1) > cosF || d < 2.5 || ai.target === e || (ai.alertT > G.time && G.dist2D(ai.alertPos, e.pos) < 6);
       if (!inFov) continue;
       const h = W.hitboxes(e);
-      let vis = M.clearLine(eye, tv.set(e.pos.x, h.headY, e.pos.z));
-      if (!vis) vis = M.clearLine(eye, tv.set(e.pos.x, (h.legTop + h.bodyTop) / 2, e.pos.z));
-      if (!vis && d < 40) vis = M.clearLine(eye, tv.set(e.pos.x, e.pos.y + 0.4, e.pos.z));
+      let vis = G.Nades.visible(eye, tv.set(e.pos.x, h.headY, e.pos.z));
+      if (!vis) vis = G.Nades.visible(eye, tv.set(e.pos.x, (h.legTop + h.bodyTop) / 2, e.pos.z));
+      if (!vis && d < 40) vis = G.Nades.visible(eye, tv.set(e.pos.x, e.pos.y + 0.4, e.pos.z));
       if (vis && d < bestD) { bestD = d; best = e; }
     }
     if (best) {
@@ -219,6 +223,7 @@
     G.eyePos(a, eye);
     const ay = ai.aimHead ? h.headY - 0.03 : (h.legTop + h.bodyTop) / 2 + 0.1;
     const dx = e.pos.x - eye.x, dz = e.pos.z - eye.z, dist = Math.hypot(dx, dz), dy = ay - eye.y;
+    if (!G.Nades.visible(eye,tv.set(e.pos.x,ay,e.pos.z))) { ai.targetVisible=false; return; }
     ai.errY *= Math.exp(-dt * D.track); ai.errP *= Math.exp(-dt * D.track);
     const trueYaw = G.yawTo(dx, dz), truePitch = Math.atan2(dy, dist);
     cmd.faceYaw = trueYaw + ai.errY; cmd.facePitch = truePitch + ai.errP; cmd.fast = true;
@@ -226,6 +231,7 @@
     const onTarget = Math.abs(G.wrapAngle(a.yaw - trueYaw)) < tol && Math.abs(a.pitch - truePitch) < tol + 0.04;
     const ready = G.time >= ai.reactUntil && onTarget && G.time >= ai.pauseUntil && !G.Game.frozen;
     if (a.lastShot !== ai.prevShotT) { ai.prevShotT = a.lastShot; ai.burstShots++; }
+    if (it && it.def.slot==='grenade') return;
     if (it && !it.def.melee) {
       const d = it.def;
       if (d.scope && it.zoom === 0 && !it.rezoom && dist > 5 && G.time >= it.nextFire) cmd.altPressed = true;
@@ -256,13 +262,64 @@
     }
   }
 
+  // Check the actual bounced landing point before committing a teammate's utility.
+  const flight={pos:new THREE.Vector3(),vel:new THREE.Vector3()}, velocity=new THREE.Vector3();
+  function useGrenade(a) {
+    const ai=a.ai, bomb=G.Game.bomb;
+    if (ai.throwId && (a.blindUntil>G.time || !a.nades[ai.throwId] || G.Game.phase!=='live')) {
+      ai.throwId=null; W.switchTo(a,W.bestSlot(a)); return;
+    }
+    if (G.Game.phase!=='live' || G.time<ai.grenadeAt || !a.inv.grenade || a.planting || a.defusing || a.blindUntil>G.time) return;
+    ai.grenadeAt=G.time+G.rand(1,2.4)/(1+level*.4);
+    const known=G.time-ai.lastSeenT<4 ? ai.lastSeenPos : ai.alertT>G.time ? ai.alertPos : null;
+    const site=a.team==='atk' ? M.sites[B.plan.site].center : bomb.state==='planted' ? bomb.pos : null;
+    let goal=known, id;
+    if (ai.throwId) { id=ai.throwId; goal=ai.throwGoal; ai.throwId=null; }
+    else if (site && a.nades.smoke && G.dist2D(a.pos,site)<24) { id='smoke'; goal=site; }
+    else if (known) {
+      const fire=a.team==='atk' ? 'molotov' : 'incendiary';
+      if (a.nades.flash && a.team==='atk' && ai.targetVisible) id='flash';
+      else id=a.nades[fire] ? fire : a.nades.he ? 'he' : a.nades.flash ? 'flash' : null;
+    }
+    if (!id || !goal) return;
+    const distance=G.dist2D(a.pos,goal);
+    if (distance<6 || distance>26) return;
+    G.eyePos(a,eye);
+    const t=G.clamp(distance/15,.65,1.35);
+    velocity.set((goal.x-eye.x)/t,(goal.y+.15-eye.y)/t+7*t,(goal.z-eye.z)/t);
+    flight.pos.copy(eye); flight.vel.copy(velocity); flight.rest=flight.groundHit=false;
+    const fire=id==='incendiary' || id==='molotov';
+    for (let i=0;i<(id==='he' || id==='flash' ? 144 : 180);i++) {
+      G.Nades.step(flight);
+      if (flight.rest || (fire && flight.groundHit)) break;
+    }
+    if (G.dist2D(flight.pos,goal)>5 || G.dist2D(flight.pos,a.pos)<5) return;
+    for (const mate of G.Game.agents) {
+      if (mate===a || !mate.alive || mate.team!==a.team) continue;
+      const radius=id==='smoke' ? 2 : id==='he' ? 8.5 : id==='flash' ? 10 : 4.5;
+      if (G.dist2D(mate.pos,flight.pos)<radius || G.dist2D(mate.pos,goal)<radius) return;
+    }
+    if (a.cur!=='grenade') {
+      ai.throwId=id; ai.throwGoal.copy(goal); ai.grenadeAt=G.time+.62;
+      a.inv.grenade=W.item(id); W.switchTo(a,'grenade');
+      return;
+    }
+    if (G.Nades.throw(a,id,eye,velocity)) {
+      if (a.cur==='grenade') W.switchTo(a,W.bestSlot(a));
+      ai.grenadeAt=G.time+G.rand(8,16)/(1+level*.35);
+      a.switchEnd=G.time+.65;
+    }
+  }
+
   // ---------- main update ----------
   const SLOT_ORDER = ['primary', 'pistol', 'knife'];
   function think(a, dt) {
     const ai = a.ai;
     if (!ai) return;
     ai.visT -= dt;
-    if (ai.visT <= 0) { ai.visT = 0.1 + Math.random() * 0.06; perceive(a); }
+    const blind = a.blindUntil>G.time;
+    if (blind) { ai.target=null; ai.targetVisible=false; ai.alertT=ai.lastSeenT=-99; }
+    else if (ai.visT <= 0) { ai.visT = 0.1 + Math.random() * 0.06; perceive(a); }
     const cmd = { dest: null, walk: false, crouch: false, faceYaw: null, facePitch: 0, fire: false, firePressed: false, altPressed: false, reload: false, use: false, strafe: 0, stop: false, fast: false };
     if (ai.target && !ai.target.alive) { ai.target = null; ai.targetVisible = false; }
     if (ai.target && ai.targetVisible) combat(a, cmd, dt);
@@ -278,10 +335,12 @@
         if (it && !it.def.melee && it.clip < it.def.clip * 0.5 && it.reserve > 0 && G.time - ai.lastSeenT > 2.5) cmd.reload = true;
       }
     }
+    if (!cmd.use || ai.throwId) useGrenade(a);
+    if (a.cur==='grenade' && !ai.throwId) W.switchTo(a,W.bestSlot(a));
     // weapon choice
     const it = W.current(a);
     const empty = it && !it.def.melee && it.clip === 0 && it.reserve === 0;
-    if (!cmd.use && (a.cur === 'bomb' || a.cur === 'knife' || empty) && G.time >= a.switchEnd) {
+    if (!cmd.use && (a.cur === 'bomb' || a.cur === 'knife' || (empty && !ai.throwId)) && G.time >= a.switchEnd) {
       const best = SLOT_ORDER.find((s) => a.inv[s] && (s === 'knife' || a.inv[s].clip + a.inv[s].reserve > 0));
       if (best && best !== a.cur) W.switchTo(a, best);
     }
@@ -297,6 +356,15 @@
       if (o === a || !o.alive) continue;
       const dx = a.pos.x - o.pos.x, dz = a.pos.z - o.pos.z, d = Math.hypot(dx, dz);
       if (d < 0.9 && d > 0.001) { wx += dx / d * 0.6; wz += dz / d * 0.6; }
+    }
+    if (!frozen && G.Nades.fires.length) {
+      const hot = G.Nades.hot(a.pos) || G.Nades.hot(tv.set(a.pos.x+wx*1.5,a.pos.y,a.pos.z+wz*1.5));
+      if (hot) {
+        const x=a.pos.x-hot.pos.x, z=a.pos.z-hot.pos.z, d=Math.hypot(x,z);
+        wx=d>.05 ? x/d : 1; wz=d>.05 ? z/d : 0;
+        if (G.Phys.blocked(a.pos.x+wx*.6,a.pos.y+.02,a.pos.z+wz*.6,1.4)) { const t=wx; wx=-wz; wz=t; }
+        cmd.walk=cmd.crouch=cmd.use=false;
+      }
     }
     const wl = Math.hypot(wx, wz);
     if (wl > 1) { wx /= wl; wz /= wl; }

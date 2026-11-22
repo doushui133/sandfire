@@ -12,6 +12,8 @@
   // where the gun sits in view (x right, y up, z forward is negative)
   const BASE = {
     ar7: [0.14, -0.19, -0.41], tr4: [0.14, -0.19, -0.4], v9: [0.135, -0.172, -0.37], r90: [0.15, -0.2, -0.4],
+    k5:[.12,-.16,-.35], u45:[.14,-.175,-.37], fa2:[.14,-.18,-.4], s8:[.145,-.18,-.39],
+    s40:[.15,-.19,-.39], l60:[.165,-.21,-.38], m18:[.09,-.12,-.40],
     p10: [0.085, -0.112, -0.41], h50: [0.085, -0.117, -0.43], knife: [0.15, -0.16, -0.3], bomb: [0.0, -0.22, -0.36],
   };
   const SLEEVE = { atk: { c: 0x5e533c, r: 0.88, z: 1 }, def: { c: 0x2b323d, r: 0.86, z: 1, w: 1 } };
@@ -113,10 +115,12 @@
       const body = new THREE.Mesh(gm.body, gunMat), mag = gm.mag ? new THREE.Mesh(gm.mag, gunMat) : null;
       const arms = new THREE.Mesh(buildArms(id, team), armMat(team));
       [body, mag, arms].forEach((m) => { if (m) m.frustumCulled = false; });
-      guns[key] = { body, mag, arms, gm };
+      const action = gm.action && new THREE.Mesh(gm.action,gunMat);
+      guns[key] = { body, mag, arms, gm, action };
     }
     while (holder.children.length) holder.remove(holder.children[0]);
     const g = guns[key];
+    if (g.action) holder.add(g.action);
     holder.add(g.body); if (g.mag) holder.add(g.mag); holder.add(g.arms);
     holder.add(flash); holder.add(flash2);
     flash.position.copy(g.gm.muzzle); flash2.position.copy(g.gm.muzzle);
@@ -147,6 +151,7 @@
     flash2.rotation.set(0, Math.PI / 2, Math.random() * 0.4 - 0.2);
     G.FX.shell(VM.ejectWorld(), d.model);
   };
+  VM.onThrow = function (id) { st.thrown = id; st.thrownAt = G.time; };
   VM.onKnife = function (heavy) { st.swingT = 0; st.heavy = heavy; };
   VM.onReload = function (dur) { st.reloadT = 0; st.reloadDur = dur; };
   VM.onSwitch = function () { st.drawT = 0; st.reloadT = -1; };
@@ -164,7 +169,8 @@
   VM.update = function (dt, p, mainCam) {
     if (!scene || !p) return;
     const it = G.Weapons.current(p);
-    const id = p.cur === 'bomb' ? 'bomb' : it ? it.id : 'knife';
+    const throwing = st.thrown && G.time-st.thrownAt < 0.28;
+    const id = throwing ? st.thrown : p.cur === 'bomb' ? 'bomb' : it ? it.id : 'knife';
     VM.setWeapon(id, p.team);
     const scoped = it && it.def.scope && it.zoom > 0;
     holder.visible = p.alive && !scoped;
@@ -176,7 +182,7 @@
     gunMat.uniforms.uAmbient.value.copy(st.amb);
     const am = armMat(p.team); am.uniforms.uSunVis.value = VM.shade; am.uniforms.uAmbient.value.copy(st.amb);
     if (!holder.visible) return;
-    const base = BASE[id];
+    const base = BASE[id] || grenadeBase;
     // bob + sway
     const sp = Math.hypot(p.vel.x, p.vel.z), f = p.onGround ? G.clamp(sp / 6, 0, 1) : 0;
     st.bob += dt * (3.6 + sp * 1.5);
@@ -206,6 +212,19 @@
       }
     }
     if (magMesh) { magMesh.position.set(0, -magDrop * 0.16, magDrop * 0.03); magMesh.rotation.set(magDrop * 0.3, 0, 0); magMesh.visible = magDrop < 0.98; }
+    if (id === 's8' && magMesh) { magMesh.visible = st.reloadT >= 0; magMesh.position.y=-0.09*(1-Math.max(0,st.reloadT)); }
+    if (VM.cur.action) {
+      const t=G.clamp((G.time-p.lastShot-0.07)/0.45,0,1), travel=Math.sin(t*Math.PI);
+      VM.cur.action.position.z=travel*(id==='s8' ? 0.095 : 0.058);
+      if (id==='s40') VM.cur.action.rotation.z=travel*0.45;
+    }
+    if (id === 'l60' && st.reloadT>=0) rz+=0.32*Math.sin(st.reloadT*Math.PI);
+    if (G.Weapons.defs[id] && G.Weapons.defs[id].slot==='grenade') {
+      const pull=p.primed ? 1 : 0, swing=throwing ? (G.time-st.thrownAt)/0.28 : 0;
+      rx+=pull*.44-swing*1.18; y+=pull*.025+swing*.06; z-=swing*.17;
+      magMesh.position.set(-pull*.06,pull*.026,0); magMesh.visible=!throwing;
+      gunMesh.visible=!throwing || swing<0.26;
+    } else gunMesh.visible=true;
     if (st.swingT >= 0) {
       st.swingT += dt / (st.heavy ? 0.45 : 0.3);
       if (st.swingT >= 1) st.swingT = -1;
@@ -218,6 +237,7 @@
     st.flashT -= dt;
     flash.visible = flash2.visible = st.flashT > 0 && id !== 'knife' && id !== 'bomb';
   };
+  const grenadeBase = [.105,-.15,-.34];
   const tmpC = new THREE.Color();
   VM.render = function (renderer) {
     if (!scene || !holder.visible) return;

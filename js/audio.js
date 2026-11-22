@@ -2,6 +2,7 @@
 (function (G) {
   'use strict';
   let ctx = null, master = null, noiseBuf = null, brownBuf = null;
+  let filter, crackleBuf;
   const listenerPos = { x: 0, y: 0, z: 0 };
 
   const A = G.Audio = {};
@@ -19,20 +20,27 @@
     comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
     master = ctx.createGain();
     master.gain.value = G.settings.vol;
-    master.connect(comp); comp.connect(ctx.destination);
+    filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000;
+    master.connect(filter); filter.connect(comp); comp.connect(ctx.destination);
     // white + brown noise buffers
     const len = ctx.sampleRate * 2;
     noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     brownBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+    crackleBuf = ctx.createBuffer(1,len,ctx.sampleRate);
+    const crackle = crackleBuf.getChannelData(0);
+    let pop = 0;
     const w = noiseBuf.getChannelData(0), b = brownBuf.getChannelData(0);
     let last = 0;
     for (let i = 0; i < len; i++) {
       const r = Math.random() * 2 - 1;
       w[i] = r;
+      if (r > 0.998) pop = 1;
+      crackle[i] = r * (0.04 + pop); pop *= 0.992;
       last = (last + 0.02 * r) / 1.02;
       b[i] = last * 3.5;
     }
   };
+  A.pause = function () { if (ctx && ctx.state==='running') ctx.suspend().catch(() => {}); };
   A.setVolume = function (v) { if (master) master.gain.value = v; };
 
   A.updateListener = function (pos, yaw) {
@@ -102,6 +110,10 @@
   }
 
   const GUN = {
+    m18: { f:3600, d:0.10, th:230, g:0.58 }, k5: { f:3300, d:0.09, th:195, g:0.62 },
+    u45: { f:1800, d:0.20, th:108, g:0.85 }, s8: { f:1500, d:0.44, th:63, g:1.35 },
+    fa2: { f:2600, d:0.18, th:125, g:0.85 }, s40: { f:2200, d:0.37, th:82, g:1.12 },
+    l60: { f:1750, d:0.27, th:74, g:1.15 },
     pistol: { f: 2800, d: 0.16, th: 150, g: 0.75 },
     heavy: { f: 1900, d: 0.3, th: 85, g: 1.1 },
     smg: { f: 3200, d: 0.11, th: 170, g: 0.65 },
@@ -185,6 +197,34 @@
     noise(o, t, 2.6, { brown: true, f: 1200, f2: 80, g: 1.6, att: 0.01 });
     noise(o, t, 0.6, { f: 4000, f2: 300, g: 0.8 });
     tone(o, t, 1.6, { f: 70, f2: 25, g: 1.2 });
+  };
+  A.reload = function (d, finish) {
+    if (!ctx) return;
+    const p=GUN[d.snd], t=ctx.currentTime, o=out(null,1,0.45);
+    noise(o,t,d.shell ? 0.06 : 0.14,{type:'bandpass',f:p.f*(finish ? 0.7 : 1),q:1.6});
+    tone(o,t+0.04,0.07,{f:p.th*4,g:0.14,wave:'triangle'});
+  };
+  A.grenade = function (id,pos) {
+    if (!ctx) return;
+    if (id==='he') { A.explosion(pos); return; }
+    const o=out(pos,4,0.7), t=ctx.currentTime;
+    if (id==='flash') { noise(o,t,0.17,{f:5600,g:1.3}); tone(o,t,0.12,{f:1600,f2:600,g:0.35}); }
+    else if (id==='smoke') noise(o,t,1.3,{type:'highpass',f:1600,g:0.6});
+    else if (id==='throw') noise(o,t,0.13,{type:'bandpass',f:850,f2:2000,g:0.45});
+    else noise(o,t,0.5,{f: id==='molotov' ? 4500 : 2000,f2:550,g:0.9});
+  };
+  A.ring = function (dur) {
+    if (!ctx) return;
+    const t=ctx.currentTime, f=filter.frequency;
+    f.cancelScheduledValues(t); f.setValueAtTime(750,t); f.exponentialRampToValueAtTime(20000,t+dur);
+    tone(master,t,dur,{f:2600,f2:1600,g:0.2});
+  };
+  A.fireLoop = function (pos) {
+    if (!ctx) return null;
+    const o=out(pos,3,0.3), src=ctx.createBufferSource(), f=ctx.createBiquadFilter();
+    f.type='highpass'; f.frequency.value=850;
+    src.buffer=crackleBuf; src.loop=true; src.connect(f); f.connect(o); src.start();
+    return () => { src.stop(); src.disconnect(); f.disconnect(); o.disconnect(); };
   };
   A.radio = function (kind) {
     if (!ctx) return;

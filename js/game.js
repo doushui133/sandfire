@@ -14,13 +14,13 @@
     return {
       id: nextId++, name, team, isPlayer: !!isPlayer, isBot: !isPlayer, alive: false, hp: 100, armor: 0, helmet: false, kit: false, money: CFG.startMoney,
       pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, onGround: true, crouch: 0, crouchWant: false, walking: false,
-      inv: { primary: null, pistol: W.item('p10'), knife: W.item('knife'), bomb: false }, cur: 'pistol', prevSlot: 'knife', switchEnd: 0,
+      nades: {}, blindUntil:0, throwReady:0, inv: { grenade:null, primary: null, pistol: W.item('p10'), knife: W.item('knife'), bomb: false }, cur: 'pistol', prevSlot: 'knife', switchEnd: 0,
       recoilP: 0, recoilY: 0, inacc: 0, shots: 0, lastShot: -9, kills: 0, deaths: 0, slowUntil: 0, punchUntil: 0,
       planting: false, plantT: 0, defusing: false, defuseT: 0, stepUp: 0, spottedUntil: 0,
     };
   };
   Gm.alive = (team) => Gm.agents.filter((a) => a.alive && a.team === team).length;
-  Gm.clearScene = function () { if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; } };
+  Gm.clearScene = function () { G.Nades.clear(); if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; } };
 
   Gm.start = function (team, diff) {
     Gm.agents.forEach((a) => G.BotModel.remove(a));
@@ -39,15 +39,17 @@
   };
 
   function resetLoadout(a) {
+    a.nades = {}; a.inv.grenade = null;
     a.inv.primary = null; a.inv.pistol = W.item('p10'); a.armor = 0; a.helmet = false; a.kit = false;
   }
   Gm.newRound = function () {
     Gm.round++;
-    G.FX.clear(); W.clearDrops();
+    G.Nades.clear(); G.FX.clear(); W.clearDrops();
     if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; }
     const spawns = { atk: G.shuffle(M.spawns.atk.slice()), def: G.shuffle(M.spawns.def.slice()) };
     for (const a of Gm.agents) {
       if (!a.alive && Gm.round > 1) resetLoadout(a);
+      a.primed = 0; a.throwReady = a.blindUntil = 0;
       a.alive = true; a.hp = 100;
       a.pos.copy(spawns[a.team].pop()); a.vel.set(0, 0, 0);
       a.yaw = a.team === 'atk' ? 0 : Math.PI; a.pitch = 0; a.crouch = 0; a.crouchWant = false;
@@ -71,6 +73,7 @@
 
   Gm.update = function (dt) {
     if (Gm.phase === 'menu' || Gm.phase === 'over') return;
+    G.Nades.update(dt);
     const b = Gm.bomb;
     if (Gm.phase === 'freeze') {
       Gm.phaseT -= dt;
@@ -95,7 +98,7 @@
       if (b.state === 'planted') { b.timer -= dt; if (b.timer <= 0) explode(true); }
       Gm.phaseT -= dt;
       if (Gm.phaseT <= 0) {
-        if (Gm.over) { Gm.phase = 'over'; G.HUD.matchOver(Gm.over); }
+        if (Gm.over) { Gm.phase = 'over'; G.Nades.clear(); G.HUD.matchOver(Gm.over); }
         else Gm.newRound();
       }
     }
@@ -133,7 +136,7 @@
     if (a.inv.bomb) {
       const site = M.siteAt(a.pos.x, a.pos.z);
       if (held && site && a.onGround && Gm.phase === 'live') {
-        if (!a.planting) { a.planting = true; a.plantT = 0; if (a.cur !== 'bomb') { a.prevSlot = a.cur; a.cur = 'bomb'; } G.Audio.click('tick'); }
+        if (!a.planting) { G.Nades.cancel(a); a.planting = true; a.plantT = 0; if (a.cur !== 'bomb') { a.prevSlot = a.cur; a.cur = 'bomb'; } G.Audio.click('tick'); }
         const before = a.plantT; a.plantT += dt;
         if (Math.floor(before / 0.6) !== Math.floor(a.plantT / 0.6)) G.Audio.beep(a.pos, false);
         if (a.plantT >= CFG.plant) plant(a, site);
@@ -195,7 +198,7 @@
   // ---------- damage / kills ----------
   Gm.damage = function (v, attacker, dmg, info) {
     if (!v.alive) return null;
-    if (attacker && attacker !== v && attacker.team === v.team) return null;
+    if (attacker && attacker !== v && attacker.team === v.team && !info.area) return null;
     v.hp -= dmg; v.slowUntil = G.time + 0.35; v.punchUntil = G.time + 0.12;
     if (v.isPlayer) { G.HUD.hurt(attacker ? attacker.pos : null, dmg); G.Audio.hurt(); }
     G.Bots.onDamaged(v, attacker);
@@ -208,11 +211,13 @@
     if (v.rig && G.BotModel.prepareDeath) G.BotModel.prepareDeath(v);
     v.alive = false; v.hp = 0; v.deaths++; v.planting = v.defusing = false; v.vel.set(0, 0, 0); v.crouch = Math.min(v.crouch, 0.5);
     if (Gm.bomb.defuser === v) Gm.bomb.defuser = null;
-    if (attacker && attacker !== v) {
+    if (attacker && attacker.team !== v.team) {
       attacker.kills++;
       const d = W.defs[info.weapon];
       attacker.money = Math.min(CFG.maxMoney, attacker.money + (d ? d.kill : 300));
     }
+    G.Nades.cancel(v);
+    if (v.cur === 'grenade') W.drop(v, 'grenade');
     if (v.inv.bomb) Gm.dropBomb(v, true);
     if (v.inv.primary) W.drop(v, 'primary'); else if (v.inv.pistol && v.isBot) W.drop(v, 'pistol');
     const wname = info.weapon === 'bomb' ? '爆炸' : (W.defs[info.weapon] ? W.defs[info.weapon].name : '');
@@ -254,6 +259,7 @@
     if (id === 'vesthelm') return a.armor >= 100 && a.helmet;
     if (id === 'kit') return a.kit;
     const d = W.defs[id];
+    if (d && d.slot === 'grenade') return (a.nades[id] || 0) >= d.limit;
     return !!(d && a.inv[d.slot] && a.inv[d.slot].id === id);
   };
   Gm.buy = function (a, id) {
@@ -261,7 +267,8 @@
     if (!d || !Gm.canBuy(a) || (d.team && d.team !== a.team) || Gm.owns(a, id)) return false;
     const price = Gm.priceOf(a, id);
     if (a.money < price) return false;
-    if (W.defs[id]) {
+    if (d.slot === 'grenade') { if (!W.addGrenade(a, id)) return false; }
+    else if (W.defs[id]) {
       const slot = d.slot;
       if (a.inv[slot]) { if (slot === 'pistol') a.inv[slot] = null; else W.drop(a, slot); }
       a.inv[slot] = W.item(id);

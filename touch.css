@@ -57,13 +57,22 @@ html,body { overscroll-behavior:none }
 }
 .touch-actions button { pointer-events:auto }
 [data-action=scope],[data-action=heavy] { grid-area:1/1 }
-[data-action=cycle] { grid-area:1/3 }
+[data-action=grenade] { grid-area:1/3 }
 [data-action=use] { grid-area:2/2 }
 #touchLayer [data-action=fire] { grid-area:2/3; width:76px; height:76px; font-size:19px }
 [data-action=reload] { grid-area:3/1 }
 [data-action=crouch] { grid-area:3/2 }
 [data-action=jump] { grid-area:3/3 }
-[data-action=buy] { position:absolute; left:var(--left); top:calc(var(--top) + 78px) }
+#touchLayer [data-action=leftFire] { position:absolute; left:calc(var(--left) + 42px); bottom:calc(var(--bottom) + 134px) }
+#touchLayer.spectator [data-action=leftFire] { display:none }
+.direct-address span { user-select:all; -webkit-user-select:all; cursor:text }
+#flashView,#gasView { position:absolute; inset:0; pointer-events:none; z-index:5; background:#fff }
+#gasView { background:#88857f; z-index:4 }
+.touch { --button-unit:min(calc(49px * var(--button-size,1)),8.4vw,16vh) }
+#touchLayer button { min-width:var(--button-unit); height:var(--button-unit) }
+.touch-actions { grid-template-columns:var(--button-unit) var(--button-unit) calc(var(--button-unit) * 1.45); grid-template-rows:var(--button-unit) calc(var(--button-unit) * 1.45) var(--button-unit) }
+#touchLayer [data-action=fire] { width:calc(var(--button-unit) * 1.45); height:calc(var(--button-unit) * 1.45) }
+#touchLayer .touch-tools button { min-width:42px; height:36px; border-radius:8px }
 #stick {
   position:absolute; left:calc(var(--left) + 72px); top:calc(100% - var(--bottom) - 68px);
   transform:translate(-50%,-50%); width:120px; height:120px; border-radius:50%;
@@ -97,12 +106,25 @@ html,body { overscroll-behavior:none }
 .touch #clip { font-size:21px }
 .touch #reserve { font-size:13px }
 .touch #slots {
-  position:absolute; left:50%; bottom:var(--bottom); transform:translateX(-50%);
+  position:absolute; left:calc(var(--left) + 135px); right:calc(var(--right) + var(--button-unit) * 3.45 + 14px);
+  bottom:var(--bottom); margin:0 auto; width:max-content;
   flex-direction:row; gap:3px;
 }
-.touch #slots button { width:52px; font-size:11px; border-radius:5px }
+.touch #slots button { width:min(8vw,50px); min-width:0; height:42px; font-size:11px; border-radius:5px }
+.nade-icon { display:inline-block; font-size:.86em; color:#c5b89e; margin-right:2px }
+.nade-icon::before { content:""; display:inline-block; width:7px; height:9px; border:1px solid currentColor; border-top:2px solid; border-radius:2px; margin-right:2px; vertical-align:middle }
+.icon-he::before { border-radius:50%; background:#657452 }
+.icon-flash::before { background:repeating-linear-gradient(#b1b8bd 0 2px,#4b5054 2px 4px) }
+.icon-smoke::before { background:#b5a486 }
+.icon-molotov::before { border-radius:45% 45% 20% 20%; background:#aa783e }
+.icon-incendiary::before { background:#a44c3b }
+.nade-icon.selected { color:#ffe5a4; text-decoration:underline }
+.touch #slots [data-slot=grenade] { width:auto; max-width:76px }
 .touch #slots button.on { border-color:var(--sun); color:var(--sun) }
 .touch-playing #slots button { pointer-events:auto }
+.touch #slots { max-width:min(40vw,calc(100% - var(--left) - var(--right) - 149px - var(--button-unit) * 3.45)); align-items:stretch }
+.touch #slots button { overflow:hidden; line-height:1.1 }
+.touch #buyHint { pointer-events:none }
 .touch:not(.touch-playing) #slots { display:none }
 .touch-playing #slots button:disabled { pointer-events:none }
 .touch #killfeed { top:calc(var(--top) + 55px); right:var(--right); gap:1px }

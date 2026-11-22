@@ -217,16 +217,114 @@
     return { b, mg: null, muzzle: [0, 0.05, -0.05], eject: [0, 0, 0], rightHand: [0.06, 0.03, 0.04], leftHand: [-0.06, 0.03, 0.04], magPivot: [0, 0, 0], sight: 0, hold: 'bomb' };
   };
 
+  builders.m18 = function () {
+    const d=pistol(false);
+    rbox(d.b,S.olive,.036,.025,.13,.005,0,.018,-.105);
+    cylZ(d.b,S.steel,.012,.014,.065,0,.04,-.211);
+    for (let i=0;i<4;i++) cylX(d.b,S.black,.004,.029,0,.042,-.196-i*.012);
+    rbox(d.mg,S.dark,.027,.086,.046,.005,0,-.141,.005);
+    box(d.mg,S.olive,.034,.016,.05,0,-.19,.005);
+    d.muzzle[2]=-.245; return d;
+  };
+  // Each frame sets its own receiver length, stock, finish and support-hand position.
+  const frames={
+    k5:[.22,.33,.17,S.olive], u45:[.31,.48,.23,S.black], s8:[.32,.78,.32,S.wood],
+    fa2:[.36,.62,.27,S.tan], s40:[.35,.84,.35,S.woodDark], l60:[.47,.79,.34,S.box],
+  };
+  function longGun(id) {
+    const [length,reach,stock,finish]=frames[id], b=new K.Builder(), mg=new K.Builder();
+    const pump=id==='s8', bolt=id==='s40', belt=id==='l60', compact=id==='k5';
+    const width=belt ? .074 : compact ? .04 : .049, front=.07-length, grip=front*.85;
+    rbox(b,finish,width,.067,length,.008,0,.031,.07-length/2);
+    rbox(b,S.steel,width*.94,.028,length*.91,.006,0,.073,.06-length*.455);
+    cylZ(b,S.steel,belt ? .019 : .014,.011,reach+front,0,.056,(front-reach)/2);
+    cylZ(b,S.dark,.018,.019,.053,0,.056,-reach+.026);
+    for (let i=0;i<4;i++) cylX(b,S.black,.003,.038,0,.057,-reach+.009+i*.01);
+    triggerGroup(b,.018,.004);
+    prof(b,S.rubber,[[.014,.012],[.055,.011],[.085,-.09],[.048,-.106],[.016,-.015]],.033);
+    for (let i=0;i<4;i++) box(b,S.black,.036,.006,.028,0,-.027-i*.018,.044+i*.006);
+    box(b,S.dark,.004,.018,.069,width/2,.051,-.077);
+    for (const z of [.03,front+.04]) cylX(b,S.silver,.003,width+.003,0,.035,z);
+    if (compact || id==='fa2') {
+      for (const y of [.053,-.01]) cylZ(b,S.steel,.007,.007,stock,0,y,.07+stock/2);
+    } else {
+      prof(b,finish,[[.065,.061],[stock+.06,.078],[stock+.07,-.065],[stock-.018,-.062],[.09,-.004]],width);
+      if (bolt) rbox(b,S.rubber,.046,.022,.15,.006,0,.08,stock-.02);
+    }
+    box(b,S.rubber,width+.006,.134,.012,0,.005,stock+.073);
+    if (!pump) {
+      rbox(b,finish,width+.008,.054,(reach+front)*.57,.013,0,.041,front-(reach+front)*.25);
+      for (let i=1;i<=6;i++) box(b,S.dark,width+.009,.012,.011,0,.046,front-(reach+front)*i*.07);
+    }
+    rail(b,compact ? .095 : .17,.091,-.005);
+    box(b,S.dark,.024,.025,.018,0,.095,front+.02);
+    box(b,S.dark,.005,.037,.008,0,.077,-reach+.07);
+    const magazineZ=compact ? .04 : belt ? -.18 : -.115;
+    let action;
+    if (pump) {
+      cylZ(b,S.dark,.014,.014,.48,0,.02,-.48);
+      action=new K.Builder();
+      rbox(action,S.wood,.061,.046,.18,.014,0,.018,-.46);
+      for (let i=0;i<8;i++) box(action,S.woodDark,.062,.027,.006,0,.017,-.39-i*.02);
+      cylZ(mg,S.wireR,.01,.01,.054,-.035,-.019,-.12);
+      cylZ(mg,S.brass,.011,.011,.01,-.035,-.019,-.089);
+    } else if (belt) {
+      rbox(mg,S.box,.12,.14,.16,.012,-.018,-.065,magazineZ);
+      for (let i=0;i<5;i++) box(mg,S.dark,.124,.005,.13,-.018,-.015-i*.023,magazineZ);
+      for (let i=0;i<6;i++) cylZ(b,S.brass,.005,.004,.052,-.038-i*.009,.05-i*.006,-.16);
+      for (const side of [-1,1]) box(b,S.dark,.009,.22,.009,side*.045,-.054,-.56,0,0,side*.34);
+      prof(b,S.black,[[-.24,.08],[-.22,.14],[-.08,.14],[-.06,.08],[-.09,.085],[-.1,.119],[-.20,.119],[-.215,.08]],.018);
+    } else {
+      const depth=bolt ? .065 : compact ? .19 : id==='u45' ? .205 : .155;
+      rbox(mg,S.dark,.034,depth,.052,.005,0,-depth/2,magazineZ);
+      for (let i=0;i<4;i++) box(mg,finish,.036,.005,.045,0,-depth*(i+1)/5,magazineZ);
+      box(mg,S.black,.042,.013,.064,0,-depth,magazineZ);
+      if (bolt) {
+        for (const z of [.013,-.105]) rbox(b,S.steel,.032,.037,.022,.006,0,.11,z);
+        cylZ(b,S.dark,.019,.019,.22,0,.135,-.05);
+        cylZ(b,S.dark,.027,.018,.065,0,.135,-.183);
+        cylZ(b,S.lens,.023,.023,.003,0,.135,-.217);
+        action=new K.Builder(); cylX(action,S.steel,.005,.045,.04,.075,.036);
+        action.add(K.at(K.sphere(.012,.012,.012,10,6),.065,.07,.036),S.black);
+      } else if (compact) cylY(b,S.rubber,.016,.095,0,-.035,grip);
+      else if (id==='u45') cylZ(b,S.dark,.027,.027,.12,0,.053,-reach+.08);
+    }
+    return {b,mg,action, muzzle:[0,.056,-reach],eject:[width/2,.055,-.08],rightHand:[0,-.034,.047],
+      leftHand:[0,pump ? .005 : -.006,pump ? -.46 : grip],magPivot:[0,-.035,magazineZ],sight:bolt ? .135 : .1,hold:'rifle'};
+  }
+  for (const id in frames) builders[id]=()=>longGun(id);
+  const coats={he:S.olive, flash:S.silver, smoke:S.clay, molotov:S.woodDark, incendiary:S.wireR};
+  for (const id in coats) builders[id]=function () {
+    const b=new K.Builder(), mg=new K.Builder(), bottle=id==='molotov';
+    const shape=bottle ? [[.026,-.097],[.039,-.09],[.039,.033],[.017,.062],[.015,.11],[0,.11]] :
+      id==='he' ? [[.018,-.055],[.04,-.04],[.047,-.005],[.038,.033],[.02,.05],[0,.05]] :
+      [[.024,-.066],[.036,-.06],[.036,.044],[.028,.054],[0,.054]];
+    b.add(K.lathe(shape,16),coats[id]);
+    if (bottle) {
+      cylY(b,S.tape,.04,.04,0,-.022,0);
+      rbox(mg,S.clay,.015,.064,.018,.003,.009,.13,0,0,0,-.4);
+    } else {
+      cylY(b,S.steel,.018,.021,0,.058,0);
+      for (let i=0;i<3;i++) cylY(b,id==='flash' ? S.dark : S.tape,id==='he' ? .043 : .037,.005,0,-.035+i*.026,0);
+      box(b,S.steel,.011,.075,.012,.031,.028,0,0,0,.28);
+      mg.add(K.at(K.torus(.014,.002,5,14),-.018,.066,0),S.brass);
+    }
+    return {b,mg,muzzle:[0,.07,0],eject:[0,0,0],rightHand:[0,-.015,0],leftHand:[-.031,.053,0],magPivot:[0,.064,0],sight:0,hold:'pistol'};
+  };
+
   // ---------- cache and public API ----------
   const cache = {};
   GM.get = function (id) {
     if (cache[id]) return cache[id];
     const d = builders[id]();
     const body = d.b.build(), mag = d.mg ? d.mg.build() : null;
-    const whole = mag ? G.Gfx.merge([body.clone(), mag.clone()]) : body;
+    const action = d.action ? d.action.build() : null, parts = [body];
+    if (mag && id !== 's8') parts.push(mag);
+    if (action) parts.push(action);
+    const whole = parts.length > 1 ? G.Gfx.merge(parts.map((p) => p.clone())) : body;
     const v3 = (a) => (a ? new THREE.Vector3(a[0], a[1], a[2]) : null);
     return (cache[id] = {
-      id, body, mag, whole, hold: d.hold, sight: d.sight,
+      id, body, mag, action, whole, hold: d.hold, sight: d.sight,
       muzzle: v3(d.muzzle), eject: v3(d.eject), rightHand: v3(d.rightHand), leftHand: v3(d.leftHand), magPivot: v3(d.magPivot),
     });
   };
@@ -239,6 +337,6 @@
     m.userData.gun = id;
     return m;
   };
-  GM.IDS = ['knife', 'p10', 'h50', 'v9', 'ar7', 'tr4', 'r90', 'bomb'];
+  GM.IDS = ['knife','p10','h50','v9','ar7','tr4','r90','bomb','m18','k5','u45','s8','fa2','s40','l60','he','flash','smoke','molotov','incendiary'];
   GM.builders = builders;   // exposed for the model checks in development
 })(window.G);
