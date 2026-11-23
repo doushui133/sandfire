@@ -5,9 +5,10 @@
   const THREE = G.THREE, MG = G.MapGeo;
   const MM = G.MapMesh = {};
 
-  function quadGeometry(list, geo) {
+  function quadGeometry(list, geo, tex) {
     const n = list.length, P = new Float32Array(n * 12), N = new Float32Array(n * 12), UV = new Float32Array(n * 8), UV2 = new Float32Array(n * 8);
     const TG = new Float32Array(n * 12), C = new Float32Array(n * 12), MT = new Float32Array(n * 16);
+    const SU = tex.scanLayers && !list[0].decal ? new Float32Array(n * 16) : null;
     const idx = n * 4 > 65535 ? new Uint32Array(n * 6) : new Uint16Array(n * 6);
     const W = geo.atlasW, H = geo.atlasH;
     list.forEach((q, k) => {
@@ -16,6 +17,10 @@
       const uh = [q.u[0] / lu, q.u[1] / lu, q.u[2] / lu], vh = [q.v[0] / lv, q.v[1] / lv, q.v[2] / lv];
       let nx = q.u[1] * q.v[2] - q.u[2] * q.v[1], ny = q.u[2] * q.v[0] - q.u[0] * q.v[2], nz = q.u[0] * q.v[1] - q.u[1] * q.v[0];
       const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+      const scan = SU && G.Tex.surfaceScan(q, tex.scanLayers);
+      // Match adjoining floor quads and use a common offset along each facade plane.
+      const phase = scan ? (q.o[0] * nx + q.o[1] * ny + q.o[2] * nz) * .317 + q.tint[1] * 11.7 : 0;
+      const layer = tex.layers ? tex.layers[q.m] : mat.layer;
       [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([s, t], c) => {
         const v = k * 4 + c;
         const x = q.o[0] + q.u[0] * s + q.v[0] * t, y = q.o[1] + q.u[1] * s + q.v[1] * t, z = q.o[2] + q.u[2] * s + q.v[2] * t;
@@ -24,9 +29,17 @@
         TG[v * 3] = uh[0]; TG[v * 3 + 1] = uh[1]; TG[v * 3 + 2] = uh[2];
         if (q.uv) { UV[v * 2] = s ? q.uv[2] : q.uv[0]; UV[v * 2 + 1] = t ? q.uv[3] : q.uv[1]; }
         else { UV[v * 2] = (x * uh[0] + y * uh[1] + z * uh[2]) / mat.tile; UV[v * 2 + 1] = (x * vh[0] + y * vh[1] + z * vh[2]) / mat.tile; }
+        if (SU) {
+          SU[v * 4 + 2] = scan ? scan.layer : -1;
+          if (scan) {
+            SU[v * 4] = (x * uh[0] + y * uh[1] + z * uh[2]) / scan.tile + phase;
+            SU[v * 4 + 1] = (x * vh[0] + y * vh[1] + z * vh[2]) / scan.tile + phase * .63;
+            SU[v * 4 + 3] = scan.mode;
+          }
+        }
         UV2[v * 2] = (q.lx + 0.5 + s * (q.tw - 1)) / W; UV2[v * 2 + 1] = (q.ly + 0.5 + t * (q.th - 1)) / H;
         C[v * 3] = q.tint[0]; C[v * 3 + 1] = q.tint[1]; C[v * 3 + 2] = q.tint[2];
-        MT[v * 4] = mat.layer; MT[v * 4 + 1] = mat.spec;
+        MT[v * 4] = layer === undefined ? 0 : layer; MT[v * 4 + 1] = mat.spec;
         MT[v * 4 + 2] = q.wall ? q.wall[0] : 0; MT[v * 4 + 3] = q.wall ? q.wall[1] : -1;
       });
       idx.set([k * 4, k * 4 + 1, k * 4 + 2, k * 4, k * 4 + 2, k * 4 + 3], k * 6);
@@ -39,6 +52,7 @@
     g.setAttribute('tang', new THREE.BufferAttribute(TG, 3));
     g.setAttribute('color', new THREE.BufferAttribute(C, 3));
     g.setAttribute('mat', new THREE.BufferAttribute(MT, 4));
+    if (SU) g.setAttribute('scan', new THREE.BufferAttribute(SU, 4));
     g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.computeBoundingSphere();
     return g;
@@ -58,12 +72,12 @@
       buckets.get(key).push(q);
     }
     for (const [key, list] of buckets) {
-      const m = new THREE.Mesh(quadGeometry(list, geo), key === 'decal' ? decalMat : worldMat);
+      const m = new THREE.Mesh(quadGeometry(list, geo, tex), key === 'decal' ? decalMat : worldMat);
       m.matrixAutoUpdate = false;
       if (key === 'decal') m.renderOrder = 1; else m.layers.enable(2);
       root.add(m);
     }
-    buildProps(root, geo.props, preset);
+    buildProps(root, geo.props, preset, tex.barrelMaps);
     buildDistant(root);
     scene.add(root);
     MM.root = root;
@@ -90,7 +104,7 @@
   }
   MM.frondTex = null;
   const detailGroups = [];
-  function buildProps(root, props, preset) {
+  function buildProps(root, props, preset, barrelMaps) {
     const metalGeos = [], trunkGeos = [], frondGeos = [], darkGeos = [];
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
     const sacks = props.filter(p => p.type === 'sack'), barrels = props.filter(p => p.type === 'barrel');
@@ -155,10 +169,10 @@
       root.add(m); return m;
     };
     MM.propMat = MM.propMat || G.Gfx.litMaterial({});
-    const instance = (list,geo,transform) => {
+    const instance = (list,geo,transform,mat) => {
       if (!list.length) return;
       G.Gfx.paint(geo,[1,1,1],list === barrels ? .52 : .94, list === barrels ? .48 : 0);
-      const mesh = new THREE.InstancedMesh(geo,MM.propMat,list.length);
+      const mesh = new THREE.InstancedMesh(geo,mat || MM.propMat,list.length);
       list.forEach((p,i) => {
         const shade=transform(p,i);
         mesh.setMatrixAt(i,m4); mesh.setColorAt(i,new THREE.Color(shade).convertSRGBToLinear());
@@ -168,7 +182,7 @@
     const prof=[[0,0],[.39,0],[.41,.025],[.41,.27],[.432,.29],[.41,.31],[.41,.84],[.432,.86],[.41,.88],[.41,1.13],[.39,1.15],[.36,1.15],[.36,1.13],[0,1.13]];
     instance(barrels,new THREE.LatheGeometry(prof.map(p=>new THREE.Vector2(p[0],p[1])),18),p=>{
       m4.makeTranslation(p.x,0,p.z); return BARREL_COLS[p.seed%BARREL_COLS.length];
-    });
+    },barrelMaps && G.Gfx.litMaterial(barrelMaps));
     const sack=G.Geo.rbox(1,1,1,.23,3), sp=sack.attributes.position;
     for(let i=0;i<sp.count;i++){
       const x=sp.getX(i), y=sp.getY(i), z=sp.getZ(i);

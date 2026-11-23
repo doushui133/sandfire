@@ -1,5 +1,5 @@
-// textures.js — procedural textures, generated at load with no image files: the world texture
-// array (albedo + gloss, optional normal maps), detail maps for soldiers and guns, FX sprites.
+// textures.js — scanned and procedural world texture arrays, detail maps for soldiers and guns,
+// and procedural FX sprites.
 (function (G) {
   'use strict';
   const THREE = G.THREE;
@@ -293,15 +293,19 @@
     }
     return L;
   };
-  gen.crate = function () {
+  gen.crate = function (markBraces) {
     const L = layer();
     planks(L, 5, false, 101, [lin(0xa77a48), lin(0x93683c), lin(0xb48654)], lin(0x3a2612));
     const frame = lin(0x7c5530), r = rngOf(102);
-    const fr = (x, y, w, h) => fillRect(L, x, y, w, h, (i) => { L.h[i] = 0.8; setC(L, i, frame, 0.9 + r() * 0.12); });
+    const brace = (i, height, tone) => {
+      L.h[i] = height; setC(L, i, frame, tone);
+      if (markBraces) L.a[i] = .24;
+    };
+    const fr = (x, y, w, h) => fillRect(L, x, y, w, h, i => brace(i, .8, .9 + r() * .12));
     fr(0, 0, S, 46); fr(0, S - 46, S, 46); fr(0, 0, 46, S); fr(S - 46, 0, 46, S);
     for (let t = -230; t < 230; t++) {   // diagonal brace
       const cx = S / 2 + t * 0.707 * 1.414, cy = S / 2 + t * 0.707 * 1.414;
-      splat(cx, cy, 22, (i) => { L.h[i] = 0.78; setC(L, i, frame, 0.95); });
+      splat(cx, cy, 22, i => brace(i, .78, .95));
     }
     [[23, 23], [S - 23, 23], [23, S - 23], [S - 23, S - 23]].forEach(([x, y]) => splat(x, y, 6, (i, d) => { L.h[i] = 0.9 + (1 - d) * 0.1; setC(L, i, lin(0x2a2a2a), 1); L.a[i] = 0.5; }));
     return L;
@@ -464,19 +468,101 @@
       }
     }
   }
-  // This pure-data builder also runs in a dedicated worker on HTTP(S).
-  T.worldBuilder = function (withNormals, aniso, surfaceSize) {
+  const SCANS = {
+    sand_01: [1, .9], gravelly_sand: [1.35, .7], rocky_trail_02: [1.25, .8],
+    plastered_wall: [1, 1], beige_wall_001: [1.08, .9], red_brick_03: [1.12, .85],
+    sandstone_blocks_05: [1, 1], stone_tiles_02: [1.08, 1],
+    weathered_planks: [1.25, .95], rusty_metal_02: [1, .65],
+  };
+  const SANDSTONE = ['sandstone_blocks_05', 1.95], PAVING = ['stone_tiles_02', 2.4];
+  // Tile widths in metres. The optional third value selects the blend in the world shader.
+  const SCAN_SURFACES = {
+    sand: [['sand_01', 2.6, 1]], cobble: [['rocky_trail_02', 2.7], PAVING], tiles: [PAVING],
+    blocks: [SANDSTONE], trim: [SANDSTONE],
+    plaster: [['plastered_wall', 3.4, 2], ['beige_wall_001', 3.4, 2]],
+    wood: [['weathered_planks', 1.6]], metal: [['rusty_metal_02', 1.5]],
+    crate: [['weathered_planks', 1.6, 3]], door: [['weathered_planks', 1.6, 3]],
+  };
+  T.surfaceScan = function (q, layers) {
+    const choices = layers && SCAN_SURFACES[q.m];
+    if (!choices) return null;
+    const variant = q.m === 'cobble' ? q.o[1] > .01 : q.m === 'plaster' && q.tint[1] < .95;
+    const [id, tile, mode = 0] = choices[Number(variant)], layer = layers[id];
+    return layer === undefined ? null : { layer, tile, mode };
+  };
+  const scanLinear = Array.from({ length: 256 }, (_, i) => {
+    const c = i / 255;
+    return c <= .04045 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4);
+  });
+  async function scanImage(file) {
+    if (typeof document === 'undefined') {
+      const response = await fetch('../' + file);
+      if (!response.ok) throw Error(file);
+      return createImageBitmap(await response.blob(), { colorSpaceConversion: 'none' });
+    }
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = file;
+    });
+  }
+  async function loadScans(size) {
+    const ids = Object.keys(SCANS), count = ids.length, stride = size * size * 4;
+    const data = { size, count, layers: {}, albedo: new Uint8Array(count * stride), normal: new Uint8Array(count * stride) };
+    const ctx = canvas(size).getContext('2d', { willReadFrequently: true });
+    function pixels(image) {
+      ctx.drawImage(image, 0, 0);
+      return ctx.getImageData(0, 0, size, size).data;
+    }
+    async function load(id, layer) {
+      const maps = await Promise.all(['Diffuse', 'nor_gl', 'arm'].map(map =>
+        scanImage('assets/textures/' + size + '/' + id + '_' + map + '_1k.jpg').catch(() => null)));
+      try {
+        if (!maps.every(map => map && map.width === size && map.height === size)) return;
+        const [diffuse, normal, arm] = maps.map(pixels), [exposure, saturation] = SCANS[id];
+        const a = data.albedo, n = data.normal;
+        for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+          // Canvas rows start at the top. Array row 0 is v=0, with +Y OpenGL normals.
+          const i = ((size - 1 - y) * size + x) * 4, o = layer * stride + (y * size + x) * 4;
+          const r = scanLinear[diffuse[i]], g = scanLinear[diffuse[i + 1]], b = scanLinear[diffuse[i + 2]];
+          const gray = (r * .2126 + g * .7152 + b * .0722) * (1 - saturation);
+          a[o] = 255 * Math.sqrt(sat((gray + r * saturation) * exposure));
+          a[o + 1] = 255 * Math.sqrt(sat((gray + g * saturation) * exposure));
+          a[o + 2] = 255 * Math.sqrt(sat((gray + b * saturation) * exposure));
+          a[o + 3] = arm[i + 1]; // roughness
+          n[o] = normal[i]; n[o + 1] = normal[i + 1];
+          n[o + 2] = arm[i]; n[o + 3] = arm[i + 2]; // AO and metalness
+        }
+        data.layers[id] = layer;
+      } finally {
+        for (const map of maps) if (map && map.close) map.close();
+      }
+    }
+    // Keep only three sets of decoded JPGs in memory at a time.
+    for (let i = 0; i < count; i += 3) await Promise.all(ids.slice(i, i + 3).map((id, j) => load(id, i + j)));
+    return Object.keys(data.layers).length ? data : null;
+  }
+  // The worker and the main-thread fallback use the same packing and layer layout.
+  T.worldBuilder = function (withNormals, aniso, surfaceSize, scans) {
     const large=surfaceSize || (G.Gfx && G.Gfx.preset.surfaceSize) || S;
-    const split=large>S, small=Math.min(S,large);
+    const split=!scans && large>S, small=Math.min(S,large);
+    const layers = {};
+    const names = scans ? ORDER.filter(name => {
+      const choices = SCAN_SURFACES[name];
+      return !choices || choices.some(([id, , mode]) => mode === 3 || scans.layers[id] === undefined);
+    }) : ORDER;
+    names.forEach((name, i) => { layers[name] = i; });
     function bank(size,count) {
       return {size,count,albedo:new Uint8Array(size*size*4*count),
         normal:withNormals ? new Uint8Array(size*size*2*count) : null};
     }
-    const data={base:bank(small,split ? ORDER.length-5 : ORDER.length), large:split ? bank(large,5) : null};
+    const data={base:bank(small,split ? names.length-5 : names.length), large:split ? bank(large,5) : null, scans, layers};
+    const markBraces = scans && scans.layers.weathered_planks !== undefined;
     let k=0;
-    return {total:ORDER.length, data,
+    return {total:names.length, data,
       step() {
-        const name=ORDER[k], L=gen[name](), useLarge=split && k<5;
+        const name=names[k], L=gen[name](markBraces), useLarge=split && k<5;
         const dest=useLarge ? data.large : data.base, index=k-(split&&!useLarge ? 5 : 0);
         const grain=useLarge ? new Int8Array(65536) : null;
         if (grain) {
@@ -489,7 +575,7 @@
           const norm=new Uint8Array(S*S*2); packNormal(L,norm,0,NSTR[name]*2);
           resizeLayer(norm,2,dest.normal,index*dest.size*dest.size*2,dest.size,grain,true);
         }
-        return ++k===ORDER.length;
+        return ++k===names.length;
       },
       result() {return T.worldArrays(data,aniso);}
     };
@@ -498,7 +584,7 @@
     const finish = (bank,key) => {
       if (!bank || !bank[key]) return null;
       const t=new THREE.DataTexture2DArray(bank[key],bank.size,bank.size,bank.count);
-      t.format=key==='normal' ? THREE.RGFormat : THREE.RGBAFormat;
+      t.format=key==='normal' && bank!==data.scans ? THREE.RGFormat : THREE.RGBAFormat;
       t.wrapS=t.wrapT=THREE.RepeatWrapping;
       t.minFilter=THREE.LinearMipmapLinearFilter; t.magFilter=THREE.LinearFilter;
       t.generateMipmaps=true; t.anisotropy=Math.min(aniso,T.aniso||1); t.needsUpdate=true;
@@ -506,7 +592,48 @@
       return t;
     };
     return {albedo:finish(data.base,'albedo'), normal:finish(data.base,'normal'),
-      largeAlbedo:finish(data.large,'albedo'), largeNormal:finish(data.large,'normal')};
+      largeAlbedo:finish(data.large,'albedo'), largeNormal:finish(data.large,'normal'),
+      scanAlbedo:finish(data.scans,'albedo'), scanNormal:finish(data.scans,'normal'),
+      scanLayers:data.scans && data.scans.layers, layers:data.layers,
+      barrelMaps: data.scans && barrelMaps(data.scans)};
+  };
+  // The instanced barrels use the probe-lit material's 2D maps and keep their paint colors.
+  function barrelMaps(scans) {
+    const layer = scans.layers.rusty_metal_02;
+    if (layer === undefined) return null;
+    const size = 256, step = scans.size / size, samples = step * step;
+    const map = new Uint8Array(size * size * 4), normal = new Uint8Array(map.length), arm = new Uint8Array(map.length);
+    const start = layer * scans.size * scans.size * 4;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      let gray = 0, nx = 0, ny = 0, roughness = 0;
+      for (let v = 0; v < step; v++) for (let u = 0; u < step; u++) {
+        const i = start + ((y * step + v) * scans.size + x * step + u) * 4;
+        gray += scans.albedo[i] * .21 + scans.albedo[i + 1] * .72 + scans.albedo[i + 2] * .07;
+        nx += scans.normal[i]; ny += scans.normal[i + 1]; roughness += scans.albedo[i + 3];
+      }
+      const i = (y * size + x) * 4, a = (nx / samples / 127.5 - 1) * .65, b = (ny / samples / 127.5 - 1) * .65;
+      map[i] = map[i + 1] = map[i + 2] = 145 + gray * .43 / samples;
+      map[i + 3] = normal[i + 3] = arm[i + 3] = 255;
+      normal[i] = (1 + a) * 127.5; normal[i + 1] = (1 + b) * 127.5;
+      normal[i + 2] = (1 + Math.sqrt(Math.max(0, 1 - a * a - b * b))) * 127.5;
+      arm[i + 1] = roughness / samples;
+    }
+    return { map: dataTex(map, size), normalMap: dataTex(normal, size), roughnessMap: dataTex(arm, size) };
+  }
+  T.buildWorldData = async function (p,progress,yieldStep) {
+    let scans;
+    if (p.normals) {
+      progress(0,ORDER.length);
+      try { scans=await loadScans(Math.min(p.surfaceSize,1024)); }
+      catch (e) { /* Use procedural layers if the canvas cannot read the scans. */ }
+    }
+    const wb=T.worldBuilder(p.normals,p.aniso,p.surfaceSize,scans);
+    for(let i=1;i<=wb.total;i++) {
+      progress(i,wb.total);
+      if (yieldStep) await yieldStep();
+      wb.step();
+    }
+    return wb.data;
   };
   T.buildWorld = async function (p,progress) {
     if (typeof Worker!=='undefined' && typeof OffscreenCanvas!=='undefined' && location.protocol!=='file:') {
@@ -515,20 +642,15 @@
         const data=await new Promise((resolve,reject)=>{
           worker=new Worker('js/surfaces-worker.js');
           worker.onerror=reject;
-          worker.onmessage=e=>{if(e.data.error) reject(Error(e.data.error)); else if(e.data.bank) resolve(e.data.bank); else progress(e.data.step,ORDER.length);};
-          worker.postMessage({size:p.surfaceSize,normals:p.normals});
+          worker.onmessage=e=>{if(e.data.error) reject(Error(e.data.error)); else if(e.data.bank) resolve(e.data.bank); else progress(e.data.step,e.data.total);};
+          worker.postMessage({surfaceSize:p.surfaceSize,normals:p.normals});
         });
         return T.worldArrays(data,p.aniso);
       } catch(e) { /* Restricted workers and missing worker canvas support use the yielding builder. */ }
       finally { if(worker) worker.terminate(); }
     }
-    const wb=T.worldBuilder(p.normals,p.aniso,p.surfaceSize);
-    for(let i=1;i<=wb.total;i++) {
-      progress(i,wb.total);
-      await new Promise(resolve=>setTimeout(resolve,0));
-      wb.step();
-    }
-    return wb.result();
+    const data=await T.buildWorldData(p,progress,()=>new Promise(resolve=>setTimeout(resolve,0)));
+    return T.worldArrays(data,p.aniso);
   };
 
   // ---------- small detail maps (RGBA, tiled, linear data) ----------

@@ -1,0 +1,18 @@
+Poly Haven surface scans
+
+Source assets are dedicated to the public domain under CC0 1.0 Universal.
+https://creativecommons.org/publicdomain/zero/1.0/
+
+sand_01 (Rob Tuytel) - https://polyhaven.com/a/sand_01
+gravelly_sand - https://polyhaven.com/a/gravelly_sand
+rocky_trail_02 - https://polyhaven.com/a/rocky_trail_02
+beige_wall_001 - https://polyhaven.com/a/beige_wall_001
+plastered_wall - https://polyhaven.com/a/plastered_wall
+sandstone_blocks_05 - https://polyhaven.com/a/sandstone_blocks_05
+red_brick_03 - https://polyhaven.com/a/red_brick_03
+stone_tiles_02 - https://polyhaven.com/a/stone_tiles_02
+weathered_planks - https://polyhaven.com/a/weathered_planks
+rusty_metal_02 - https://polyhaven.com/a/rusty_metal_02
+
+The included JPGs were re-encoded from the Poly Haven diffuse, OpenGL normal,
+and packed ambient occlusion, roughness and metalness maps.

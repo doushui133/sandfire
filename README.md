@@ -59,8 +59,8 @@ M18 可连续射击，K5 适合移动射击，U45 射速较低、单发更重。
 | `js/core.js` | 共享状态、数学工具、设置、键鼠输入和鼠标锁定 |
 | `js/audio.js` | 用 Web Audio 合成枪声、脚步、环境反馈与空间音效 |
 | `js/touch.js` | 操作模式、灵敏度、摇杆与多指输入，调试状态见 `G.Touch` |
-| `js/textures.js` | 按画质生成世界贴图、法线和细节图；页面以 http 打开时可由后台线程生成 |
-| `js/surfaces-worker.js` | 后台线程里的世界贴图生成 |
+| `js/textures.js` | 按画质载入扫描贴图、生成程序贴图并打包世界材质 |
+| `js/surfaces-worker.js` | 在后台线程加载、生成并打包世界贴图 |
 | `js/map.js` | 烈沙镇布局、碰撞查询、射线检测、导航和雷达底图 |
 | `js/mapgeo.js` | 构造用于小镇渲染和光照烘焙的静态几何数据 |
 | `js/gfx.js` | 画质预设、着色器、天空、静态与角色阴影、烘焙光照 |
@@ -80,6 +80,6 @@ M18 可连续射击，K5 适合移动射击，U45 射速较低、单发更重。
 | `js/hud.js` | 雷达、状态、战斗提示、商店和记分板 |
 | `js/main.js` | 启动、渲染循环、动态分辨率、着色器预热、菜单和暂停 |
 
-渲染使用本地的 three.js r128。小镇的烘焙光照位于 `assets/lightmap.png`，与地图几何数据对应。墙面、地面等表面纹理在加载时由程序生成。
+渲染使用本地的 three.js r128。小镇的烘焙光照位于 `assets/lightmap.png`，与地图几何数据对应。均衡画质使用 512 像素的 Poly Haven 扫描贴图，高和极致使用 1024 像素。流畅画质和缺失扫描贴图的材质使用程序贴图。[扫描贴图许可](assets/textures/LICENSE-PolyHaven.txt)
 
 three.js 采用 MIT 许可证，版权归 2010–2021 three.js authors 所有。[许可证全文](vendor/three.LICENSE.txt)
