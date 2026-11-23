@@ -61,7 +61,7 @@ window.G = window.G || {};
   };
 
   // ---------- settings (per-viewer convenience only) ----------
-  G.settings = { sens: 1, vol: 0.7, diff: 1, raw: true, fullscreen: true,
+  G.settings = { sens: 1, vol: 0.7, musicVol: 0.6, diff: 1, raw: true, fullscreen: true,
     buttonSize: 1, leftFire: true, aimAssist: true, autoFire: false, gyro: false, touchBrake: true,
     touchSens: 1.5, touchScope: 1, scopeSens: 1, vertRatio: 1, gyroSens: 1,
     chSize: 1, chGap: 1, chColor: '#7dff6a', chStatic: false, chDot: true, radarRot: true, radarScale: 1, touchLayout: null,
@@ -82,6 +82,7 @@ window.G = window.G || {};
   (function saneSettings() {
     const s = G.settings;
     const num = (v, a, b, d) => { v = +v; return v >= a && v <= b ? v : d; };
+    s.musicVol = num(s.musicVol, 0, 1, 0.6);
     s.touchScope = num(s.touchScope, 0.25, 2, 1);
     s.scopeSens = num(s.scopeSens, 0.25, 2, 1);
     s.vertRatio = num(s.vertRatio, 0.4, 1.8, 1);

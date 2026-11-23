@@ -39,8 +39,19 @@ const nodes={}, actions=Array.from(html.matchAll(/data-action="([^"]+)"/g),m=>{
   const e=new Element(); e.dataset.action=m[1]; return e;
 });
 const elem=id=>nodes[id] || (nodes[id]=new Element());
+const audioSettings = Array.from(html.matchAll(/<input type="range" id="([^"]+)" data-setting="(vol|musicVol)"/g), m => {
+  const el = elem(m[1]);
+  el.type = 'range';
+  el.dataset.setting = m[2];
+  return el;
+});
 const win=new Element(), document=Object.assign(new Element(),{
   getElementById:elem, createElement:()=>new Element(), body:new Element(),documentElement:new Element(),hidden:false,
+  querySelectorAll(selector) {
+    if (selector === '[data-setting]') return audioSettings;
+    if (selector === '[data-setting="musicVol"]') return audioSettings.filter(el => el.dataset.setting === 'musicVol');
+    return Element.prototype.querySelectorAll.call(this, selector);
+  }
 });
 elem('stick').firstElementChild=new Element();
 Object.assign(global,{window:global, top:global, document, innerWidth:740,innerHeight:360,history:{},
@@ -49,7 +60,7 @@ Object.assign(global,{window:global, top:global, document, innerWidth:740,innerH
   setTimeout:noop, clearTimeout:noop, THREE:require('../vendor/three.min.js')});
 Object.defineProperty(global,'navigator',{value:{userAgent:'simulation'},configurable:true});
 function load(name) { vm.runInThisContext(fs.readFileSync(path.join(root,'js',name+'.js'),'utf8'),{filename:name+'.js'}); }
-for (const id of ['look','core','audio','touch','map','mapgeo','gfx','video','geom','gunmodels','fx','weapons','nades','viewmodel','player','bots','game','hud','main']) load(id);
+for (const id of ['look','core','audio','music','touch','map','mapgeo','gfx','video','geom','gunmodels','fx','weapons','nades','viewmodel','player','bots','game','hud','main']) load(id);
 const G=global.G, W=G.Weapons, N=G.Nades, game=G.Game;
 const V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
 Math.random=G.seeded(20261122);
@@ -59,6 +70,171 @@ G.BotModel={create:noop,remove:noop,update:noop,updateBlobs:noop,ragdollPoint:()
 G.scene=new THREE.Scene(); G.camera=new THREE.PerspectiveCamera(); G.sunDir=G.Gfx.U.uSunDir.value;
 const tex=new THREE.Texture();
 G.Tex={tex:()=>tex,gunDetail:()=>tex,detail:()=>tex};
+
+function musicChecks() {
+  class Param {
+    constructor() { this.value = 0; this.events = []; }
+    add(type, value, time) {
+      assert(Number.isFinite(value) && Number.isFinite(time) && time >= 0);
+      this.events.push([type, value, time]);
+    }
+    setValueAtTime(value, time) { this.add('set', value, time); }
+    linearRampToValueAtTime(value, time) { this.add('linear', value, time); }
+    exponentialRampToValueAtTime(value, time) {
+      assert(value > 0);
+      this.add('exponential', value, time);
+    }
+    setTargetAtTime(value, time) { this.add('target', value, time); }
+    cancelScheduledValues(time) { this.events = this.events.filter(event => event[2] < time); }
+  }
+  class AudioContext {
+    constructor() {
+      this.currentTime = 4;
+      this.state = 'suspended';
+      this.sampleRate = 48000;
+      this.nodes = [];
+      this.buffers = [];
+    }
+    node(params = []) {
+      const node = { connect: noop, disconnect() { this.disconnected = true; } };
+      for (const key of params) node[key] = new Param();
+      this.nodes.push(node);
+      return node;
+    }
+    source(params) {
+      return Object.assign(this.node(params), {
+        start(time) { this.started = time; },
+        stop(time) { assert(Number.isFinite(time)); this.stopped = time; }
+      });
+    }
+    createGain() { return this.node(['gain']); }
+    createOscillator() { return this.source(['frequency', 'detune']); }
+    createBufferSource() { return this.source(); }
+    createBiquadFilter() { return this.node(['frequency', 'Q']); }
+    createWaveShaper() { return this.node(); }
+    createBuffer(channels, length) {
+      assert.equal(channels, 1);
+      const data = new Float32Array(length);
+      const buffer = { getChannelData: () => data };
+      this.buffers.push(buffer);
+      return buffer;
+    }
+    advanceTo(time) {
+      assert.equal(this.state, 'running');
+      this.currentTime = time;
+      for (const node of this.nodes) if (node.onended && node.stopped <= time) node.onended();
+    }
+  }
+
+  const music = G.Music, audio = G.Audio;
+  const originalSave = G.saveSettings;
+  const names = ['roundStart', 'bombTicking', 'win', 'lose', 'mvp', 'clutch', 'practiceStart'];
+  assert.equal(G.settings.musicVol, .6);
+  assert.equal(audioSettings.filter(el => el.dataset.setting === 'musicVol').length, 2);
+  for (const name of names) assert.equal(music.cue(name), null);
+  music.stopAll();
+  music.setVolume(.35);
+  assert.equal(G.settings.musicVol, .35);
+
+  const ctx = audio.ctx = new AudioContext();
+  const bus = audio.musicBus = ctx.createGain();
+  bus.gain.value = G.settings.musicVol;
+  function cue(name, opts) {
+    const first = ctx.nodes.length;
+    const handle = music.cue(name, opts);
+    assert.equal(typeof handle.stop, 'function');
+    const nodes = ctx.nodes.slice(first);
+    const sources = nodes.filter(node => 'started' in node);
+    assert(sources.length > 0 && sources.every(node => node.started >= ctx.currentTime &&
+      node.started === sources[0].started));
+    return { handle, nodes, sources, gain: nodes[0].gain };
+  }
+  function ends(playing, time) {
+    assert(playing.sources.every(node => Math.abs(node.stopped - time) < 1e-9));
+  }
+
+  try {
+    const bounds = { roundStart: [6, 8], win: [3, 4], lose: [3, 4], mvp: [5, 7], practiceStart: [4, 5] };
+    for (const name of Object.keys(bounds)) {
+      const playing = cue(name);
+      const duration = playing.sources[0].stopped - playing.sources[0].started;
+      assert(duration >= bounds[name][0] && duration <= bounds[name][1], name);
+      ends(playing, playing.sources[0].started + duration);
+    }
+    assert.equal(ctx.buffers.length, 1, 'finite cues share a noise buffer');
+    const defaultBomb = cue('bombTicking');
+    ends(defaultBomb, 14);
+    const bomb = cue('bombTicking', { seconds: 2.375 });
+    ends(defaultBomb, 4.08);
+    ends(bomb, 6.375);
+    ends(bomb, bomb.sources[0].started + 2.375);
+    const shortBomb = cue('bombTicking', { seconds: .045 });
+    ends(bomb, 4.08);
+    ends(shortBomb, 4.045);
+    assert.equal(music.cue('unknown'), null);
+
+    let clutch = cue('clutch');
+    assert(clutch.sources.every(source => source.stopped === undefined));
+    const fadeInStart = clutch.sources[0].started;
+    assert.deepEqual(clutch.gain.events.at(-1), ['linear', 1, fadeInStart + 1]);
+    assert.equal(clutch.sources.filter(source => source.loop).length, 3);
+    ctx.state = 'running';
+    ctx.advanceTo(fadeInStart + .25);
+    assert(defaultBomb.nodes.every(node => node.disconnected));
+    clutch.handle.stop(.4);
+    const fadeEnd = ctx.currentTime + .4;
+    assert.deepEqual(clutch.gain.events.slice(-2), [['set', .25, ctx.currentTime], ['linear', 0, fadeEnd]]);
+    clutch.handle.stop(.8);
+    ends(clutch, fadeEnd);
+    ctx.advanceTo(fadeEnd);
+    assert(clutch.nodes.every(node => node.disconnected));
+
+    for (const name of ['win', 'lose', 'mvp']) {
+      clutch = cue('clutch');
+      const ticking = cue('bombTicking');
+      clutch.handle.stop(1);
+      cue(name);
+      ends(clutch, ctx.currentTime + .08);
+      ends(ticking, ctx.currentTime + .08);
+    }
+    assert.equal(ctx.buffers.length, 3, 'clutch reuses its cached loop buffers');
+    const cancelled = cue('practiceStart');
+    cancelled.handle.stop(0);
+    assert(cancelled.sources.every(node => node.stopped < node.started));
+    const start = cue('roundStart');
+    clutch = cue('clutch');
+    music.stopAll(.2);
+    const deadline = ctx.currentTime + .2;
+    ends(start, deadline);
+    ends(clutch, deadline);
+    ctx.advanceTo(deadline);
+    assert(ctx.nodes.slice(1).every(node => node.disconnected), 'all stopped graphs disconnect');
+
+    const sliders = [elem('musicVol'), elem('musicVol2')];
+    let saved;
+    G.saveSettings = () => { saved = G.settings.musicVol; };
+    sliders[0].value = '0.25';
+    sliders[0].emit('input');
+    assert.equal(sliders[1].value, .25);
+    assert.equal(saved, .25);
+    sliders[1].value = '0.75';
+    sliders[1].emit('input');
+    assert.equal(sliders[0].value, .75);
+    assert.equal(saved, .75);
+    assert.deepEqual(bus.gain.events.at(-1), ['target', .75, deadline]);
+    music.setVolume(2);
+    assert.deepEqual(bus.gain.events.at(-1), ['target', 1, deadline]);
+    music.setVolume(-1);
+    assert.deepEqual(bus.gain.events.at(-1), ['target', 0, deadline]);
+  } finally {
+    delete audio.ctx;
+    delete audio.musicBus;
+    G.saveSettings = originalSave;
+    for (const name of ['musicVol', 'musicVol2']) elem(name).value = .6;
+    music.setVolume(.6);
+  }
+  console.log('Music cue scheduling, countdown deadlines, fades, cleanup and volume controls passed');
+}
 
 // Isolated open lane. Use the live bot controller, movement, recoil, hitscan and
 // armour calculation. Suppress only scenery, feedback and the end-of-round flow.
@@ -1326,6 +1502,7 @@ function ragdollChecks() {
 }
 mapChecks();
 botRoundChecks();
+musicChecks();
 captureChecks().then(() => {
   combatChecks();
   crosshairChecks();
