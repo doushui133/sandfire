@@ -210,14 +210,39 @@
   // this 16-bone rig with every limb straight down; each carries its own joints and proportions.
   const REAL = { atk: ['atk1'], def: ['def1', 'def2'] };
   const real = {}, realTurn = { atk: 0, def: 0 };
+  const geomBase = 'assets/chars/';
+  let texBase = geomBase;
+  let loadProgress = null;
+  BM.setAssetBase = function (path) { texBase = path; };
   const realReady = () => [].concat(REAL.atk, REAL.def).every((n) => real[n]);
-  BM.loadReal = async function () {
-    const base = 'assets/chars/', loader = new THREE.TextureLoader();
+  async function fetchAsset(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(url + ' HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    if (loadProgress) loadProgress(url, buf.byteLength);
+    return buf;
+  }
+  async function loadTex(loader, file, aniso) {
+    if (!file) return null;
+    const url = texBase + file;
+    if (loadProgress) {
+      const buf = await fetchAsset(url);
+      const objectUrl = URL.createObjectURL(new Blob([buf]));
+      const t = await loader.loadAsync(objectUrl);
+      URL.revokeObjectURL(objectUrl);
+      t.anisotropy = aniso;
+      return t;
+    }
+    return new Promise((ok, no) => loader.load(url, (t) => { t.anisotropy = aniso; ok(t); }, undefined, no));
+  }
+  BM.loadReal = async function (opts) {
+    loadProgress = opts && opts.onBytes || null;
+    const loader = new THREE.TextureLoader();
     const aniso = Math.min(G.Gfx.preset.key === 'ultra' ? 16 : 8, G.renderer.capabilities.getMaxAnisotropy());
-    const tex = (f) => (f ? new Promise((ok, no) => loader.load(base + f, (t) => { t.anisotropy = aniso; ok(t); }, undefined, no)) : null);
+    const tex = (f) => loadTex(loader, f, aniso);
     async function one(name) {
-      const meta = await (await fetch(base + name + '.json')).json();
-      const buf = await (await fetch(base + name + '.bin')).arrayBuffer();
+      const meta = JSON.parse(new TextDecoder().decode(await fetchAsset(geomBase + name + '.json')));
+      const buf = await fetchAsset(geomBase + name + '.bin');
       const n = meta.vertexCount, geo = new THREE.BufferGeometry();
       const nb = new Int8Array(buf, n * 12, n * 4), nf = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) { nf[i * 3] = nb[i * 4] / 127; nf[i * 3 + 1] = nb[i * 4 + 1] / 127; nf[i * 3 + 2] = nb[i * 4 + 2] / 127; }
@@ -242,8 +267,21 @@
       };
       real[name] = { geo, mats, P };
     }
-    await Promise.all([].concat(REAL.atk, REAL.def).map(one));
+  try { await Promise.all([].concat(REAL.atk, REAL.def).map(one)); }
+    finally { loadProgress = null; }
   };
+  BM.upgradeAgent = function (a) {
+    if (!a.rig || a.rig.real || !realReady()) return;
+    const list = REAL[a.team];
+    if (!a.realName || list.indexOf(a.realName) < 0) a.realName = list[realTurn[a.team]++ % list.length];
+    const model = real[a.realName];
+    if (!model) return;
+    a.rig.mesh.geometry = model.geo;
+    a.rig.mesh.material = model.mats;
+    a.rig.P = model.P;
+    a.rig.real = true;
+  };
+  BM.upgradeAgents = function () { G.Game.agents.forEach((a) => BM.upgradeAgent(a)); };
 
   // ---------- blob shadows ----------
   let blobs = null;

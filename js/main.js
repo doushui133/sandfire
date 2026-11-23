@@ -65,8 +65,13 @@
     G.VM.warm(renderer);
   }
 
+  const REAL_BUDGET = { mobile: 5.2e6, desktop: 11.5e6 };
+
   G.boot = async function () {
     const status = $('status');
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch((e) => console.warn('service worker', e));
+    }
     const det = G.Gfx.detect();
     $('gpuWarning').hidden = !det.soft;
     const touch = G.Touch.primary();
@@ -106,10 +111,12 @@
     sun.position.copy(G.sunDir).multiplyScalar(90);
     scene.add(sun, sun.target);
 
+    G.deferScans = preset.normals;
     const materialStart = performance.now();
     const surfaces = await G.Tex.buildWorld(preset,(i,n) => {
       status.textContent = '正在生成材质 ' + i + ' / ' + n + '…';
     });
+    G.deferScans = false;
     G.Tex.buildMs = performance.now() - materialStart;
     status.textContent = '正在搭建小镇…';
     await yieldFrame();
@@ -123,13 +130,8 @@
     G.VM.init(innerWidth / innerHeight);
     G.Map.radar = G.Map.buildRadar();
     G.HUD.init();
-    if (G.Gfx.preset.key !== 'low') {   // realistic soldiers; the procedural ones remain the fallback
-      status.textContent = '正在载入人物模型…';
-      try { await G.BotModel.loadReal(); } catch (e) { console.warn('realistic soldiers unavailable', e); }
-      status.textContent = '正在载入武器模型…';
-      try { await G.GunModels.loadReal(); } catch (e) { console.warn('realistic weapons unavailable', e); }
-      try { await G.VM.loadArms(); } catch (e) { console.warn('realistic arms unavailable', e); }
-    }
+    const geoRef = geo;
+    G.worldSurfaces = surfaces;
     status.textContent = '正在编译着色器…';
     await yieldFrame();
     G.Video.init(renderer, preset);
@@ -141,6 +143,7 @@
     wireMenu();
     status.textContent = '准备就绪 · 选择阵营开始';
     $('btnAtk').disabled = $('btnDef').disabled = false;
+    if (preset.key !== 'low') startRealisticLoads(preset, touch, geoRef, surfaces, status);
     if (/autostart=(atk|def)/.test(location.search)) startMatch(RegExp.$1, true);
     const view = (query.get('view') || '').split(',').map(Number);
     if (query.has('autostart') && view.length === 5 && view.every(Number.isFinite)) {
@@ -318,11 +321,64 @@
     G.Touch.refreshMode();
   }
 
+  let bgHint = null;
+  function bgLabel() {
+    if (!bgHint) {
+      bgHint = document.createElement('div');
+      bgHint.id = 'bgAssets';
+      bgHint.hidden = true;
+      bgHint.style.cssText = 'position:fixed;right:10px;bottom:10px;font:12px/1.4 "Microsoft YaHei",sans-serif;color:#ddd;opacity:.82;pointer-events:none;z-index:6;text-shadow:0 1px 2px #000';
+      document.body.appendChild(bgHint);
+    }
+    return bgHint;
+  }
+  function syncRealProgress(loaded, total, status, menuVisible) {
+    const mb = (n) => (n / 1e6).toFixed(1);
+    const pct = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+    const text = '高清素材 ' + pct + '% · ' + mb(loaded) + ' / ' + mb(total) + ' MB';
+    if (menuVisible) status.textContent = text + ' · 可先开始对局';
+    const hint = bgLabel();
+    if (pct >= 100) { hint.hidden = true; if (menuVisible) status.textContent = '准备就绪 · 选择阵营开始'; }
+    else { hint.hidden = false; hint.textContent = text; }
+  }
+  function startRealisticLoads(preset, touch, geo, surfaces, status) {
+    const mobile = preset.key === 'medium' || preset.key === 'low';
+    const gunTex = mobile ? 'assets/guns/m/' : 'assets/guns/';
+    const charTex = mobile ? 'assets/chars/m/' : 'assets/chars/';
+    G.GunModels.setAssetBase(gunTex);
+    G.BotModel.setAssetBase(charTex);
+    G.VM.setAssetBase(charTex);
+    const budget = mobile ? REAL_BUDGET.mobile : REAL_BUDGET.desktop;
+    let loaded = 0;
+    const onBytes = (_url, n) => {
+      loaded += n;
+      syncRealProgress(loaded, budget, status, G.Game.phase === 'menu');
+    };
+    const prog = { onBytes };
+    const steps = [
+      () => G.VM.loadArms(prog).then(() => G.VM.invalidateGuns()),
+      () => G.GunModels.loadReal(prog).then(() => G.VM.invalidateGuns()),
+      () => G.BotModel.loadReal(prog).then(() => G.BotModel.upgradeAgents()),
+      () => (preset.normals ? G.Tex.upgradePhotoScans(surfaces, preset, geo, onBytes) : Promise.resolve()),
+    ];
+    (async () => {
+      for (const step of steps) {
+        try { await step(); } catch (e) { console.warn('realistic asset step', e); }
+      }
+      syncRealProgress(budget, budget, status, G.Game.phase === 'menu');
+    })();
+  }
+
   function wireMenu() {
     const diffBtns = [$('d0'), $('d1'), $('d2')];
     const setDiff = (i) => { G.settings.diff = i; diffBtns.forEach((b, k) => b.classList.toggle('on', k === i)); G.saveSettings(); };
     diffBtns.forEach((b, i) => b.addEventListener('click', () => setDiff(i)));
     setDiff(G.settings.diff | 0);
+    const baseRound = G.Game.newRound;
+    G.Game.newRound = function () {
+      baseRound.call(G.Game);
+      G.BotModel.upgradeAgents();
+    };
     G.Video.wire();
     const sens = $('sens'), sens2 = $('sens2'), sv = $('sensVal'), vol = $('vol'), raw = $('raw');
     const setSens = (v) => { G.settings.sens = +v; sv.textContent = (+v).toFixed(2); sens.value = v; sens2.value = v; G.saveSettings(); };
