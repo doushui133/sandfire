@@ -167,7 +167,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   <div id="dmgdir"></div>
   <div id="gasView" hidden></div><div id="flashView" hidden></div>
   <div id="scope" hidden></div>
-  <div id="crosshair"><i class="h" id="chL"></i><i class="h" id="chR"></i><i class="v" id="chT"></i><i class="v" id="chB"></i><i class="d"></i></div>
+  <div id="crosshair"><i class="h" id="chL"></i><i class="h" id="chR"></i><i class="v" id="chT"></i><i class="v" id="chB"></i><i class="d" id="chDot"></i></div>
   <div id="hitmarker"></div>
   <div id="hitFx" hidden></div>
   <div id="killBanner" class="kill-banner" hidden></div>
@@ -291,11 +291,13 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
       <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
       <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
       <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+      <div class="row touch-only"><label><input data-setting="touchBrake" type="checkbox" checked> 摇杆回中急停</label></div>
       <div class="row touch-only"><label>陀螺仪灵敏度 <input data-setting="gyroSens" type="range" min="0.2" max="2.5" step="0.05" value="1"></label><button type="button" id="btnLayout">自定义键位</button></div>
       <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
       <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
       <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
       <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
+      <div class="row"><label><input data-setting="chStatic" type="checkbox"> 固定准星</label><label><input data-setting="chDot" type="checkbox" checked> 准星中心点</label></div>
       <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
     </section>
     <section class="menu-sec">
@@ -334,8 +336,10 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
       <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
       <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
       <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+      <div class="row touch-only"><label><input data-setting="touchBrake" type="checkbox" checked> 摇杆回中急停</label></div>
       <div class="row touch-only"><label>陀螺仪灵敏度 <input data-setting="gyroSens" type="range" min="0.2" max="2.5" step="0.05" value="1"></label><button type="button" id="btnLayout2">自定义键位</button></div>
       <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
+      <div class="row"><label><input data-setting="chStatic" type="checkbox"> 固定准星</label><label><input data-setting="chDot" type="checkbox" checked> 准星中心点</label></div>
       <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
       <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
       <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>

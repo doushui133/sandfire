@@ -2,7 +2,7 @@
 (function (G) {
   'use strict';
   let ctx = null, master = null, noiseBuf = null, brownBuf = null;
-  let filter, deathFilter, heartbeat, sting, crackleBuf;
+  let mix, gunBus, gunTail, filter, deathFilter, heartbeat, sting, crackleBuf;
   const listenerPos = { x: 0, y: 0, z: 0 };
 
   const A = G.Audio = {};
@@ -17,12 +17,22 @@
     ctx = new AC();
     resume();
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
+    comp.threshold.value = -17; comp.knee.value = 18; comp.ratio.value = 3.5;
+    comp.attack.value = 0.0015; comp.release.value = 0.13;
+    const headroom = ctx.createGain(), ceiling = ctx.createWaveShaper();
+    headroom.gain.value = 0.5;
+    const curve = new Float32Array(1025);
+    for (let i = 0; i < curve.length; i++) curve[i] = 0.94 * Math.tanh((i / 256 - 2) / 0.94);
+    ceiling.curve = curve;
     master = ctx.createGain();
     master.gain.value = G.settings.vol;
+    mix = ctx.createGain();
+    gunBus = ctx.createGain();
+    gunBus.connect(mix);
     filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000;
     deathFilter = ctx.createBiquadFilter(); deathFilter.type = 'lowpass'; deathFilter.frequency.value = 20000;
-    master.connect(filter); filter.connect(deathFilter); deathFilter.connect(comp); comp.connect(ctx.destination);
+    mix.connect(filter); filter.connect(deathFilter); deathFilter.connect(comp);
+    comp.connect(headroom); headroom.connect(ceiling); ceiling.connect(master); master.connect(ctx.destination);
     // white + brown noise buffers
     const len = ctx.sampleRate * 2;
     noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -40,6 +50,24 @@
       last = (last + 0.02 * r) / 1.02;
       b[i] = last * 3.5;
     }
+
+    // Shared short room response and a single outdoor reflection.
+    const impulse = ctx.createBuffer(1, Math.round(ctx.sampleRate * 0.24), ctx.sampleRate);
+    const ir = impulse.getChannelData(0), start = Math.round(ctx.sampleRate * 0.012);
+    last = 0;
+    for (let i = start; i < ir.length; i++) {
+      last = last * 0.65 + w[i] * 0.35;
+      ir[i] = last * Math.pow((ir.length - i) / (ir.length - start), 2.8);
+    }
+    gunTail = ctx.createGain();
+    const verb = ctx.createConvolver(), wet = ctx.createGain();
+    verb.buffer = impulse; wet.gain.value = 0.28;
+    gunTail.connect(verb); verb.connect(wet); wet.connect(gunBus);
+    const delay = ctx.createDelay(0.2), echo = ctx.createBiquadFilter();
+    delay.delayTime.value = 0.105;
+    echo.type = 'lowpass'; echo.frequency.value = 1450; echo.Q.value = 0.7;
+    const slap = ctx.createGain(); slap.gain.value = 0.19;
+    gunTail.connect(delay); delay.connect(echo); echo.connect(slap); slap.connect(gunBus);
   };
   A.pause = function () { if (ctx && ctx.state==='running') ctx.suspend().catch(() => {}); };
   A.setVolume = function (v) { if (master) master.gain.value = v; };
@@ -60,10 +88,11 @@
     }
   };
 
-  // output node: positional when pos given, otherwise straight to master
-  function out(pos, ref, gain) {
+  // Route dry sound and any effects send through the same panner.
+  function out(pos, ref, gain, bus = mix, tail = null) {
     const g = ctx.createGain();
     g.gain.value = gain;
+    let send = g;
     if (pos) {
       const p = ctx.createPanner();
       p.panningModel = 'equalpower';
@@ -73,8 +102,10 @@
       p.maxDistance = 400;
       if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; }
       else p.setPosition(pos.x, pos.y, pos.z);
-      g.connect(p); p.connect(master);
-    } else g.connect(master);
+      g.connect(p); send = p;
+    }
+    send.connect(bus);
+    if (tail) send.connect(tail);
     return g;
   }
   function dist(pos) {
@@ -110,28 +141,40 @@
     o.start(t); o.stop(t + dur + 0.05);
   }
 
+  // Body band, crack cutoff, thump pitch/resonance, and relative weight.
   const GUN = {
-    m18: { f:3600, d:0.10, th:230, g:0.58 }, k5: { f:3300, d:0.09, th:195, g:0.62 },
-    u45: { f:1800, d:0.20, th:108, g:0.85 }, s8: { f:1500, d:0.44, th:63, g:1.35 },
-    fa2: { f:2600, d:0.18, th:125, g:0.85 }, s40: { f:2200, d:0.37, th:82, g:1.12 },
-    l60: { f:1750, d:0.27, th:74, g:1.15 },
-    pistol: { f: 2800, d: 0.16, th: 150, g: 0.75 },
-    heavy: { f: 1900, d: 0.3, th: 85, g: 1.1 },
-    smg: { f: 3200, d: 0.11, th: 170, g: 0.65 },
-    rifle: { f: 2300, d: 0.22, th: 95, g: 1.0 },
-    rifle2: { f: 2700, d: 0.19, th: 115, g: 0.9 },
-    sniper: { f: 1600, d: 0.5, th: 65, g: 1.45 },
+    pistol: { f: 1850, d: 0.092, crack: 3750, th: 137, end: 55, q: 1.15, g: 0.8 },
+    heavy:  { f: 1220, d: 0.165, crack: 3050, th: 112, end: 43, q: 0.78, g: 1.3 },
+    m18:    { f: 2670, d: 0.073, crack: 4460, th: 148, end: 60, q: 1.35, g: 0.7 },
+    k5:     { f: 3210, d: 0.065, crack: 5270, th: 146, end: 56, q: 1.55, g: 0.72 },
+    smg:    { f: 2130, d: 0.088, crack: 4640, th: 132, end: 51, q: 1.05, g: 0.82 },
+    u45:    { f: 1460, d: 0.126, crack: 3490, th: 115, end: 47, q: 1.2, g: 0.99 },
+    rifle:  { f: 1950, d: 0.145, crack: 3990, th: 118, end: 42, q: 0.82, g: 1.15 },
+    rifle2: { f: 2580, d: 0.114, crack: 4910, th: 128, end: 49, q: 1.05, g: 1.05 },
+    fa2:    { f: 2270, d: 0.103, crack: 3540, th: 126, end: 53, q: 1.3, g: 0.95 },
+    l60:    { f: 1430, d: 0.181, crack: 2870, th: 107, end: 43, q: 0.75, g: 1.24 },
+    s8:     { f:  925, d: 0.232, crack: 2410, th: 102, end: 40, q: 0.62, g: 1.38 },
+    s40:    { f: 1720, d: 0.202, crack: 5550, th: 124, end: 45, q: 0.83, g: 1.28 },
+    sniper: { f: 1120, d: 0.285, crack: 4320, th: 110, end: 39, q: 0.65, g: 1.52 },
   };
   A.shot = function (kind, pos, local) {
     if (!ctx) return;
-    const p = GUN[kind] || GUN.rifle, t = ctx.currentTime;
+    const p = GUN[kind] || GUN.rifle;
     const d = local ? 0 : dist(pos);
-    const muffle = G.clamp(1 - d / 90, 0.12, 1);
-    const o = out(local ? null : pos, 6, local ? 0.9 : 1.3);
-    noise(o, t, p.d, { f: p.f * (0.6 + 0.6 * muffle) * G.rand(0.9, 1.1), f2: 300, g: p.g, q: 0.9 });
-    noise(o, t, p.d * 3.2, { f: 900 * muffle + 200, f2: 120, g: p.g * 0.35, att: 0.01, brown: true });
-    tone(o, t, 0.09, { f: p.th, f2: 40, g: p.g * 0.9, wave: 'triangle' });
-    if (local) noise(o, t, 0.035, { type: 'highpass', f: 5000, g: 0.25 });
+    const t = ctx.currentTime + Math.min(d / 343, 0.23);
+    const o = out(local ? null : pos, 7, local ? 1 : 0.85 / (1 + d / 125), gunBus, gunTail);
+    let shot = o;
+    if (!local) {
+      shot = ctx.createBiquadFilter();
+      shot.type = 'lowpass';
+      shot.frequency.value = 820 + 15000 / (1 + Math.pow(d / 11, 1.65));
+      shot.Q.value = 0.7;
+      shot.connect(o);
+    }
+    const variation = G.rand(0.92, 1.08);
+    noise(shot, t, 0.02 + p.d * 0.045, { type: 'highpass', f: p.crack * variation, g: p.g * 1.05, att: 0.0006 });
+    noise(shot, t + 0.001, p.d, { type: 'bandpass', f: p.f * variation, f2: p.f * 0.24, q: p.q, g: p.g * 2.2, att: 0.0015 });
+    tone(shot, t + 0.002, 0.055 + p.d * 0.42, { f: p.th, f2: p.end, g: p.g * 0.93, wave: 'triangle', att: 0.002 });
   };
   A.foot = function (pos, local, loud) {
     if (!ctx) return;
@@ -158,26 +201,39 @@
   };
   A.hit = function (head, helmet) {
     if (!ctx) return;
-    const t = ctx.currentTime, o = out(null, 1, 0.5);
-    if (head) {
-      tone(o, t, helmet ? 0.35 : 0.18, { f: 2400, g: 0.35 });
-      tone(o, t, helmet ? 0.3 : 0.15, { f: 3170, g: 0.2 });
-    } else noise(o, t, 0.05, { type: 'bandpass', f: 900, q: 1, g: 0.6 });
+    const t = ctx.currentTime, o = out(null, 1, 0.58);
+    if (head && helmet) {
+      noise(o, t, 0.025, { type: 'highpass', f: 3300, g: 0.7, att: 0.0008 });
+      tone(o, t, 0.22, { f: 2120, g: 0.56, att: 0.001 });
+      tone(o, t, 0.095, { f: 3640, g: 0.29, att: 0.001 });
+    } else if (head) {
+      noise(o, t, 0.072, { type: 'bandpass', f: 2150, f2: 420, q: 0.9, g: 1.1, att: 0.001 });
+      tone(o, t, 0.065, { f: 205, f2: 82, g: 0.39, wave: 'triangle' });
+    } else {
+      noise(o, t, 0.082, { f: 750, f2: 190, g: 0.82 });
+      tone(o, t, 0.075, { f: 145, f2: 57, g: 0.46, wave: 'triangle' });
+    }
   };
-  // Short, original plucked phrases. A simultaneous grenade multi-kill resolves
-  // to its highest tier instead of playing every phrase at full volume.
-  const phrases = [[364, 486], [408, 546, 729], [459, 612, 771, 918],
-    [516, 689, 820, 1032, 1227], [580, 732, 870, 1096, 1304, 1464]];
+  const killPitch = [960, 1080, 1215, 1365, 1540];
   A.killSting = function (info) {
     if (!ctx) return;
-    const t = ctx.currentTime;
-    if (sting) sting.gain.setTargetAtTime(0, t, 0.012);
-    sting = out(null, 1, 0.48);
-    const notes = info.multi === 1 && info.headshot ? [686, 916, 1154] : phrases[info.multi - 1];
-    tone(sting, t, 0.085, { f: 160, f2: 70, g: 0.55 });
-    notes.forEach((f, i) => tone(sting, t + 0.035 + i * 0.058, i === notes.length - 1 ? 0.22 : 0.11,
-      { f, g: 0.33, wave: 'triangle' }));
-    if (info.headshot) tone(sting, t, 0.12, { f: 2230, f2: 1700, g: 0.25 });
+    const t = ctx.currentTime, duck = gunBus.gain;
+    duck.cancelScheduledValues(t);
+    duck.setTargetAtTime(0.708, t, 0.004);
+    duck.setTargetAtTime(1, t + 0.15, 0.026);
+    if (sting) sting.gain.setTargetAtTime(0, t, 0.008);
+    sting = out(null, 1, 1.1);
+
+    const tier = G.clamp(info.multi | 0, 1, 5);
+    const pitch = killPitch[tier - 1] * (info.knife ? 0.88 : info.headshot ? 1.14 : 1);
+    tone(sting, t, 0.12, { f: info.grenade ? 128 : 163, f2: 46, g: 0.99, wave: 'triangle', att: 0.002 });
+    tone(sting, t + 0.006, 0.14, { f: pitch, g: 0.85, wave: 'triangle', att: 0.002 });
+    tone(sting, t + 0.005, 0.066, { f: pitch * 2.31, f2: pitch * 2.18, g: 0.55, att: 0.001 });
+    tone(sting, t + 0.047, 0.15, { f: pitch * 1.34, g: 0.47, att: 0.003 });
+    if (tier > 1) tone(sting, t + 0.09, 0.18, { f: pitch * (tier >= 4 ? 2 : 1.68), g: 0.46, wave: 'triangle' });
+    if (info.headshot) tone(sting, t + 0.017, 0.19, { f: pitch * 3.15, f2: pitch * 2.82, g: 0.38 });
+    if (info.knife) noise(sting, t, 0.092, { type: 'bandpass', f: 4550, f2: 1270, q: 2.8, g: 0.82 });
+    if (info.grenade) noise(sting, t + 0.016, 0.17, { f: 560, f2: 84, g: 0.89, brown: true });
   };
   A.deathMix = function (enabled) {
     if (!ctx || !!heartbeat === enabled) return;
@@ -244,7 +300,7 @@
     if (!ctx) return;
     const t=ctx.currentTime, f=filter.frequency;
     f.cancelScheduledValues(t); f.setValueAtTime(750,t); f.exponentialRampToValueAtTime(20000,t+dur);
-    tone(master,t,dur,{f:2600,f2:1600,g:0.2});
+    tone(mix,t,dur,{f:2600,f2:1600,g:0.2});
   };
   A.fireLoop = function (pos) {
     if (!ctx) return null;

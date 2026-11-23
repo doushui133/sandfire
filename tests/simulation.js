@@ -120,6 +120,111 @@ for (const row of metrics) {
   }
 }
 if (process.argv.includes('--duels')) process.exit(0);
+
+function movementMetrics(hz) {
+  const a = game.makeAgent('atk', '移动测试', true);
+  const rifle = a.inv.primary = W.item('ar7');
+  a.cur = 'primary';
+  const top = W.maxSpeed(a), dt = 1 / hz;
+  const speed = () => Math.hypot(a.vel.x, a.vel.z);
+  const until = (step, done) => {
+    for (let i = 1; i <= hz; i++) {
+      step();
+      if (done()) return i * dt;
+    }
+    assert.fail('movement never reached the expected speed');
+  };
+  const full = until(() => G.Phys.step(a, 1, 0, top, false, dt), () => speed() >= top - 1e-6);
+  const release = until(() => G.Phys.step(a, 0, 0, 0, false, dt), () => speed() === 0);
+  a.vel.x = top;
+  let accurateAt = 0, firstSpread;
+  const reverse = () => G.Phys.step(a, -1, 0, top, false, dt);
+  const counter = until(() => {
+    reverse();
+    if (firstSpread === undefined) {
+      accurateAt += dt;
+      if (speed() <= 0.3 * top + 1e-9) firstSpread = W.spread(a, rifle);
+    }
+  }, () => speed() === 0);
+  assert.equal(firstSpread, rifle.def.inacc.stand);
+  reverse();
+  assert(a.vel.x < 0 && speed() < 0.2 * top, 'held reverse should ramp up from rest');
+  return { full, release, counter, accurateAt, firstSpread };
+}
+
+function combatChecks() {
+  const saved = { query: G.Map.query, ray: G.Map.raycast, fx: G.FX, time: G.time,
+    agents: game.agents, damage: game.damage, random: Math.random };
+  try {
+    G.Map.query = () => [];
+    G.Map.raycast = () => null;
+    G.FX = { muzzle: noop, blood: noop, impact: noop, tracer: noop };
+    for (const hz of [30, 60, 120]) {
+      const row = movementMetrics(hz);
+      assert(row.full >= 0.32 && row.full <= 0.38, 'run acceleration');
+      assert(row.release >= 0.28 && row.release <= 0.32, 'key release stop');
+      assert(row.counter >= 0.08 && row.counter <= 0.12, 'counter-strafe stop');
+      assert(row.counter < row.release / 2);
+      if (hz === 60) {
+        console.log('AR-7 at 60 Hz:', row.full.toFixed(3) + 's to run,', row.release.toFixed(3) + 's release,',
+          row.counter.toFixed(3) + 's counter-strafe,', row.firstSpread.toFixed(4) + 'rad first-shot cone at',
+          row.accurateAt.toFixed(3) + 's into braking');
+      }
+    }
+
+    function spray(id, distance, compensated) {
+      G.time = 0;
+      Math.random = G.seeded(7342);
+      const a = game.makeAgent('atk', '扫射测试', false), target = game.makeAgent('def', '靶标', true);
+      const it = a.inv.primary = W.item(id), groups = [];
+      a.cur = 'primary';
+      const centre = Math.atan2(1.165 - G.eyeHeight(0), distance);
+      a.pitch = centre;
+      target.alive = true; target.armor = 0; target.pos.z = -distance;
+      game.agents = [a, target];
+      let group;
+      game.damage = (v, s, dmg, info) => { group = info.head ? 'head' : info.legs ? 'legs' : 'body'; };
+      const dt = 1 / 120, ctl = { fire: true };
+      for (let tick = 1; groups.length < 15 && tick <= 300; tick++) {
+        G.time = tick * dt;
+        if (compensated) {
+          a.pitch = centre - a.recoilP;
+          a.yaw = -a.recoilY;
+        }
+        group = null;
+        W.update(a, dt, ctl);
+        if (a.lastShot === G.time) groups.push(group);
+      }
+      assert.equal(groups.length, 15);
+      const lastShot = a.lastShot;
+      for (let tick = 1; tick <= 60; tick++) {
+        G.time = lastShot + tick * dt;
+        W.update(a, dt, {});
+      }
+      assert.equal(a.shots, 0);
+      assert.equal(Math.hypot(a.recoilP, a.recoilY), 0);
+      return groups;
+    }
+
+    for (const id of ['ar7', 'tr4', 'fa2']) {
+      for (const distance of [15, 18, 20]) {
+        const raw = spray(id, distance, false), controlled = spray(id, distance, true);
+        assert.equal(raw[0], 'body');
+        const miss = raw.indexOf(null) + 1, chestHits = controlled.filter(group => group === 'body').length;
+        assert(miss >= 5 && miss <= 8, id + ' first uncompensated miss at ' + distance + 'm: shot ' + miss);
+        assert(raw.slice(8).every(group => group === null), id + ' sustained spray should leave the target');
+        assert(chestHits >= 12, id + ' compensated chest hits at ' + distance + 'm: ' + chestHits);
+        if (id === 'ar7' && distance === 18) {
+          console.log('AR-7 at 18m: first uncompensated miss on shot', miss + ',', chestHits + '/15 compensated chest hits');
+        }
+      }
+    }
+  } finally {
+    G.Map.query = saved.query; G.Map.raycast = saved.ray; G.FX = saved.fx; G.time = saved.time;
+    game.agents = saved.agents; game.damage = saved.damage; Math.random = saved.random;
+  }
+}
+
 G.Gfx.preset=G.Gfx.PRESETS.low; G.FX.init(G.scene); G.VM.init(2); G.HUD.init();
 for (const id of G.GunModels.IDS) {
   const model=G.GunModels.get(id);
@@ -132,6 +237,82 @@ console.log('20 model IDs built with first-person arms for both teams');
 const bought=new Set(), buy=game.buy;
 game.buy=function(a,id) { const ok=buy(a,id); if (ok && a.isBot) bought.add(id); return ok; };
 G.startMatch('atk',true);
+function crosshairChecks() {
+  G.startMatch('atk',true);
+  const a = G.Player.agent, it = a.inv.primary = W.item('ar7');
+  const slot = a.cur, height = innerHeight, dot = G.settings.chDot;
+  a.cur = 'primary';
+  const dt = 1 / 60;
+  const gap = () => parseFloat(elem('chR').style.left);
+  innerHeight = 1080;
+  G.HUD.update(dt);
+  const standing = gap();
+  assert.equal(standing, 4);
+  assert.equal(elem('chR').style.width, '6px');
+  assert.equal(elem('chR').style.height, '2px');
+  a.inacc = it.def.inacc.shot;
+  G.HUD.update(dt);
+  assert(gap() > standing, 'a shot should briefly expand the gap');
+  a.inacc = 0;
+  for (let i = 0; i < 40; i++) G.HUD.update(dt);
+  assert.equal(gap(), standing);
+  a.vel.x = it.def.speed * 0.52;
+  G.HUD.update(dt);
+  assert(gap() > standing && gap() < 7, 'gap should settle over several frames');
+  for (let i = 0; i < 40; i++) G.HUD.update(dt);
+  const walking = gap();
+  assert(walking > 10 && walking < 16);
+  a.vel.x = it.def.speed;
+  for (let i = 0; i < 40; i++) G.HUD.update(dt);
+  const running = gap();
+  assert.equal(running, 24);
+  G.settings.chStatic = true;
+  G.settings.chDot = false;
+  G.HUD.update(dt);
+  assert.equal(gap(), 4);
+  assert(elem('chDot').hidden);
+  innerHeight = 360;
+  G.HUD.update(dt);
+  assert.equal(elem('chR').style.width, '2px');
+  assert.equal(gap(), 1.25);
+  G.settings.chStatic = false; G.settings.chDot = dot;
+  innerHeight = height;
+  a.vel.x = 0; a.cur = slot; a.inv.primary = null;
+  console.log('AR-7 crosshair at 1080p:', standing + 'px standing,', walking + 'px walking,', running + 'px running');
+}
+
+function touchBrakeChecks() {
+  const p = G.Player.agent, touch = G.Touch, dt = 1 / 60;
+  const saved = { x: touch.joystick.x, y: touch.joystick.y, enabled: touch.enabled, time: G.time,
+    frozen: game.frozen, brake: G.settings.touchBrake, assist: G.settings.aimAssist, query: G.Map.query };
+  try {
+    assert.equal(G.settings.touchBrake, true);
+    G.Map.query = () => [];
+    touch.enabled = true; game.frozen = false;
+    G.settings.aimAssist = false;
+    touch.joystick.y = 0;
+    G.input.releaseAll(); G.input.endFrame();
+    for (const brake of [true, false]) {
+      G.settings.touchBrake = brake;
+      const step = () => { G.time += dt; G.Player.update(dt); };
+      touch.joystick.x = 1;
+      for (let i = 0; i < 30; i++) step();
+      const speed = Math.hypot(p.vel.x, p.vel.z), top = W.maxSpeed(p);
+      assert(Math.abs(speed - top) < 1e-6, 'touch run speed ' + speed + ' m/s, expected ' + top);
+      touch.joystick.x = 0;
+      for (let i = 0; i < 6; i++) step();
+      assert.equal(Math.hypot(p.vel.x, p.vel.z) === 0, brake);
+      for (let i = 0; i < 15; i++) step();
+      assert.equal(Math.hypot(p.vel.x, p.vel.z), 0);
+    }
+    console.log('Touch stick centre braking and setting override passed');
+  } finally {
+    touch.joystick.x = saved.x; touch.joystick.y = saved.y; touch.enabled = saved.enabled;
+    G.time = saved.time; game.frozen = saved.frozen; G.settings.touchBrake = saved.brake;
+    G.settings.aimAssist = saved.assist;
+    G.Map.query = saved.query;
+  }
+}
 assert.equal(G.Player.agent.money,1000);
 assert.equal(game.phaseT,8);
 assert.equal(game.buyUntil-G.time,45);
@@ -472,5 +653,9 @@ function momentChecks() {
   assert(G.timeScale===1 && !p.orbit && !G.renderer.domElement.style.filter);
   console.log('Kill tiers, HUD payloads, wall-clock window, orbit before banner, planted-bomb control, death fall, killer zoom, spectating, pause and menu cleanup passed');
 }
-captureChecks().catch(err=>{console.error(err);process.exitCode=1;});
+captureChecks().then(() => {
+  combatChecks();
+  crosshairChecks();
+  touchBrakeChecks();
+}).catch(err=>{console.error(err);process.exitCode=1;});
 

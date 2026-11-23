@@ -12,7 +12,7 @@
   H.init = function () {
     el = {};
     ['hud', 'radar', 'scoreAtk', 'scoreDef', 'timer', 'aliveAtk', 'aliveDef', 'killfeed', 'hp', 'armor', 'armorIco', 'armorMark', 'hpBar', 'armorBar', 'vitHp', 'money', 'moneyDelta', 'clip', 'reserve', 'ammoIcon', 'slots',
-      'crosshair', 'chL', 'chR', 'chT', 'chB', 'hitmarker', 'hitFx', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
+      'crosshair', 'chL', 'chR', 'chT', 'chB', 'chDot', 'hitmarker', 'hitFx', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
       'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner',
       'mapOverlay', 'mapFull', 'mapClose'].forEach((k) => (el[k] = $(k)));
     rctx = el.radar.getContext('2d');
@@ -771,25 +771,44 @@
     const scoped = it && it.def.scope && it.zoom > 0 && p.alive;
     hid(el.scope, !scoped);
     const showCh = p.alive && !scoped;
-    hid(el.crosshair, !showCh);
+    const ch = el.crosshair;
+    hid(ch, !showCh);
     if (showCh) {
-      let gap = 4;
-      if (it && it.def.rpm) {
-        const sp = W.spread(p, it), half = Math.tan(G.camera.fov * Math.PI / 360);
-        gap = G.clamp(Math.tan(sp) / half * (innerHeight / 2), 3, 90);
+      const settings = G.settings, ia = it && it.def.inacc;
+      let extra = 0;
+      if (ia && !settings.chStatic) {
+        extra = Math.max(0, W.spread(p, it) - G.lerp(ia.stand, ia.crouch, p.crouch));
       }
-      const sMul = G.clamp(+G.settings.chSize || 1, 0.5, 2);
-      const gMul = G.clamp(+G.settings.chGap || 1, 0.4, 2.2);
-      const L = Math.max(4, Math.round(8 * sMul)), t = sMul >= 1.35 ? 3 : 2;
-      const g = Math.round(Math.max(2, gap * gMul));
-      sty(el.crosshair, 'color', G.settings.chColor || '#7dff6a');
-      sty(el.chL, 'width', L + 'px'); sty(el.chL, 'height', t + 'px'); sty(el.chL, 'top', (-t / 2) + 'px');
-      sty(el.chR, 'width', L + 'px'); sty(el.chR, 'height', t + 'px'); sty(el.chR, 'top', (-t / 2) + 'px');
-      sty(el.chT, 'height', L + 'px'); sty(el.chT, 'width', t + 'px'); sty(el.chT, 'left', (-t / 2) + 'px');
-      sty(el.chB, 'height', L + 'px'); sty(el.chB, 'width', t + 'px'); sty(el.chB, 'left', (-t / 2) + 'px');
-      sty(el.chL, 'left', (-g - L) + 'px'); sty(el.chR, 'left', g + 'px');
-      sty(el.chT, 'top', (-g - L) + 'px'); sty(el.chB, 'top', g + 'px');
-    }
+      const target = Math.min(24, (4 + 60 * Math.sqrt(extra)) * settings.chGap);
+      if (ch._gap === undefined || settings.chStatic) {
+        ch._gap = target; ch._gapVelocity = 0;
+      } else {
+        // Exact critically damped step, about 90% settled in 120 ms.
+        const offset = ch._gap - target, omega = 32;
+        const advance = ch._gapVelocity + omega * offset, decay = Math.exp(-omega * dt);
+        ch._gap = target + (offset + advance * dt) * decay;
+        ch._gapVelocity = (ch._gapVelocity - omega * advance * dt) * decay;
+      }
+      const scale = innerHeight / 1080;
+      const length = Math.max(1, Math.round(24 * settings.chSize * scale) / 4);
+      const thickness = Math.max(1, Math.round(8 * Math.sqrt(settings.chSize) * scale) / 4);
+      const gap = Math.round(4 * G.clamp(ch._gap, 0, 24) * scale) / 4;
+      sty(ch, 'color', settings.chColor);
+      hid(el.chDot, !settings.chDot);
+      if (ch._length !== length || ch._thickness !== thickness || ch._paintedGap !== gap) {
+        ch._length = length; ch._thickness = thickness; ch._paintedGap = gap;
+        const long = length + 'px', short = thickness + 'px', centre = -thickness / 2 + 'px';
+        sty(el.chL, 'width', long); sty(el.chL, 'height', short); sty(el.chL, 'top', centre);
+        sty(el.chR, 'width', long); sty(el.chR, 'height', short); sty(el.chR, 'top', centre);
+        sty(el.chT, 'height', long); sty(el.chT, 'width', short); sty(el.chT, 'left', centre);
+        sty(el.chB, 'height', long); sty(el.chB, 'width', short); sty(el.chB, 'left', centre);
+        sty(el.chDot, 'width', short); sty(el.chDot, 'height', short);
+        sty(el.chDot, 'left', centre); sty(el.chDot, 'top', centre);
+        const near = gap + 'px', far = (-gap - length) + 'px';
+        sty(el.chL, 'left', far); sty(el.chR, 'left', near);
+        sty(el.chT, 'top', far); sty(el.chB, 'top', near);
+      }
+    } else ch._gap = undefined;
 
     // progress (plant / defuse)
     if (p.alive && (p.planting || p.defusing)) {

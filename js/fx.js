@@ -288,11 +288,11 @@
     t.dx /= t.dist; t.dy /= t.dist; t.dz /= t.dist; t.t = Math.random() * 2; t.on = true;
   };
   FX.muzzle = function (pos, dir, big, firstPerson) {
-    emit(FX.flashes, { x: pos.x + dir.x * 0.05, y: pos.y + dir.y * 0.05, z: pos.z + dir.z * 0.05, color: [2.2, 1.6, 0.8], size: firstPerson ? 0.14 : big ? 0.72 : 0.48, life: 0.055 });
+    emit(FX.flashes, { x: pos.x + dir.x * 0.05, y: pos.y + dir.y * 0.05, z: pos.z + dir.z * 0.05, color: [2.5, 1.8, 0.85], size: firstPerson ? 0.16 : big ? 0.82 : 0.51, life: 0.055 });
     if (!firstPerson) {
       emit(smoke, { x: pos.x, y: pos.y, z: pos.z, color: [0.55, 0.53, 0.5], size: 0.1, grow: 2, life: 0.6, alpha: 0.22, vx: dir.x * 0.8, vy: 0.3, vz: dir.z * 0.8, drag: 2 });
     }
-    light(pos.x, pos.y, pos.z, tmpC.setRGB(3.2, 2.1, 1.0).multiplyScalar(big ? 1.3 : 1), 0.065, big ? 10 : 8);
+    light(pos.x, pos.y, pos.z, tmpC.setRGB(3.2, 2.1, 1.0).multiplyScalar(big ? 1.5 : 1.12), 0.065, big ? 10 : 8);
   };
   const tmpC = new THREE.Color();
   FX.shell = function (pos, model) {
