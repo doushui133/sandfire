@@ -2,18 +2,16 @@
 'use strict';
 self.G = {};
 importScripts('textures.js');
-self.onmessage = function (e) {
+self.onmessage = async function (e) {
   try {
-    const builder = G.Tex.worldBuilder(e.data.normals, 1, e.data.size);
-    for (let i=1; i<=builder.total; i++) {
-      self.postMessage({step:i}); builder.step();
-    }
+    if (e.data.normals && typeof createImageBitmap === 'undefined') throw Error('Worker cannot decode scans');
+    const data = await G.Tex.buildWorldData(e.data, (step,total) => self.postMessage({step,total}));
     const buffers=[];
-    for (const bank of [builder.data.base,builder.data.large]) {
+    for (const bank of [data.base,data.large,data.scans]) {
       if (!bank) continue;
       buffers.push(bank.albedo.buffer);
       if (bank.normal) buffers.push(bank.normal.buffer);
     }
-    self.postMessage({bank:builder.data},buffers);
+    self.postMessage({bank:data},buffers);
   } catch (error) { self.postMessage({error:error.message}); }
 };

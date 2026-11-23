@@ -17,7 +17,7 @@ const elements=new Map();
 document.getElementById=id=>{if(!elements.has(id)) elements.set(id,{hidden:true});return elements.get(id);};
 global.innerWidth=960; global.innerHeight=540;
 const script=name=>vm.runInThisContext(fs.readFileSync(path.join(dir,'js',name+'.js'),'utf8'),{filename:name+'.js'});
-for(const name of ['textures','gfx','geom','gunmodels','mapmesh','fx','weapons','viewmodel','player','ragdoll','soldier','bots','game','main']) script(name);
+for(const name of ['textures','gfx','geom','gunmodels','mapmesh','fx','weapons','nades','viewmodel','player','ragdoll','soldier','bots','game','main']) script(name);
 if(fs.existsSync(path.join(dir,'js/video.js'))) script('video');
 const p=G.Gfx.preset=G.Gfx.PRESETS[quality];
 assert(p,'unknown preset');
