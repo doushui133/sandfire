@@ -44,6 +44,76 @@ G.BotModel={create:noop,remove:noop,update:noop,updateBlobs:noop,ragdollPoint:()
 G.scene=new THREE.Scene(); G.camera=new THREE.PerspectiveCamera(); G.sunDir=G.Gfx.U.uSunDir.value;
 const tex=new THREE.Texture();
 G.Tex={tex:()=>tex,gunDetail:()=>tex,detail:()=>tex};
+
+// Isolated open lane. Use the live bot controller, movement, recoil, hitscan and
+// armour calculation. Suppress only scenery, feedback and the end-of-round flow.
+function duelMetrics() {
+  const saved = { random: Math.random, time: G.time, agents: game.agents, phase: game.phase,
+    frozen: game.frozen, player: G.Player.agent, bomb: game.bomb, plan: G.Bots.plan,
+    fx: G.FX, ray: G.Map.raycast, query: G.Map.query, damage: game.damage };
+  const rows = [];
+  try {
+    G.Map.raycast = () => null;
+    G.Map.query = () => [];
+    G.FX = { muzzle: noop, blood: noop, impact: noop, tracer: noop };
+    game.phase = 'live'; game.frozen = false;
+    for (const difficulty of [0, 1, 2]) {
+      G.Bots.setDifficulty(difficulty);
+      for (const range of [10, 25]) for (const moving of [false, true]) {
+        const times = [];
+        let hits = 0, shots = 0, heads = 0, expired = 0;
+        game.damage = (v, a, dmg, info) => {
+          if (info.head) heads++;
+          hits++; v.hp -= dmg; v.alive = v.hp > 0;
+          return { killed: !v.alive };
+        };
+        for (let trial = 0; trial < 80; trial++) {
+          Math.random = G.seeded(7500 + trial);
+          G.time = 0;
+          const bot = game.makeAgent('atk','射手',false);
+          const target = game.makeAgent('def','靶标',true);
+          G.Player.agent = target; game.agents = [bot,target];
+          game.bomb = { state:'carried', carrier:bot };
+          bot.alive = target.alive = true;
+          bot.inv.primary = W.item('ar7'); bot.cur = 'primary';
+          target.armor = 100; target.helmet = true;
+          target.pos.z = -range;
+          G.Bots.newRound();
+          for (let tick = 1; target.alive && tick <= 3600; tick++) {
+            G.time = tick / 60;
+            // A 4 m/s lateral strafe, reversing at +/-1.5 m.
+            if (moving) target.pos.x = 1.5 - Math.abs((G.time * 4 + 1.5) % 6 - 3);
+            G.Bots.update(1 / 60);
+            if (bot.lastShot === G.time) shots++;
+          }
+          times.push(G.time);
+          if (target.alive) expired++;
+        }
+        times.sort((a,b) => a-b);
+        const median = (times[39] + times[40]) / 2;
+        rows.push({ difficulty, range, moving, median, hitRate: hits / shots, heads, hits, expired });
+        console.log(['新兵','老兵','精英'][difficulty], range+'m', moving?'strafe':'still',
+          median.toFixed(2)+'s', (100*hits/shots).toFixed(1)+'%', 'head/hit', (100*heads/hits).toFixed(1)+'%', 'timeouts',expired);
+      }
+    }
+  } finally {
+    Math.random = saved.random; G.time = saved.time; G.Player.agent = saved.player;
+    Object.assign(game,{agents:saved.agents, phase:saved.phase, frozen:saved.frozen, bomb:saved.bomb, damage:saved.damage});
+    G.FX = saved.fx; G.Map.raycast = saved.ray; G.Map.query = saved.query;
+    G.Bots.plan = saved.plan; G.Bots.setDifficulty(G.settings.diff);
+  }
+  return rows;
+}
+const metrics = duelMetrics();
+for (const row of metrics) {
+  assert(row.hitRate > 0 && row.hitRate < 1 && row.expired < 40);
+  if (row.difficulty < 2) {
+    assert(row.heads / row.hits <= [0.05, 0.10][row.difficulty]);
+    const harder = metrics.find(r => r.difficulty === row.difficulty + 1 && r.range === row.range && r.moving === row.moving);
+    assert(row.median > harder.median);
+  }
+}
+if (process.argv.includes('--duels')) process.exit(0);
 G.Gfx.preset=G.Gfx.PRESETS.low; G.FX.init(G.scene); G.VM.init(2); G.HUD.init();
 for (const id of G.GunModels.IDS) {
   const model=G.GunModels.get(id);
@@ -56,6 +126,13 @@ console.log('20 model IDs built with first-person arms for both teams');
 const bought=new Set(), buy=game.buy;
 game.buy=function(a,id) { const ok=buy(a,id); if (ok && a.isBot) bought.add(id); return ok; };
 G.startMatch('atk',true);
+assert.equal(G.Player.agent.money,1000);
+assert.equal(game.phaseT,8);
+assert.equal(game.buyUntil-G.time,45);
+const roundStart=G.time;
+G.time=game.buyUntil-.001; assert(game.canBuy(G.Player.agent));
+G.time=game.buyUntil; assert(!game.canBuy(G.Player.agent));
+G.time=roundStart;
 for (let sec=0;sec<2100 && game.phase!=='over';sec++) G.debugStep(1);
 assert.equal(game.phase,'over'); assert(game.round>=8);
 const newGuns=['m18','k5','u45','s8','fa2','s40','l60'];
@@ -109,7 +186,10 @@ at('smoke',V(0,.1,38)); tick(1.25);
 assert(N.blocks(G.eyePos(foe),G.eyePos(me)));
 foe.ai.visT=0; G.Bots.update(.01); assert(!foe.ai.targetVisible);
 tick(20); assert.equal(N.smokes.length,0);
-console.log('Both fire grenades, area damage, extinguishing, smoke lifetime and bot sight passed');
+foe.ai.visT=0; G.Bots.update(.01);
+assert(foe.ai.targetVisible && foe.ai.reactUntil-G.time>=.55);
+assert(foe.ai.reactUntil-G.time<=.8);
+console.log('Both fire grenades, area damage, extinguishing, smoke lifetime and delayed target reacquisition passed');
 
 // Fire into a thin low wall in both directions at speeds exceeding a cell per simulation tick.
 const wall=G.Map.boxes.find(b=>b.type==='lowwall' || b.kind==='lowwall') ||
@@ -200,6 +280,26 @@ key(0); key(7); assert(!elem('buymenu').innerHTML.includes('燃烧弹'));
 key(2); assert((me.nades.flash||0)>0); G.onEscape(); assert(!G.HUD.buyOpen);
 console.log('Keyboard category/item buying, team restrictions and Esc close passed');
 
+// Fire across a real wooden crate; optical targeting still stops at its surface.
+field(); ally.alive=false; me.pos.copy(cover); me.pos.x-=2;
+foe.pos.copy(cover); foe.pos.x+=2; foe.hp=1;
+me.yaw=-Math.PI/2; me.pitch=Math.atan2(1.18-G.eyeHeight(0),4);
+me.inv.primary=W.item('ar7'); me.cur='primary'; me.inacc=me.recoilP=me.recoilY=0;
+const killEvents=[];
+G.HUD.killFx=info=>killEvents.push(info);
+W.update(me,.016,{fire:true});
+assert(!foe.alive && killEvents.pop().wallbang);
+for (const id of ['r90','s40']) for (const range of [1,25,220]) {
+  field(); foe.armor=100;
+  W.applyDamage(foe,me,W.defs[id],'legs',range,0,-1);
+  assert(foe.alive, id+' leg');
+  foe.hp=100;
+  W.applyDamage(foe,me,W.defs[id],'body',range,0,-1);
+  assert(!foe.alive, id+' armored body');
+}
+delete G.HUD.killFx;
+console.log('Crate penetration kill and armored sniper body / leg boundaries passed');
+
 // Exercise the original third-person holding-pose lookup as well as the new model builders.
 load('ragdoll'); load('soldier');
 const mannequin=game.makeAgent('def','模型测试',false);
@@ -259,7 +359,7 @@ async function captureChecks() {
   for (const method of ['setPixelRatio','setSize','setClearColor','compile','render','clear','clearDepth','setRenderTarget','setViewport','setScissor','setScissorTest','dispose','initTexture']) Renderer.prototype[method]=noop;
   THREE.WebGLRenderer=Renderer; G.Gfx.detect=()=>({webgl2:true,soft:true});
   G.Gfx.loadLightmaps=G.Gfx.buildShadow=G.Gfx.makeSky=noop;
-  G.MapMesh={build:noop}; G.MapGeo.build=()=>({}); G.Map.buildRadar=()=>elem('radar');
+  G.MapMesh={build:noop, updateDetail:noop}; G.MapGeo.build=()=>({}); G.Map.buildRadar=()=>elem('radar');
   G.Tex.init=noop; G.Tex.worldBuilder=()=>({total:1,step:()=>true,result:()=>({})}); G.Tex.buildWorld=async()=>({});
   G.Video.init=noop; G.Gfx.initMovingShadow=noop;
   G.HUD.init=noop; global.location={search:'',href:'http://localhost/'};
@@ -292,6 +392,79 @@ async function captureChecks() {
   clock+=1100; G.embedded=true; canvas.requestPointerLock=()=>{throw Error('embedded');};
   overlay.emit('click',{target:overlay}); assert(!G.paused && G.input.freeLook);
   console.log('Top-level refusal, retry cooldown, fullscreen keyboard lock, crouch gating and embedded fallback passed');
+  momentChecks();
+}
+function momentChecks() {
+  const p=G.Player, kills=[], hits=[], deaths=[], banners=[], hudSteps=[];
+  G.HUD.killFx=info=>kills.push(info); G.HUD.hitFx=info=>hits.push(info);
+  G.HUD.deathFx=info=>deaths.push(info); G.HUD.roundEnd=(...args)=>banners.push(args);
+  const hudUpdate=G.HUD.update;
+  G.HUD.update=dt=>{ hudSteps.push(dt); hudUpdate(dt); };
+  let t=0;
+  function advance(seconds) {
+    const count=Math.round(seconds*60);
+    for (let i=0;i<count;i++) { t+=1/60; G.frame(1/60,t); }
+  }
+  G.startMatch('def',true);
+  const player=p.agent, foes=game.agents.filter(a=>a.team!==player.team);
+  const mate=game.agents.find(a=>a!==player && a.team===player.team);
+  game.phase='live'; game.frozen=false;
+  game.damage(foes[0],player,7,{weapon:'p10'});
+  assert.deepEqual(hits.pop(),{head:false,kill:false,dmg:7});
+  game.damage(foes[0],player,999,{weapon:'p10',head:true});
+  assert.deepEqual(hits.pop(),{head:true,kill:true,dmg:93});
+  assert(kills[0].first && kills[0].headshot && !kills[0].last);
+  const start=G.time;
+  advance(.1);
+  assert(Math.abs(G.time-start-.1*.35)<1e-8);
+  assert(Math.abs(hudSteps.pop()-1/60)<1e-8);
+  assert(G.camera.fov<74);
+  advance(.5); assert.equal(G.timeScale,1);
+  for (let i=1;i<5;i++) game.damage(foes[i],player,999,{weapon:i===1?'knife':'he'});
+  assert.deepEqual(kills.map(e=>e.multi),[1,2,3,4,5]);
+  assert.deepEqual(kills.map(e=>e.streak),[1,2,3,4,5]);
+  assert(kills[1].knife && kills[2].grenade && kills[4].last && kills[4].ace);
+  advance(.25); const firstPos=G.camera.position.clone();
+  assert(p.orbit && foes[4].rig.rd && game.phase==='end' && !banners.length);
+  advance(1.65);
+  assert(p.orbit && !banners.length && firstPos.distanceTo(G.camera.position)>.2);
+  advance(.15);
+  assert(!p.orbit && G.timeScale===1 && banners.length===1);
+
+  game.newRound(); game.phase='live'; game.frozen=false;
+  game.damage(foes[0],mate,200,{weapon:'tr4'});
+  game.damage(foes[1],player,200,{weapon:'tr4'});
+  assert(!kills[kills.length-1].first && kills[kills.length-1].streak===1);
+  const before=G.time; G.debugStep(.1);
+  assert(Math.abs(G.time-before-.1)<1e-8);
+  advance(4.1);
+  game.damage(foes[2],player,200,{weapon:'tr4'});
+  assert.equal(kills[kills.length-1].multi,1);
+  game.bomb.state='planted';
+  for (const enemy of foes.slice(3)) game.damage(enemy,player,200,{weapon:'tr4'});
+  assert(kills[kills.length-1].last && !kills[kills.length-1].ace && !p.orbit);
+  game.newRound(); assert.equal(G.timeScale,1);
+
+  advance(.05);
+  const height=G.camera.position.y;
+  game.damage(player,foes[0],200,{weapon:'fa2',head:true});
+  assert.deepEqual(deaths.pop(),{killer:foes[0].name,weapon:'fa2',headshot:true,killerHp:foes[0].hp});
+  advance(.3);
+  assert(G.timeScale===.35 && G.camera.position.y<height && G.camera.rotation.z>.1);
+  G.paused=true; advance(.3); assert.equal(G.timeScale,1);
+  G.paused=false; advance(.4);
+  const wide=G.camera.fov;
+  assert(G.timeScale===1 && !p.spectateTarget() && G.renderer.domElement.style.filter);
+  advance(2.2); assert(G.camera.fov<wide && !p.spectateTarget());
+  advance(.3); assert(p.spectateTarget() && G.camera.fov===74 && !G.renderer.domElement.style.filter);
+  game.newRound(); game.phase='end'; game.phaseT=.001; game.over='atk';
+  game.damage(player,null,200,{weapon:'bomb'}); advance(.05);
+  assert(game.phase==='over' && G.timeScale===1 && !G.renderer.domElement.style.filter);
+  G.startMatch('atk',true);
+  game.damage(p.agent,null,200,{weapon:'bomb'});
+  elem('btnQuit').emit('click');
+  assert(G.timeScale===1 && !p.orbit && !G.renderer.domElement.style.filter);
+  console.log('Kill tiers, HUD payloads, wall-clock window, orbit before banner, planted-bomb control, death fall, killer zoom, spectating, pause and menu cleanup passed');
 }
 captureChecks().catch(err=>{console.error(err);process.exitCode=1;});
 

@@ -186,7 +186,7 @@
 
   // ---------- brass ----------
   function shellPool(n) {
-    const geo = G.Geo.paint(G.Geo.cyl(0.0048, 0.0048, 0.022, 7, 'z'), { c: 0xb8923e, r: 0.3, m: 1, w: 0.2 });
+    const geo = G.Geo.paint(G.Geo.cyl(0.007, 0.007, 0.034, 7, 'z'), { c: 0xe2b857, r: 0.26, m: 0.78, w: 0.2 });
     const mesh = new THREE.InstancedMesh(geo, G.GunModels.material(), n);
     mesh.frustumCulled = false; mesh.count = 0;
     const items = []; for (let i = 0; i < n; i++) items.push({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), t: 0, rest: false });
@@ -228,13 +228,45 @@
     U.uFlashColor.value.copy(peak);
   }
   const dustCol = [0.62, 0.52, 0.4];
+  const caps = [];
+  let capGeometry, capMaterial, deathVeil, grade = 0;
+  FX.deathGrade = function (amount) {
+    if (grade === amount) return;
+    grade = amount;
+    const canvas = G.renderer && G.renderer.domElement;
+    if (canvas) canvas.style.filter = amount ? 'saturate(' + (1 - 0.88 * amount) + ')' : '';
+    if (!deathVeil && amount) {
+      deathVeil = document.createElement('div');
+      deathVeil.style.cssText = 'position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse,transparent 32%,rgba(116,5,9,.78) 100%)';
+      document.getElementById('game').appendChild(deathVeil);
+    }
+    if (deathVeil) { deathVeil.hidden = !amount; deathVeil.style.opacity = amount; }
+  };
+  FX.deathBurst = function (a, dir, head) {
+    const y = a.pos.y + (head ? 1.63 : 1.16) - a.crouch * 0.45;
+    FX.blood(a.pos.x, y, a.pos.z, dir, !!head);
+    if (!head) return;
+    FX.blood(a.pos.x, y + 0.09, a.pos.z, dir, true);
+    let cap = caps.find(c => !c.mesh.visible);
+    if (!cap) {
+      if (!capGeometry) {
+        capGeometry = new THREE.SphereGeometry(0.145, 10, 5, 0, 2 * Math.PI, 0, Math.PI * 0.55);
+        capMaterial = new THREE.MeshLambertMaterial({ color: 0x695e45, side: THREE.DoubleSide });
+      }
+      cap = { mesh: new THREE.Mesh(capGeometry, capMaterial), vel: new THREE.Vector3() };
+      caps.push(cap); scene.add(cap.mesh);
+    }
+    cap.mesh.position.set(a.pos.x, y + 0.11, a.pos.z);
+    cap.vel.set(dir.x * 2.4 + 0.35, 3.2, dir.z * 2.4);
+    cap.mesh.rotation.set(0, a.yaw, 0.1); cap.mesh.visible = true; cap.age = 0;
+  };
 
   FX.impact = function (x, y, z, nx, ny, nz) {
     for (let i = 0; i < 3; i++) emit(smoke, {
-      x: x + nx * 0.05, y: y + ny * 0.05, z: z + nz * 0.05, color: dustCol, size: 0.12 + Math.random() * 0.12, grow: 1.6, life: 0.5 + Math.random() * 0.5, alpha: 0.7,
+      x: x + nx * 0.05, y: y + ny * 0.05, z: z + nz * 0.05, color: dustCol, size: 0.18 + Math.random() * 0.15, grow: 1.6, life: 0.5 + Math.random() * 0.5, alpha: 0.78,
       vx: nx * G.rand(0.6, 1.8) + G.rand(-0.4, 0.4), vy: ny * G.rand(0.6, 1.8) + G.rand(0, 0.5), vz: nz * G.rand(0.6, 1.8) + G.rand(-0.4, 0.4), drag: 3, rise: 0.2,
     });
-    for (let i = 0; i < 2; i++) emit(glow, { x, y, z, color: [1.6, 1.1, 0.6], size: 0.03, life: 0.08 + Math.random() * 0.06, vx: (nx + G.rand(-0.8, 0.8)) * 6, vy: (ny + G.rand(0, 1)) * 6, vz: (nz + G.rand(-0.8, 0.8)) * 6 });
+    for (let i = 0; i < 3; i++) emit(glow, { x, y, z, color: [2.2, 1.4, 0.7], size: 0.052, life: 0.10 + Math.random() * 0.07, vx: (nx + G.rand(-0.8, 0.8)) * 6, vy: (ny + G.rand(0, 1)) * 6, vz: (nz + G.rand(-0.8, 0.8)) * 6 });
     putDecal('hole', x, y, z, nx, ny, nz, 0.11 + Math.random() * 0.05, 1);
     if (Math.random() < 0.5) G.Audio.impact({ x, y, z });
   };
@@ -256,15 +288,15 @@
     t.dx /= t.dist; t.dy /= t.dist; t.dz /= t.dist; t.t = Math.random() * 2; t.on = true;
   };
   FX.muzzle = function (pos, dir, big, firstPerson) {
+    emit(FX.flashes, { x: pos.x + dir.x * 0.05, y: pos.y + dir.y * 0.05, z: pos.z + dir.z * 0.05, color: [2.2, 1.6, 0.8], size: firstPerson ? 0.14 : big ? 0.72 : 0.48, life: 0.055 });
     if (!firstPerson) {
-      emit(FX.flashes, { x: pos.x + dir.x * 0.05, y: pos.y + dir.y * 0.05, z: pos.z + dir.z * 0.05, color: [1.6, 1.15, 0.6], size: big ? 0.55 : 0.38, life: 0.05 });
       emit(smoke, { x: pos.x, y: pos.y, z: pos.z, color: [0.55, 0.53, 0.5], size: 0.1, grow: 2, life: 0.6, alpha: 0.22, vx: dir.x * 0.8, vy: 0.3, vz: dir.z * 0.8, drag: 2 });
     }
-    light(pos.x, pos.y, pos.z, tmpC.setRGB(2.6, 1.7, 0.8).multiplyScalar(big ? 1.3 : 1), 0.06, big ? 9 : 7);
+    light(pos.x, pos.y, pos.z, tmpC.setRGB(3.2, 2.1, 1.0).multiplyScalar(big ? 1.3 : 1), 0.065, big ? 10 : 8);
   };
   const tmpC = new THREE.Color();
   FX.shell = function (pos, model) {
-    if (!pos || model === 'sniper') return;
+    if (!pos) return;
     const S = shells, s = S.items[S.idx]; S.idx = (S.idx + 1) % S.n;
     const cam = G.camera, right = v1.set(1, 0, 0).applyQuaternion(cam.quaternion), up = v2.set(0, 1, 0).applyQuaternion(cam.quaternion);
     s.p.copy(pos);
@@ -593,6 +625,8 @@
     ghost.life = ghost.hold + ghost.max;
   };
   FX.clear = function () {
+    FX.shake = 0;
+    for (const cap of caps) cap.mesh.visible = false;
     if (flamePool) flamePool.mesh.visible=false;
     for (const P of [smoke, glow, flamePool, FX.flashes]) { if (!P) continue; P.items.forEach((it) => (it.life = it.max)); stepPool(P, 0); }
     for (let i = 0; i < SCORCH_N; i++) scorchRec[i].on = false;
@@ -607,6 +641,19 @@
   const e3 = new THREE.Euler();
   FX.update = function (dt) {
     G.Nades.updateView();
+    for (const cap of caps) {
+      if (!cap.mesh.visible) continue;
+      cap.age += dt;
+      const pos = cap.mesh.position;
+      const floor = floorBelow(pos) + 0.055;
+      if (pos.y > floor || cap.vel.y > 0) {
+        cap.vel.y -= 11 * dt;
+        pos.addScaledVector(cap.vel, dt);
+        pos.y = Math.max(floor, pos.y);
+        cap.mesh.rotation.x += dt * 8; cap.mesh.rotation.z += dt * 5;
+      }
+      cap.mesh.visible = cap.age < 3.5;
+    }
     if (flamePool.mesh.visible) { stepPool(flamePool,dt); flamePool.mesh.visible=G.time<flamePool.until; }
     stepPool(smoke, dt); stepPool(glow, dt); stepPool(FX.flashes, dt);
     // tracers

@@ -7,17 +7,17 @@
   // inacc values are cone radii in radians; rc = recoil kick per shot (radians)
   W.defs = {
     knife: { name: '战术匕首', slot: 'knife', melee: true, dmg: 34, dmg2: 62, rate: 0.42, rate2: 1.0, range: 1.8, speed: 6.2, kill: 1000 },
-    p10: { name: 'P10 手枪', slot: 'pistol', price: 200, dmg: 30, rpm: 380, auto: false, clip: 15, reserve: 45, reload: 2.2, pen: 0.5, fall: 0.9,
+    p10: { name: 'P10 手枪', slot: 'pistol', price: 200, dmg: 34, rpm: 380, auto: false, clip: 15, reserve: 45, reload: 2.2, pen: 0.62, fall: 0.93,
       inacc: { stand: 0.005, crouch: 0.004, move: 0.03, air: 0.15, shot: 0.032, rec: 5 }, rc: { up: 0.026, side: 0.006, decay: 0, sideStart: 99 }, speed: 6.0, kill: 300, snd: 'pistol', model: 'pistol' },
-    h50: { name: 'H50 重型手枪', slot: 'pistol', price: 700, dmg: 58, rpm: 230, auto: false, clip: 7, reserve: 35, reload: 2.2, pen: 0.93, fall: 0.86,
+    h50: { name: 'H50 重型手枪', slot: 'pistol', price: 650, dmg: 60, rpm: 230, auto: false, clip: 7, reserve: 35, reload: 2.2, pen: 0.93, fall: 0.86,
       inacc: { stand: 0.004, crouch: 0.003, move: 0.08, air: 0.2, shot: 0.06, rec: 3 }, rc: { up: 0.06, side: 0.012, decay: 0, sideStart: 99 }, speed: 5.75, kill: 300, snd: 'heavy', model: 'heavy' },
-    v9: { name: 'V9 冲锋枪', slot: 'primary', price: 1250, dmg: 26, rpm: 800, auto: true, clip: 30, reserve: 120, reload: 2.4, pen: 0.6, fall: 0.82,
+    v9: { name: 'V9 冲锋枪', slot: 'primary', price: 1250, dmg: 28, rpm: 800, auto: true, clip: 30, reserve: 120, reload: 2.4, pen: 0.6, fall: 0.82,
       inacc: { stand: 0.008, crouch: 0.006, move: 0.028, air: 0.15, shot: 0.005, rec: 6 }, rc: { up: 0.011, side: 0.006, decay: 0.07, sideStart: 6, period: 4 }, speed: 5.9, kill: 600, snd: 'smg', model: 'smg' },
     ar7: { name: 'AR-7 突击步枪', slot: 'primary', team: 'atk', price: 2700, dmg: 36, rpm: 600, auto: true, clip: 30, reserve: 90, reload: 2.5, pen: 0.775, fall: 0.98,
       inacc: { stand: 0.0032, crouch: 0.0024, move: 0.11, air: 0.22, shot: 0.0075, rec: 4 }, rc: { up: 0.0175, side: 0.0095, decay: 0.075, sideStart: 8, period: 5 }, speed: 5.4, kill: 300, snd: 'rifle', model: 'ar' },
-    tr4: { name: 'TR-4 战术步枪', slot: 'primary', team: 'def', price: 3100, dmg: 33, rpm: 666, auto: true, clip: 30, reserve: 90, reload: 3.0, pen: 0.7, fall: 0.98,
+    tr4: { name: 'TR-4 战术步枪', slot: 'primary', team: 'def', price: 2900, dmg: 34, rpm: 666, auto: true, clip: 30, reserve: 90, reload: 3.0, pen: 0.7, fall: 0.98,
       inacc: { stand: 0.0028, crouch: 0.002, move: 0.1, air: 0.22, shot: 0.0065, rec: 4.5 }, rc: { up: 0.0145, side: 0.008, decay: 0.07, sideStart: 9, period: 5 }, speed: 5.55, kill: 300, snd: 'rifle2', model: 'tr' },
-    r90: { name: 'R-90 狙击步枪', slot: 'primary', price: 4750, dmg: 115, rpm: 41, auto: false, clip: 5, reserve: 30, reload: 3.6, pen: 0.97, fall: 0.99,
+    r90: { name: 'R-90 狙击步枪', slot: 'primary', price: 4450, dmg: 125, rpm: 48, auto: false, clip: 5, reserve: 30, reload: 3.6, pen: 0.97, fall: 0.996,
       inacc: { stand: 0.0007, crouch: 0.0005, move: 0.2, air: 0.3, shot: 0, rec: 2, unscoped: 0.085 }, rc: { up: 0.05, side: 0.005, decay: 0, sideStart: 99 }, speed: 5.0, scopeSpeed: 3.6, kill: 150, snd: 'sniper', model: 'sniper', scope: true },
   };
   function gun(base, stats, accuracy, recoil) {
@@ -27,13 +27,13 @@
     });
   }
   Object.assign(W.defs, {
-    m18: gun('p10', { name:'M18 自动手枪', price:500, dmg:19, rpm:810, auto:true, clip:22, reserve:88, reload:1.9, snd:'m18' }, { move:0.105, shot:0.012 }, { up:0.016 }),
-    k5: gun('v9', { name:'K5 紧凑冲锋枪', price:1050, dmg:19, rpm:970, clip:32, speed:6.18, reload:2.05, snd:'k5' }, { move:0.024 }, { up:0.01 }),
-    u45: gun('v9', { name:'U45 冲锋枪', price:1200, dmg:35, rpm:525, clip:24, reserve:96, speed:5.75, snd:'u45' }, { shot:0.008 }, { up:0.025, side:0.011 }),
-    s8: gun('v9', { name:'S8 泵动霰弹枪', price:1100, dmg:21, rpm:68, auto:false, pellets:8, shell:true, clip:7, reserve:35, reload:0.6, pen:0.68, fall:0.25, speed:5.65, kill:900, snd:'s8', model:'pump' }, { stand:0.045, crouch:0.038, move:0.035 }, { up:0.065 }),
-    fa2: gun('ar7', { name:'FA-2 轻型步枪', price:2000, dmg:31, rpm:630, pen:0.68, speed:5.65, snd:'fa2' }, { stand:0.006, crouch:0.0045, shot:0.011 }, { side:0.011 }),
-    s40: gun('r90', { name:'S40 轻型狙击步枪', price:1700, dmg:88, rpm:57, clip:8, reserve:32, speed:5.85, scopeSpeed:4.45, reload:2.7, snd:'s40' }, { move:0.14 }, { up:0.038 }),
-    l60: gun('ar7', { name:'L60 轻机枪', price:5200, dmg:37, rpm:705, clip:100, reserve:200, reload:5.6, speed:4.4, snd:'l60', model:'box' }, { move:0.18, shot:0.012 }, { up:0.029, side:0.018, decay:0.035 }),
+    m18: gun('p10', { name:'M18 自动手枪', price:500, dmg:23, rpm:810, auto:true, clip:22, reserve:88, reload:1.9, snd:'m18' }, { move:0.055, shot:0.012 }, { up:0.016 }),
+    k5: gun('v9', { name:'K5 紧凑冲锋枪', price:1050, dmg:22, rpm:970, clip:32, speed:6.18, reload:2.05, snd:'k5' }, { move:0.024 }, { up:0.01 }),
+    u45: gun('v9', { name:'U45 冲锋枪', price:1200, dmg:39, rpm:525, clip:24, reserve:96, speed:5.75, snd:'u45' }, { shot:0.008 }, { up:0.025, side:0.011 }),
+    s8: gun('v9', { name:'S8 泵动霰弹枪', price:1150, dmg:24, rpm:68, auto:false, pellets:8, shell:true, clip:7, reserve:35, reload:0.6, pen:0.68, fall:0.25, speed:5.65, kill:900, snd:'s8', model:'pump' }, { stand:0.045, crouch:0.038, move:0.035 }, { up:0.065 }),
+    fa2: gun('ar7', { name:'FA-2 轻型步枪', price:2150, dmg:34, rpm:630, pen:0.72, speed:5.65, snd:'fa2' }, { stand:0.006, crouch:0.0045, shot:0.011 }, { side:0.011 }),
+    s40: gun('r90', { name:'S40 轻型狙击步枪', price:3200, dmg:112, fall:0.997, rpm:36, clip:4, reserve:32, speed:5.85, scopeSpeed:4.45, reload:2.7, snd:'s40' }, { stand:0.0018, move:0.14 }, { up:0.038 }),
+    l60: gun('ar7', { name:'L60 轻机枪', price:4200, dmg:41, rpm:705, clip:100, reserve:200, reload:5.6, speed:4.4, snd:'l60', model:'box' }, { move:0.18, shot:0.012 }, { up:0.029, side:0.018, decay:0.035 }),
   });
   W.grenades = ['he','flash','smoke','molotov','incendiary'];
   [['he','高爆手雷',300,'爆'], ['flash','闪光弹',200,'闪'], ['smoke','烟雾弹',300,'烟'],
@@ -100,6 +100,7 @@
     if (i < rc.sideStart) side = rc.side * 0.35 * (Math.random() - 0.5);
     else side = rc.side * Math.sign(Math.sin(((i - rc.sideStart) / rc.period) * Math.PI) || 1) * (0.7 + 0.3 * Math.random());
     a.recoilP += up; a.recoilY += side;
+    return up;
   }
 
   // ---------- hitscan ----------
@@ -135,7 +136,7 @@
   W.trace = function (shooter, ox, oy, oz, dx, dy, dz, maxDist) {
     const wh = G.Map.raycast(ox, oy, oz, dx, dy, dz, maxDist);
     let best = wh ? wh.t : maxDist;
-    res.agent = null; res.world = !!wh;
+    res.agent = null; res.world = !!wh; res.box = wh && wh.box; res.wallbang = false;
     if (wh) { res.nx = wh.nx; res.ny = wh.ny; res.nz = wh.nz; }
     for (const a of G.Game.agents) {
       if (!a.alive || a === shooter || a.team === shooter.team) continue;
@@ -156,8 +157,8 @@
   };
 
   W.baseDamage = (def, dist) => def.dmg * Math.pow(def.fall || 1, def.shell ? Math.max(0, dist - 6) / 5 : dist / 10);
-  W.applyDamage = function (target, shooter, def, group, dist, dirx, dirz) {
-    let d = W.baseDamage(def, dist);
+  W.applyDamage = function (target, shooter, def, group, dist, dirx, dirz, wallbang, diry) {
+    let d = W.baseDamage(def, dist) * (wallbang ? 0.55 : 1);
     d *= group === 'head' ? 4 : group === 'legs' ? 0.75 : 1;
     const armored = target.armor > 0 && (group === 'body' || (group === 'head' && target.helmet));
     if (armored) {
@@ -165,7 +166,7 @@
       target.armor = Math.max(0, Math.round(target.armor - (d - after) * 0.5));
       d = after;
     }
-    return G.Game.damage(target, shooter, Math.max(1, Math.round(d)), { weapon: def.id, head: group === 'head', legs: group === 'legs', helmet: armored && group === 'head', dirx, dirz });
+    return G.Game.damage(target, shooter, Math.max(1, Math.round(d)), { weapon: def.id, head: group === 'head', legs: group === 'legs', helmet: armored && group === 'head', dirx, dirz, diry, wallbang });
   };
 
   // ---------- firing ----------
@@ -179,21 +180,38 @@
   };
 
   const barrel = new THREE.Vector3(), victims = [], pelletHits = new Map();
+  // Only a fired rifle, LMG or scoped round can cross one wooden crate.
+  // Sight, touch targeting and all other ray queries still stop at its surface.
+  function bulletTrace(a, d, dir) {
+    const r = W.trace(a, eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 220);
+    if (!r.world || !r.box || r.box.kind !== 'crate' || !(d.scope || d.model === 'ar' || d.model === 'tr' || d.model === 'box')) return r;
+    const entry = Object.assign({}, r);
+    const start = r.t + 0.001;
+    const next = W.trace(a, eye.x + dir.x * start, eye.y + dir.y * start, eye.z + dir.z * start, dir.x, dir.y, dir.z, 220 - start);
+    if (!next.agent) return entry;
+    G.FX.impact(entry.wx, entry.wy, entry.wz, entry.nx, entry.ny, entry.nz);
+    next.t += start; next.wallbang = true;
+    return next;
+  }
   function shoot(a, it) {
     const d = it.def;
     it.clip--; it.nextFire = G.time + 60 / d.rpm;
     G.eyePos(a, eye);
-    const aimP = a.pitch + a.recoilP * (a.recoilComp !== undefined ? 1 - a.recoilComp : 1);
+    const spread = W.spread(a, it) + (a.aimNoise || 0);
+    let aimP = a.pitch + a.recoilP * (a.recoilComp !== undefined ? 1 - a.recoilComp : 1);
+    if (a.ai && Number.isFinite(a.ai.bodyCeiling)) {
+      // A centre-mass burst from an inexperienced bot tends to pull low.
+      aimP = Math.min(a.pitch - a.recoilP * (1 - a.recoilComp), a.ai.bodyCeiling - spread);
+    }
     const aimY = a.yaw + a.recoilY * (a.recoilComp !== undefined ? 1 - a.recoilComp : 1);
     W.muzzlePos(a, muz);
     G.forward(aimY, aimP, barrel);
     right.set(Math.cos(aimY), 0, -Math.sin(aimY)); upv.crossVectors(right, barrel).normalize();
-    const spread = W.spread(a, it) + (a.aimNoise || 0);
-    let marked = false, head = false, killed = false, helmet = false;
+    let marked = false, head = false, killed = false;
     for (let i = 0; i < (d.pellets || 1); i++) {
       const ang = Math.random() * Math.PI * 2, rad = spread * Math.sqrt(Math.random());
       fwd.copy(barrel).addScaledVector(right, Math.cos(ang) * rad).addScaledVector(upv, Math.sin(ang) * rad).normalize();
-      const r = W.trace(a, eye.x, eye.y, eye.z, fwd.x, fwd.y, fwd.z, 220);
+      const r = bulletTrace(a, d, fwd);
       hitP.set(r.wx, r.wy, r.wz);
       if (r.agent) {
         const v = r.agent;
@@ -206,8 +224,8 @@
           h.armor += covered ? raw * (1 - d.pen) * 0.5 : 0;
           h.head = h.head || r.group === 'head';
         } else {
-          const out = W.applyDamage(v, a, d, r.group, r.t, fwd.x, fwd.z);
-          killed = out && out.killed; helmet = out && out.helmet;
+          const out = W.applyDamage(v, a, d, r.group, r.t, fwd.x, fwd.z, r.wallbang, fwd.y);
+          killed = out && out.killed;
         }
         head = head || r.group === 'head';
         if (!marked) G.FX.blood(r.wx, r.wy, r.wz, fwd, head);
@@ -218,15 +236,23 @@
     for (const v of victims) {
       const h = pelletHits.get(v);
       v.armor = Math.max(0, Math.round(v.armor - h.armor));
-      const out = G.Game.damage(v, a, Math.max(1, Math.round(h.dmg)), { weapon:d.id, head:h.head, dirx:barrel.x, dirz:barrel.z });
-      killed = killed || (out && out.killed); helmet = helmet || (h.head && v.helmet);
+      const out = G.Game.damage(v, a, Math.max(1, Math.round(h.dmg)), { weapon:d.id, head:h.head, helmet:h.head && v.helmet, dirx:barrel.x, diry:barrel.y, dirz:barrel.z });
+      killed = killed || (out && out.killed);
     }
     victims.length = 0; pelletHits.clear();
-    if (a.isPlayer && marked) { G.HUD.hitmarker(head, killed); G.Audio.hit(head, helmet); }
-    G.FX.muzzle(muz, fwd, d.model === 'sniper' || d.model === 'ar' || d.model === 'heavy', a.isPlayer);
+    if (a.isPlayer && marked) G.HUD.hitmarker(head, killed);
+    G.FX.muzzle(muz, barrel, d.slot === 'primary' && d.model !== 'smg', a.isPlayer);
     G.Audio.shot(d.snd, eye, a.isPlayer);
     if (G.Bots) G.Bots.hearShot(a);
-    kick(a, d);
+    const ballisticKick = kick(a, d);
+    if (a.isPlayer) {
+      // Half the ballistic climb already appears in the camera. Add the
+      // difference as a fast-recovering impulse, independent of bullet aim.
+      const punch = d.slot === 'pistol' ? (d.model === 'heavy' ? 0.031 : 0.018) :
+        d.model === 'smg' ? 0.032 : d.scope || d.shell || d.model === 'box' ? 0.045 : 0.036;
+      a.viewPunch = Math.min(0.068, (a.viewPunch || 0) + punch - ballisticKick * 0.5);
+      G.FX.shake = Math.max(G.FX.shake, 0.11 + punch * 4);
+    }
     a.shots++; a.lastShot = G.time;
     a.inacc += d.inacc.shot;
     if (d.scope) { it.rezoom = it.zoom; it.zoom = 0; G.Audio.click('bolt'); }

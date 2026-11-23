@@ -4,9 +4,9 @@
   const THREE = G.THREE, M = G.Map, W = G.Weapons;
   const B = G.Bots = { plan: null };
   const DIFF = [
-    { react: [0.55, 0.85], err: 0.075, track: 4, turn: 5, comp: 0.25, fov: 1.5, hs: 0.12, noise: 0.006 },
-    { react: [0.3, 0.48], err: 0.045, track: 7, turn: 8, comp: 0.55, fov: 1.85, hs: 0.28, noise: 0.003 },
-    { react: [0.18, 0.3], err: 0.025, track: 11, turn: 12, comp: 0.8, fov: 2.1, hs: 0.42, noise: 0.0012 },
+    { react: [0.90, 1.30], err: 0.10, track: 1.8, turn: 5, comp: 0.22, fov: 1.5, hs: 0.035, noise: 0.037 },
+    { react: [0.55, 0.80], err: 0.065, track: 2.8, turn: 6.5, comp: 0.40, fov: 1.75, hs: 0.075, noise: 0.018 },
+    { react: [0.30, 0.48], err: 0.045, track: 7, turn: 8, comp: 0.55, fov: 1.85, hs: 0.25, noise: 0.003 },
   ];
   let level = 1, D = DIFF[1];
   const eye = new THREE.Vector3(), tv = new THREE.Vector3();
@@ -96,14 +96,13 @@
       if (vis && d < bestD) { bestD = d; best = e; }
     }
     if (best) {
-      if (ai.target !== best) {
-        const alerted = ai.alertT > G.time ? 0.7 : 1;
-        ai.reactUntil = G.time + G.rand(D.react[0], D.react[1]) * alerted;
+      if (ai.target !== best || !ai.targetVisible) {
+        ai.reactUntil = G.time + G.rand(D.react[0], D.react[1]);
         ai.aimHead = Math.random() < D.hs;
         const e = D.err * (1 + bestD / 35);
         ai.errY = G.rand(-e, e); ai.errP = G.rand(-e, e) * 0.6;
         ai.burstLeft = 0; ai.burstShots = 0;
-      } else if (!ai.targetVisible) ai.reactUntil = Math.max(ai.reactUntil, G.time + 0.1);
+      }
       ai.target = best; ai.targetVisible = true; ai.lastSeenPos.copy(best.pos); ai.lastSeenT = G.time;
       if (G.Player.agent && a.team === G.Player.agent.team) best.spottedUntil = G.time + 1.2;
       if (a.team === 'atk') B.plan.contact = true;
@@ -221,14 +220,23 @@
   function combat(a, cmd, dt) {
     const ai = a.ai, e = ai.target, h = W.hitboxes(e), it = W.current(a);
     G.eyePos(a, eye);
-    const ay = ai.aimHead ? h.headY - 0.03 : (h.legTop + h.bodyTop) / 2 + 0.1;
+    const torso = (h.legTop + h.bodyTop) / 2 + (level < 2 ? -0.12 : 0.1);
+    const ay = ai.aimHead ? h.headY - 0.03 : torso;
     const dx = e.pos.x - eye.x, dz = e.pos.z - eye.z, dist = Math.hypot(dx, dz), dy = ay - eye.y;
+    a.aimNoise = D.noise * (1 + (level === 0 ? G.clamp((dist - 12) / 20, 0, 0.75) : 0));
+    // Lower tiers favour a low hold. Leave room for the weapon's full spread
+    // below shoulder height, even as automatic fire climbs.
+    ai.bodyCeiling = level < 2 && !ai.aimHead ? Math.atan2(h.bodyTop - 0.08 - eye.y, dist + 0.25) : null;
     if (!G.Nades.visible(eye,tv.set(e.pos.x,ay,e.pos.z))) { ai.targetVisible=false; return; }
-    ai.errY *= Math.exp(-dt * D.track); ai.errP *= Math.exp(-dt * D.track);
+    // Keep the initial sighting error until the bot reacts, then settle over the burst.
+    if (G.time >= ai.reactUntil || level === 2) {
+      const settle = Math.exp(-dt * D.track);
+      ai.errY *= settle; ai.errP *= settle;
+    }
     const trueYaw = G.yawTo(dx, dz), truePitch = Math.atan2(dy, dist);
     cmd.faceYaw = trueYaw + ai.errY; cmd.facePitch = truePitch + ai.errP; cmd.fast = true;
-    const tol = Math.max(0.03, Math.atan2(0.3, dist)) * 1.4;
-    const onTarget = Math.abs(G.wrapAngle(a.yaw - trueYaw)) < tol && Math.abs(a.pitch - truePitch) < tol + 0.04;
+    const tol = Math.max(level < 2 ? 0.065 : 0.03, Math.atan2(0.3, dist)) * 1.4;
+    const onTarget = Math.abs(G.wrapAngle(a.yaw - cmd.faceYaw)) < tol && Math.abs(a.pitch - cmd.facePitch) < tol + 0.04;
     const ready = G.time >= ai.reactUntil && onTarget && G.time >= ai.pauseUntil && !G.Game.frozen;
     if (a.lastShot !== ai.prevShotT) { ai.prevShotT = a.lastShot; ai.burstShots++; }
     if (it && it.def.slot==='grenade') return;
@@ -237,7 +245,7 @@
       if (d.scope && it.zoom === 0 && !it.rezoom && dist > 5 && G.time >= it.nextFire) cmd.altPressed = true;
       if (ready) {
         if (d.auto) {
-          if (ai.burstLeft <= 0) { ai.burstLeft = dist > 28 ? G.randi(1, 2) : dist > 12 ? G.randi(3, 6) : 30; ai.burstShots = 0; }
+          if (ai.burstLeft <= 0) { ai.burstLeft = dist > 28 ? G.randi(1, 2) : dist > 12 ? G.randi(3, 6) : G.randi(6, 10); ai.burstShots = 0; }
           cmd.fire = true;
           if (ai.burstShots >= ai.burstLeft) { ai.pauseUntil = G.time + (dist > 28 ? 0.38 : 0.25); ai.burstLeft = 0; cmd.fire = false; }
         } else if (G.time >= it.nextFire && (!d.scope || it.zoom > 0 || dist < 5)) {
@@ -245,7 +253,7 @@
           if (!d.scope) ai.pauseUntil = G.time + (dist > 22 ? 0.38 : dist > 11 ? 0.2 : 0.04);
         }
       }
-      const rifle = d.model === 'ar' || d.model === 'tr' || d.model === 'sniper' || d.model === 'heavy';
+      const rifle = d.model === 'ar' || d.model === 'tr' || d.model === 'sniper' || d.model === 'heavy' || d.model === 'box';
       if (rifle && (cmd.fire || cmd.firePressed || (ready && G.time - a.lastShot < 0.3))) cmd.stop = true;
       else {
         ai.strafeT -= dt;
@@ -258,7 +266,7 @@
         cmd.crouch = ai.crouchPref;
       }
     } else {
-      cmd.dest = e.pos; cmd.fire = dist < 1.8;   // knife fight
+      cmd.dest = e.pos; cmd.fire = ready && dist < 1.8;   // knife fight
     }
   }
 
@@ -271,6 +279,10 @@
     }
     if (G.Game.phase!=='live' || G.time<ai.grenadeAt || !a.inv.grenade || a.planting || a.defusing || a.blindUntil>G.time) return;
     ai.grenadeAt=G.time+G.rand(1,2.4)/(1+level*.4);
+    if (level === 0 && !ai.throwId) {
+      ai.grenadeAt = G.time + G.rand(10, 16);
+      if (Math.random() > 0.18) return;
+    }
     const known=G.time-ai.lastSeenT<4 ? ai.lastSeenPos : ai.alertT>G.time ? ai.alertPos : null;
     const site=a.team==='atk' ? M.sites[B.plan.site].center : bomb.state==='planted' ? bomb.pos : null;
     let goal=known, id;

@@ -99,11 +99,12 @@
   };
 
   // ---------------- local player ----------------
-  const DEATHCAM = 3.0;   // seconds watching your own body fall and your killer before spectating
+  const FALL = 0.65, DEATHCAM = FALL + 2.5, ORBIT = 2;
+  G.timeScale = 1;
   const P = G.Player = {
     agent: null, camY: 0, stepDist: 0, shadeT: 0, shadeTarget: 1,
-    specTarget: null, specY: 0, deathT: -99, killer: null,
-    death: { pos: new THREE.Vector3(), floor: 0, yaw: 0, pitch: 0, yaw0: 0, pitch0: 0, spot: new THREE.Vector3(), spotSet: false },
+    clock: 0, slowUntil: 0, orbit: null, specTarget: null, specY: 0, deathT: -99, killer: null,
+    death: { pos: new THREE.Vector3(), floor: 0, yaw0: 0, pitch0: 0 },
   };
   const eye = new THREE.Vector3();
   const SLOTKEYS = { Digit1: 'primary', Digit2: 'pistol', Digit3: 'knife', Digit4: 'grenade', Digit5: 'bomb' };
@@ -157,13 +158,17 @@
     return !!hit.agent && !G.Nades.blocks(assistEye,assistPoint.set(hit.wx,hit.wy,hit.wz));
   }
 
-  P.update = function (dt) {
+  P.update = function (dt, realDt = dt) {
     const a = P.agent, inp = G.input, cam = G.camera;
     const touch = G.Touch.enabled;
     if (!a) return;
+    P.clock += realDt;
+    G.timeScale = P.clock < P.slowUntil ? 0.35 : 1;
+    if (P.orbit && P.clock >= P.orbit.end) P.orbit = null;
     if (inp.hit('KeyB')) G.HUD.toggleBuy();
     G.HUD.showScores(touch ? G.HUD.scoresOpen : inp.down('Tab'));
-    if (!a.alive) { G.HUD.edge(0); spectate(dt); return; }
+    if (!a.alive) { G.HUD.edge(0); spectate(realDt); return; }
+    if (P.orbit) { G.HUD.edge(0); return; }
 
     // look (while the buy menu is open, the mouse drives its cursor instead)
     const it = G.Weapons.current(a);
@@ -174,11 +179,11 @@
     if (G.HUD.buyOpen) {
       if (inp.locked) G.HUD.moveCursor(inp.dx, inp.dy, inp.leftPressed);
     } else if (touch || inp.canAim()) {
-      if (touch) P.touchLook(a,dt,sens);
+      if (touch) P.touchLook(a,realDt,sens);
       else { a.yaw = G.wrapAngle(a.yaw - inp.dx * sens); a.pitch = G.clamp(a.pitch - inp.dy * sens, -1.53, 1.53); }
       if (!touch && inp.freeLook && inp.cursorIn) {
         edge = edgeTurn(inp.cursorX);
-        a.yaw = G.wrapAngle(a.yaw - edge * 2.6 * G.settings.sens * zf * dt);
+        a.yaw = G.wrapAngle(a.yaw - edge * 2.6 * G.settings.sens * zf * Math.min(realDt, 0.05));
       }
     }
     G.HUD.edge(edge);
@@ -234,6 +239,7 @@
     G.Weapons.tryPickup(a);
     const blockFire = G.HUD.buyOpen || (touch && G.HUD.scoresOpen);
     const automatic = touch && !blockFire && !frozen && autoTarget(a,G.Weapons.current(a));
+    a.viewPunch = (a.viewPunch || 0) * Math.exp(-dt * 14);
     G.Weapons.update(a, dt, {
       fire: (inp.left || automatic) && !blockFire && !frozen, firePressed: (inp.leftPressed || automatic) && !blockFire && !frozen,
       alt: inp.right && !blockFire && !frozen, altPressed: inp.rightPressed && !blockFire && !frozen, reload: inp.hit('KeyR'),
@@ -247,8 +253,9 @@
     P.camY = Math.abs(P.camY - targetY) > 1.2 ? targetY : G.lerp(P.camY, targetY, 1 - Math.exp(-dt * 18));
     cam.position.set(a.pos.x, P.camY, a.pos.z);
     const sh = G.FX.shake * 0.02 + (G.time < a.punchUntil ? 0.012 : 0);
-    cam.rotation.set(a.pitch + a.recoilP * 0.5 + (Math.random() - 0.5) * sh, a.yaw + a.recoilY * 0.5 + (Math.random() - 0.5) * sh, 0, 'YXZ');
-    setFov(cam, zoom === 2 ? 12 : zoom === 1 ? 32 : 74);
+    cam.rotation.set(a.pitch + a.recoilP * 0.5 + a.viewPunch + (Math.random() - 0.5) * sh, a.yaw + a.recoilY * 0.5 + (Math.random() - 0.5) * sh, 0, 'YXZ');
+    const baseFov = zoom === 2 ? 12 : zoom === 1 ? 32 : 74;
+    setFov(cam, baseFov * (1 - 0.06 * G.clamp((P.slowUntil - P.clock) / 0.4, 0, 1)));
 
     // is the player standing in shade? (dims the viewmodel)
     P.shadeT -= dt;
@@ -263,23 +270,41 @@
   };
 
   // ---------------- death camera and spectating ----------------
+  P.onKill = function (victim, info) {
+    if (!P.agent.alive || P.orbit) return;
+    P.slowUntil = P.clock + 0.4 + (info.headshot ? 0.13 : 0) + (info.multi - 1) * 0.08;
+    G.timeScale = 0.35;
+    // The defenders still need their controls if the bomb is ticking.
+    if (info.last && G.Game.phase === 'live' && !(P.agent.team === 'def' && G.Game.bomb.state === 'planted')) {
+      P.orbit = { victim, end: P.clock + ORBIT, yaw: P.agent.yaw };
+    }
+  };
   P.onDeath = function (killer) {
     const a = P.agent, d = P.death, cam = G.camera;
-    P.deathT = G.time;
+    if (P.orbit) G.eyePos(a, d.pos);
+    else d.pos.copy(cam.position);
+    P.orbit = null;
+    P.deathT = P.clock;
+    P.slowUntil = P.clock + FALL;
+    G.timeScale = 0.35;
+    G.Audio.deathMix(true);
+    G.FX.deathGrade(1);
     P.killer = killer && killer !== a ? killer : null;
     P.specTarget = null;
-    d.pos.copy(cam.position);
     d.floor = a.pos.y + 0.45;
-    d.yaw = d.yaw0 = a.yaw + a.recoilY * 0.5;
-    d.pitch = d.pitch0 = a.pitch + a.recoilP * 0.5;
-    d.spotSet = false;
+    d.yaw0 = a.yaw + a.recoilY * 0.5;
+    d.pitch0 = a.pitch + a.recoilP * 0.5;
   };
-  P.resetSpectate = function () { P.specTarget = null; P.deathT = -99; P.killer = null; showBodies(null); };
+  P.resetSpectate = function () {
+    G.timeScale = 1; P.slowUntil = 0; P.orbit = null;
+    P.specTarget = null; P.deathT = -99; P.killer = null;
+    G.FX.deathGrade(0); G.Audio.deathMix(false); showBodies(null);
+  };
   // the body you watch from the inside is not drawn
   function showBodies(hidden) { for (const x of G.Game.agents) if (x.rig) x.rig.hidden = x === hidden; }
   P.spectateTarget = function () {
     const t = P.specTarget;
-    return t && t.alive && G.time - P.deathT >= DEATHCAM ? t : null;
+    return t && t.alive && P.clock - P.deathT >= DEATHCAM ? t : null;
   };
   // living teammates in a fixed order; enemies only once the whole team is down
   function specPool(a) {
@@ -287,43 +312,54 @@
     const mates = alive.filter((x) => x.team === a.team);
     return (mates.length ? mates : alive).sort((x, y) => x.id - y.id);
   }
-  // Death view: the camera pulls back above your own body as it falls, then turns to your killer.
-  const bodyP = new THREE.Vector3(), lookP = new THREE.Vector3(), killP = new THREE.Vector3();
-  function deathCam(dt, since) {
-    const cam = G.camera, d = P.death, a = P.agent;
-    const body = G.BotModel.ragdollPoint(a, 0, bodyP) || bodyP.set(d.pos.x, d.floor, d.pos.z);
-    if (!d.spotSet) {
-      d.spotSet = true;
-      // behind where you were facing and above, pulled in if a wall is in the way
-      const ox = body.x, oy = body.y + 0.45, oz = body.z;
-      let dx = Math.sin(d.yaw0) * 2.4, dy = 1.5, dz = Math.cos(d.yaw0) * 2.4;
-      const len = Math.hypot(dx, dy, dz); dx /= len; dy /= len; dz /= len;
-      const hit = G.Map.raycast(ox, oy, oz, dx, dy, dz, len);
-      const reach = hit ? Math.max(0.5, hit.t - 0.3) : len;
-      d.spot.set(ox + dx * reach, oy + dy * reach, oz + dz * reach);
+  const focus = new THREE.Vector3(), offset = new THREE.Vector3();
+  function watchPoint(point, angle, distance, height, fov) {
+    const cam = G.camera;
+    offset.set(Math.sin(angle) * distance, height, Math.cos(angle) * distance);
+    const reach = offset.length();
+    offset.divideScalar(reach);
+    const hit = M.raycast(point.x, point.y, point.z, offset.x, offset.y, offset.z, reach);
+    cam.position.copy(point).addScaledVector(offset, hit ? Math.max(0.025, hit.t - 0.18) : reach);
+    cam.lookAt(point); setFov(cam, fov);
+    G.Audio.updateListener(cam.position, G.yawTo(point.x - cam.position.x, point.z - cam.position.z));
+  }
+  // Sample after the ragdoll physics step so the camera follows the falling chest.
+  P.orbitCamera = function () {
+    const orbit = P.orbit;
+    if (!orbit) return;
+    const t = G.clamp(1 - (orbit.end - P.clock) / ORBIT, 0, 1);
+    if (!G.BotModel.ragdollPoint(orbit.victim, 1, focus)) {
+      focus.copy(orbit.victim.pos); focus.y += 0.75;
     }
-    const k = Math.min(1, since / 0.6), e = 1 - Math.pow(1 - k, 3);
-    cam.position.copy(d.pos).lerp(d.spot, e);
-    lookP.copy(body); lookP.y += 0.15;
-    if (P.killer && since > 1.1) {
-      const t = G.clamp((since - 1.1) / 0.9, 0, 1), s = t * t * (3 - 2 * t);
-      lookP.lerp(killP.set(P.killer.pos.x, P.killer.pos.y + 1.35, P.killer.pos.z), s);
+    watchPoint(focus, orbit.yaw + t * 1.65, 2.5 + t * 0.55, 0.9, 56 + 5 * t);
+  };
+  function deathCam(since) {
+    const cam = G.camera, d = P.death;
+    if (since < FALL) {
+      const t = G.clamp(since / FALL, 0, 1);
+      cam.position.copy(d.pos);
+      cam.position.y = G.lerp(d.pos.y, d.floor, t * t);
+      cam.rotation.set(d.pitch0 - t * 0.22, d.yaw0, 0.34 * t, 'YXZ');
+      setFov(cam, 74 - t * 5);
+      G.Audio.updateListener(cam.position, d.yaw0);
+    } else {
+      const subject = P.killer || P.agent;
+      if (!G.BotModel.ragdollPoint(subject, 1, focus)) {
+        focus.copy(subject.pos); focus.y += 1.34 - subject.crouch * 0.44;
+      }
+      const t = G.clamp((since - FALL) / 2.5, 0, 1);
+      const angle = Math.atan2(d.pos.x - focus.x, d.pos.z - focus.z);
+      watchPoint(focus, angle + 0.24, 3.8 - 0.5 * t, 0.35, 63 - 21 * t);
     }
-    const ty = G.yawTo(lookP.x - cam.position.x, lookP.z - cam.position.z);
-    const tp = Math.atan2(lookP.y - cam.position.y, Math.max(0.25, Math.hypot(lookP.x - cam.position.x, lookP.z - cam.position.z)));
-    const r = 1 - Math.exp(-dt * 7);
-    d.yaw = G.wrapAngle(d.yaw + G.wrapAngle(ty - d.yaw) * r);
-    d.pitch += (tp - d.pitch) * r;
-    cam.rotation.set(d.pitch, d.yaw, 0, 'YXZ');
-    setFov(cam, 74);
     showBodies(null);
-    G.Audio.updateListener(cam.position, d.yaw);
   }
   // first-person view of a living player; changing who you watch is an instant cut
   function spectate(dt) {
-    const a = P.agent, cam = G.camera, since = G.time - P.deathT;
+    const a = P.agent, cam = G.camera, since = P.clock - P.deathT;
+    G.FX.deathGrade(G.clamp((DEATHCAM - since) / 0.55, 0, 1));
+    if (since >= DEATHCAM) G.Audio.deathMix(false);
     const pool = specPool(a);
-    if (since < DEATHCAM || !pool.length) { deathCam(dt, since); G.HUD.spectating(null); return; }
+    if (since < DEATHCAM || !pool.length) { deathCam(since); G.HUD.spectating(null); return; }
     let t = P.specTarget, cut = false;
     if (!t || !t.alive || pool.indexOf(t) < 0) {
       const from = t ? t.pos : P.death.pos;   // whoever is closest to the action you were watching

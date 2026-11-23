@@ -2,7 +2,7 @@
 (function (G) {
   'use strict';
   let ctx = null, master = null, noiseBuf = null, brownBuf = null;
-  let filter, crackleBuf;
+  let filter, deathFilter, heartbeat, sting, crackleBuf;
   const listenerPos = { x: 0, y: 0, z: 0 };
 
   const A = G.Audio = {};
@@ -21,7 +21,8 @@
     master = ctx.createGain();
     master.gain.value = G.settings.vol;
     filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000;
-    master.connect(filter); filter.connect(comp); comp.connect(ctx.destination);
+    deathFilter = ctx.createBiquadFilter(); deathFilter.type = 'lowpass'; deathFilter.frequency.value = 20000;
+    master.connect(filter); filter.connect(deathFilter); deathFilter.connect(comp); comp.connect(ctx.destination);
     // white + brown noise buffers
     const len = ctx.sampleRate * 2;
     noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -162,6 +163,32 @@
       tone(o, t, helmet ? 0.35 : 0.18, { f: 2400, g: 0.35 });
       tone(o, t, helmet ? 0.3 : 0.15, { f: 3170, g: 0.2 });
     } else noise(o, t, 0.05, { type: 'bandpass', f: 900, q: 1, g: 0.6 });
+  };
+  // Short, original plucked phrases. A simultaneous grenade multi-kill resolves
+  // to its highest tier instead of playing every phrase at full volume.
+  const phrases = [[364, 486], [408, 546, 729], [459, 612, 771, 918],
+    [516, 689, 820, 1032, 1227], [580, 732, 870, 1096, 1304, 1464]];
+  A.killSting = function (info) {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    if (sting) sting.gain.setTargetAtTime(0, t, 0.012);
+    sting = out(null, 1, 0.48);
+    const notes = info.multi === 1 && info.headshot ? [686, 916, 1154] : phrases[info.multi - 1];
+    tone(sting, t, 0.085, { f: 160, f2: 70, g: 0.55 });
+    notes.forEach((f, i) => tone(sting, t + 0.035 + i * 0.058, i === notes.length - 1 ? 0.22 : 0.11,
+      { f, g: 0.33, wave: 'triangle' }));
+    if (info.headshot) tone(sting, t, 0.12, { f: 2230, f2: 1700, g: 0.25 });
+  };
+  A.deathMix = function (enabled) {
+    if (!ctx || !!heartbeat === enabled) return;
+    const t = ctx.currentTime;
+    deathFilter.frequency.setTargetAtTime(enabled ? 680 : 20000, t, 0.045);
+    if (!enabled) { heartbeat.disconnect(); heartbeat = null; return; }
+    heartbeat = out(null, 1, 0.85);
+    for (let i = 0; i < 4; i++) {
+      tone(heartbeat, t + i * 0.76, 0.19, { f: 97, f2: 41, g: 0.78 });
+      tone(heartbeat, t + i * 0.76 + 0.2, 0.14, { f: 76, f2: 39, g: 0.5 });
+    }
   };
   A.hurt = function () {
     if (!ctx) return;

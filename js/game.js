@@ -3,8 +3,8 @@
   'use strict';
   const THREE = G.THREE, W = G.Weapons, M = G.Map;
   const CFG = {
-    freeze: 6, buyTime: 20, roundTime: 115, bombTime: 40, plant: 3.2, defuse: 10, defuseKit: 5, endDelay: 5, winRounds: 8,
-    startMoney: 800, maxMoney: 16000, win: { elim: 3000, bomb: 3300, defuse: 3300, time: 3000 }, loss: [1500, 1900, 2300, 2700, 3100], plantBonus: 300, defuseBonus: 300,
+    freeze: 8, buyTime: 45, roundTime: 115, bombTime: 40, plant: 3.2, defuse: 10, defuseKit: 5, endDelay: 5, winRounds: 8,
+    startMoney: 1000, maxMoney: 16000, win: { elim: 3000, bomb: 3300, defuse: 3300, time: 3000 }, loss: [1700, 2100, 2500, 2900, 3300], plantBonus: 300, defuseBonus: 300,
   };
   const Gm = G.Game = { CFG, agents: [], round: 0, score: { atk: 0, def: 0 }, phase: 'menu', frozen: true, timeLeft: CFG.roundTime, phaseT: 0, buyUntil: 0, lossStreak: { atk: 0, def: 0 }, bomb: { state: 'none' } };
   const NAMES = { atk: ['猎鹰', '蝎子', '沙狐', '铁砧', '游隼'], def: ['灰狼', '雷鸣', '堡垒', '哨兵', '北极星'] };
@@ -20,7 +20,7 @@
     };
   };
   Gm.alive = (team) => Gm.agents.filter((a) => a.alive && a.team === team).length;
-  Gm.clearScene = function () { G.Nades.clear(); if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; } };
+  Gm.clearScene = function () { G.Player.resetSpectate(); G.Nades.clear(); if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; } };
 
   Gm.start = function (team, diff) {
     Gm.agents.forEach((a) => G.BotModel.remove(a));
@@ -44,6 +44,7 @@
   }
   Gm.newRound = function () {
     Gm.round++;
+    Gm.roundKills = 0; Gm.playerKills = 0; Gm.recentKills = []; Gm.pendingBanner = null;
     G.Nades.clear(); G.FX.clear(); W.clearDrops();
     if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; }
     const spawns = { atk: G.shuffle(M.spawns.atk.slice()), def: G.shuffle(M.spawns.def.slice()) };
@@ -54,7 +55,7 @@
       a.pos.copy(spawns[a.team].pop()); a.vel.set(0, 0, 0);
       a.yaw = a.team === 'atk' ? 0 : Math.PI; a.pitch = 0; a.crouch = 0; a.crouchWant = false;
       a.inv.bomb = false; a.planting = a.defusing = false; a.plantT = a.defuseT = 0;
-      a.recoilP = a.recoilY = a.inacc = 0; a.shots = 0; a.slowUntil = 0;
+      a.recoilP = a.recoilY = a.inacc = a.viewPunch = 0; a.shots = 0; a.slowUntil = 0;
       for (const s of ['primary', 'pistol', 'knife']) { const it = a.inv[s]; if (it) { it.clip = it.def.clip || 0; it.reserve = it.def.reserve || 0; it.reloading = false; it.zoom = 0; it.rezoom = 0; it.nextFire = 0; } }
       a.cur = W.bestSlot(a); a.switchEnd = 0;
     }
@@ -63,7 +64,7 @@
     carrier.inv.bomb = true;
     Gm.bomb = { state: 'carried', carrier, pos: new THREE.Vector3(), timer: CFG.bombTime, beepT: 0, site: null, defuser: null };
     Gm.phase = 'freeze'; Gm.frozen = true; Gm.phaseT = CFG.freeze; Gm.timeLeft = CFG.roundTime;
-    Gm.buyUntil = G.time + CFG.freeze + CFG.buyTime;
+    Gm.buyUntil = G.time + CFG.buyTime;
     Gm.agents.forEach((a) => { if (a.isBot) G.Bots.buy(a); a.cur = W.bestSlot(a); });
     G.Bots.newRound();
     G.Player.camY = G.Player.agent.pos.y + G.eyeHeight(0);
@@ -96,9 +97,14 @@
       }
     } else if (Gm.phase === 'end') {
       if (b.state === 'planted') { b.timer -= dt; if (b.timer <= 0) explode(true); }
+      if (Gm.pendingBanner) {
+        if (G.Player.orbit) return;
+        announceEnd(Gm.pendingBanner.winner, Gm.pendingBanner.reason);
+        Gm.pendingBanner = null;
+      }
       Gm.phaseT -= dt;
       if (Gm.phaseT <= 0) {
-        if (Gm.over) { Gm.phase = 'over'; G.Nades.clear(); G.HUD.matchOver(Gm.over); }
+        if (Gm.over) { Gm.phase = 'over'; G.Player.resetSpectate(); G.Nades.clear(); G.HUD.matchOver(Gm.over); }
         else Gm.newRound();
       }
     }
@@ -199,6 +205,12 @@
   Gm.damage = function (v, attacker, dmg, info) {
     if (!v.alive) return null;
     if (attacker && attacker !== v && attacker.team === v.team && !info.area) return null;
+    if (attacker && attacker.isPlayer && attacker.team !== v.team) {
+      const hit = { head: !!info.head, kill: dmg >= v.hp, dmg: Math.min(v.hp, dmg) };
+      if (G.HUD.hitFx) G.HUD.hitFx(hit);
+      if (!hit.kill) G.Audio.hit(hit.head, info.helmet);
+      if (info.area) G.HUD.hitmarker(hit.head, hit.kill);
+    }
     v.hp -= dmg; v.slowUntil = G.time + 0.35; v.punchUntil = G.time + 0.12;
     if (v.isPlayer) { G.HUD.hurt(attacker ? attacker.pos : null, dmg); G.Audio.hurt(); }
     G.Bots.onDamaged(v, attacker);
@@ -207,7 +219,10 @@
   };
   function kill(v, attacker, info) {
     // how the body falls: the ragdoll takes the hit direction and the weapon's punch
-    v.deathInfo = { weapon: info.weapon, head: !!info.head, legs: !!info.legs, dirx: info.dirx || 0, dirz: info.dirz || 0, from: info.from || null };
+    const dir = new THREE.Vector3(info.dirx || 0, info.diry || 0, info.dirz || 0);
+    if (info.from) dir.set(v.pos.x - info.from.x, 0.65, v.pos.z - info.from.z).normalize();
+    v.deathInfo = { weapon: info.weapon, head: !!info.head, legs: !!info.legs, dirx: dir.x, diry: dir.y, dirz: dir.z };
+    G.FX.deathBurst(v, dir, info.head);
     if (v.rig && G.BotModel.prepareDeath) G.BotModel.prepareDeath(v);
     v.alive = false; v.hp = 0; v.deaths++; v.planting = v.defusing = false; v.vel.set(0, 0, 0); v.crouch = Math.min(v.crouch, 0.5);
     if (Gm.bomb.defuser === v) Gm.bomb.defuser = null;
@@ -215,6 +230,21 @@
       attacker.kills++;
       const d = W.defs[info.weapon];
       attacker.money = Math.min(CFG.maxMoney, attacker.money + (d ? d.kill : 300));
+      Gm.roundKills++;
+      if (attacker.isPlayer) {
+        Gm.playerKills++;
+        const now = G.Player.clock;
+        Gm.recentKills = Gm.recentKills.filter(t => now - t <= 4);
+        Gm.recentKills.push(now);
+        const fx = { victim: v.name, weapon: info.weapon, headshot: !!info.head,
+          multi: Math.min(5, Gm.recentKills.length), streak: Gm.playerKills,
+          knife: info.weapon === 'knife', grenade: !!d && d.slot === 'grenade',
+          wallbang: !!info.wallbang, first: Gm.roundKills === 1, last: Gm.alive(v.team) === 0,
+          ace: Gm.playerKills === 5 };
+        if (G.HUD.killFx) G.HUD.killFx(fx);
+        G.Audio.killSting(fx);
+        G.Player.onKill(v, fx);
+      }
     }
     G.Nades.cancel(v);
     if (v.cur === 'grenade') W.drop(v, 'grenade');
@@ -222,7 +252,11 @@
     if (v.inv.primary) W.drop(v, 'primary'); else if (v.inv.pistol && v.isBot) W.drop(v, 'pistol');
     const wname = info.weapon === 'bomb' ? '爆炸' : (W.defs[info.weapon] ? W.defs[info.weapon].name : '');
     G.HUD.killfeed(attacker, v, wname, info.head);
-    if (v.isPlayer) { G.Player.onDeath(attacker); G.HUD.died(attacker, wname, info.head); }
+    if (v.isPlayer) {
+      G.Player.onDeath(attacker); G.HUD.died(attacker, wname, info.head);
+      if (G.HUD.deathFx) G.HUD.deathFx({ killer: attacker ? attacker.name : '爆炸', weapon: info.weapon,
+        headshot: !!info.head, killerHp: attacker ? attacker.hp : 0 });
+    }
   }
 
   function end(winner, reason) {
@@ -238,6 +272,10 @@
     }
     Gm.lossStreak[loser]++; Gm.lossStreak[winner] = Math.max(0, Gm.lossStreak[winner] - 1);
     if (Gm.score[winner] >= CFG.winRounds) Gm.over = winner;
+    if (G.Player.orbit) Gm.pendingBanner = { winner, reason };
+    else announceEnd(winner, reason);
+  }
+  function announceEnd(winner, reason) {
     const mine = G.Player.agent.team === winner;
     G.Audio.radio(mine ? 'win' : 'lose');
     G.HUD.roundEnd(winner, reason);
@@ -245,7 +283,7 @@
 
   // ---------- buying ----------
   Gm.canBuy = function (a) {
-    if (!a.alive || (Gm.phase !== 'freeze' && Gm.phase !== 'live') || G.time > Gm.buyUntil) return false;
+    if (!a.alive || (Gm.phase !== 'freeze' && Gm.phase !== 'live') || G.time >= Gm.buyUntil) return false;
     const sp = M.spawns[a.team];
     return sp.some((p) => G.dist2D(p, a.pos) < 14);
   };

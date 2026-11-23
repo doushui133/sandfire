@@ -534,7 +534,8 @@
   }
 
   // ---------- death ----------
-  const IMPULSE = { r90: 7.5, h50: 5, ar7: 4.2, tr4: 4, v9: 3.2, p10: 2.6, knife: 2.2, bomb: 9 };
+  const IMPULSE = { r90: 10, s40: 8.5, s8: 9.5, he: 11, bomb: 12, l60: 6.7, h50: 5.8, ar7: 5.5,
+    tr4: 5.3, fa2: 5, v9: 3.9, u45: 4.5, k5: 3.6, p10: 3.2, m18: 3, knife: 2.2 };
   function startRagdoll(a, rig) {
     // make sure the pose is current, then take the joint positions in world space
     rig.root.updateMatrixWorld(true);
@@ -553,9 +554,9 @@
     const info = a.deathInfo || {};
     let idx = RD.P.CHE, k = IMPULSE[info.weapon] || 3.5;
     if (info.head) idx = RD.P.HEA; else if (info.legs) idx = Math.random() < 0.5 ? RD.P.KNL : RD.P.KNR;
-    let dx = info.dirx || 0, dz = info.dirz || 0;
-    if (info.weapon === 'bomb' && info.from) { dx = pts[0].x - info.from.x; dz = pts[0].z - info.from.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; }
-    const v = new THREE.Vector3(dx * k, (info.weapon === 'bomb' ? 4 : 0.6), dz * k);
+    const dx = info.dirx || 0, dz = info.dirz || 0;
+    const lift = info.weapon === 'he' || info.weapon === 'bomb' ? 4 : 0.8;
+    const v = new THREE.Vector3(dx * k, lift + (info.diry || 0) * k, dz * k);
     const mv = rig.deathVel || a.vel;
     rig.rd = RD.create(pts, new THREE.Vector3(mv.x * 0.8, 0, mv.z * 0.8), { index: idx, v, spread: 0.45 });
     rig.deathVel = null;

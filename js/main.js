@@ -159,19 +159,28 @@
     });
   };
 
+  let lastActiveFrame = null;
   function frame(dt, t) {
     const cam = G.camera, inp = G.input;
     inp.beginFrame(G.now());
     G.Gfx.U.uTime.value = t;
     if (inp.active && !G.paused) {
-      G.time += dt;
-      G.Game.update(dt);
-      G.Player.update(dt);
-      G.Bots.update(dt);
-      G.FX.update(dt);
-      G.VM.update(dt, G.Player.agent, cam);
-      G.HUD.update(dt);
-    } else if (G.Game.phase === 'menu') {
+      const realDt = lastActiveFrame === null || t <= lastActiveFrame ? dt : t - lastActiveFrame;
+      lastActiveFrame = t;
+      const simDt = dt * G.timeScale;
+      G.time += simDt;
+      G.Game.update(simDt);
+      G.Player.update(simDt, realDt);
+      G.Bots.update(simDt);
+      G.FX.update(simDt);
+      G.VM.update(simDt, G.Player.agent, cam);
+      G.Player.orbitCamera();
+      G.HUD.update(realDt);
+    } else {
+      lastActiveFrame = null;
+      G.timeScale = 1;
+    }
+    if (!inp.active && G.Game.phase === 'menu') {
       const a = t * 0.04;
       cam.position.set(Math.sin(a) * 44, 26, Math.cos(a) * 44);
       cam.lookAt(0, 2, -4);
@@ -187,7 +196,7 @@
     r.clear();
     r.render(G.scene, cam);
     const p = G.Player.agent;
-    if (inp.active && p && p.alive) G.VM.render(r);
+    if (inp.active && p && p.alive && !G.Player.orbit) G.VM.render(r);
     G.Video.end(r);
   }
   G.frame = frame;

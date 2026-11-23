@@ -332,9 +332,10 @@
 
   VM.onShoot = function (d) {
     const m = d.model;
-    st.kick += m === 'sniper' ? 0.07 : m === 'heavy' ? 0.05 : m === 'pistol' ? 0.03 : 0.022;
-    st.kickRot += m === 'sniper' ? 0.16 : m === 'heavy' ? 0.18 : m === 'pistol' ? 0.1 : 0.045;
-    st.kickSide = (Math.random() - 0.5) * 0.02;
+    const heavy = d.scope || d.shell || m === 'box';
+    st.kick += heavy ? 0.078 : m === 'heavy' ? 0.055 : d.slot === 'pistol' ? 0.034 : 0.029;
+    st.kickRot += heavy ? 0.18 : m === 'heavy' ? 0.20 : d.slot === 'pistol' ? 0.11 : 0.057;
+    st.kickSide = (Math.random() - 0.5) * (heavy ? 0.045 : 0.029);
     st.flashT = 0.05;
     flash.material.rotation = Math.random() * 6.28;
     const big = m === 'ar' || m === 'sniper' || m === 'heavy';
@@ -385,7 +386,7 @@
     let x = base[0] + Math.sin(st.bob) * 0.009 * f + st.swayX;
     let y = base[1] - Math.abs(Math.cos(st.bob)) * 0.01 * f + st.swayY - p.crouch * 0.008 - st.land - (p.onGround ? 0 : 0.012);
     let z = base[2] + st.kick;
-    let rx = restPitch(id) + st.kickRot, ry = restYaw(id) + st.swayX * 1.5 + st.kickSide, rz = st.swayX * 2 + Math.sin(st.bob) * 0.012 * f;
+    let rx = restPitch(id) + st.kickRot, ry = restYaw(id) + st.swayX * 1.5 + st.kickSide, rz = st.swayX * 2 + st.kickSide * 0.8 + Math.sin(st.bob) * 0.012 * f;
     if (st.drawT < 1) {
       st.drawT = Math.min(1, st.drawT + dt / 0.45);
       const e = 1 - Math.pow(1 - st.drawT, 3);
