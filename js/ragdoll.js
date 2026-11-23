@@ -7,9 +7,11 @@
   const RD = G.Ragdoll = {};
   // particles
   const PEL = 0, CHE = 1, NEC = 2, HEA = 3, SHL = 4, ELL = 5, HAL = 6, SHR = 7, ELR = 8, HAR = 9, HIL = 10, KNL = 11, FOL = 12, HIR = 13, KNR = 14, FOR = 15;
-  RD.P = { PEL, CHE, NEC, HEA, SHL, ELL, HAL, SHR, ELR, HAR, HIL, KNL, FOL, HIR, KNR, FOR };
-  const RADIUS = [0.13, 0.13, 0.07, 0.11, 0.07, 0.05, 0.045, 0.07, 0.05, 0.045, 0.08, 0.06, 0.06, 0.08, 0.06, 0.06];
-  const INVM = [0.5, 0.5, 0.8, 0.8, 0.8, 1, 1, 0.8, 1, 1, 0.7, 1, 1, 0.7, 1, 1];
+  const TOL = 16, HLL = 17, TOR = 18, HLR = 19;
+  RD.P = { PEL, CHE, NEC, HEA, SHL, ELL, HAL, SHR, ELR, HAR, HIL, KNL, FOL, HIR, KNR, FOR, TOL, HLL, TOR, HLR };
+  const RADIUS = [.14, .135, .07, .116, .077, .058, .071, .077, .058, .071,
+    .085, .07, .062, .085, .07, .062, .046, .046, .046, .046];
+  const INVM = [.5, .45, .75, .75, .8, 1, 1, .8, 1, 1, .72, 1, .86, .72, 1, .86, 1, 1, 1, 1];
   const STICKS = [
     [PEL, CHE, 1], [CHE, NEC, 1], [NEC, HEA, 1], [NEC, SHL, 1], [NEC, SHR, 1], [SHL, SHR, 1],
     [SHL, ELL, 1], [ELL, HAL, 1], [SHR, ELR, 1], [ELR, HAR, 1],
@@ -17,74 +19,136 @@
     // keep the torso a rigid-ish block
     [CHE, SHL, 1], [CHE, SHR, 1], [CHE, HIL, 0.9], [CHE, HIR, 0.9], [PEL, SHL, 0.9], [PEL, SHR, 0.9],
     [SHL, HIL, 0.8], [SHR, HIR, 0.8], [SHL, HIR, 0.6], [SHR, HIL, 0.6], [PEL, NEC, 0.9],
-    [CHE, HEA, 0.35], [SHL, HEA, 0.25], [SHR, HEA, 0.25],
+    [CHE, HEA, .48], [SHL, HEA, .32], [SHR, HEA, .32],
+    [FOL, TOL, 1], [FOL, HLL, 1], [TOL, HLL, 1], [KNL, HLL, .94],
+    [FOR, TOR, 1], [FOR, HLR, 1], [TOR, HLR, 1], [KNR, HLR, .94],
   ];
-  // [a, b, minimum distance]: joints cannot fold flat
-  const LIMITS = [[HIL, FOL, 0.3], [HIR, FOR, 0.3], [SHL, HAL, 0.17], [SHR, HAR, 0.17], [HEA, PEL, 0.46], [HEA, CHE, 0.27], [KNL, KNR, 0.1], [FOL, FOR, 0.1]];
-  const GRAV = -11.5, STEP = 1 / 60, ITERS = 7;
+  const LIMITS = [[HIL, FOL, .29], [HIR, FOR, .29], [SHL, HAL, .14], [SHR, HAR, .14],
+    [HEA, CHE, .22], [KNL, KNR, .09], [FOL, FOR, .085]];
+  const GRAV = -12.5, STEP = 1 / 90, ITERS = 8, WALL_ITERS = 5;
   const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), fwd = new THREE.Vector3();
+  function restLengths(p, constraints, minimum) {
+    const n = p.length / 3;
+    return constraints.filter(([a, b]) => a < n && b < n).map(([a, b, value]) => {
+      const len = Math.hypot(p[a * 3] - p[b * 3], p[a * 3 + 1] - p[b * 3 + 1], p[a * 3 + 2] - p[b * 3 + 2]);
+      return minimum ? [a, b, Math.min(len, value), 1] : [a, b, len, value];
+    });
+  }
 
   RD.create = function (points, vel, hit) {
-    const n = points.length, p = new Float32Array(n * 3), q = new Float32Array(n * 3);
+    const n = points.length, p = new Float64Array(n * 3), q = new Float64Array(n * 3);
     for (let i = 0; i < n; i++) {
-      p[i * 3] = points[i].x; p[i * 3 + 1] = points[i].y; p[i * 3 + 2] = points[i].z;
-      q[i * 3] = p[i * 3] - vel.x * STEP; q[i * 3 + 1] = p[i * 3 + 1] - vel.y * STEP; q[i * 3 + 2] = p[i * 3 + 2] - vel.z * STEP;
+      const o = i * 3;
+      p[o] = points[i].x; p[o + 1] = points[i].y; p[o + 2] = points[i].z;
+      q[o] = p[o] - vel.x * STEP; q[o + 1] = p[o + 1] - vel.y * STEP; q[o + 2] = p[o + 2] - vel.z * STEP;
     }
-    const sticks = STICKS.map(([a, b, k]) => [a, b, Math.hypot(p[a * 3] - p[b * 3], p[a * 3 + 1] - p[b * 3 + 1], p[a * 3 + 2] - p[b * 3 + 2]), k]);
-    const rd = { p, q, sticks, acc: 0, t: 0, still: 0, asleep: false, contact: new Uint8Array(n) };
+    const rd = {
+      p, q, prev: p.slice(), normal: new Float64Array(n * 3), acc: 0, alpha: 1, t: 0, still: 0, asleep: false,
+      sticks: restLengths(p, STICKS, false), limits: restLengths(p, LIMITS, true),
+    };
     if (hit) RD.push(rd, hit.index, hit.v, hit.spread);
     return rd;
   };
-  // add a velocity to one particle (and less to its neighbours)
+  function addVelocity(rd, i, v, k) {
+    const o = i * 3, s = STEP * k;
+    rd.q[o] -= v.x * s; rd.q[o + 1] -= v.y * s; rd.q[o + 2] -= v.z * s;
+  }
   RD.push = function (rd, index, v, spread) {
-    const add = (i, k) => { rd.q[i * 3] -= v.x * STEP * k; rd.q[i * 3 + 1] -= v.y * STEP * k; rd.q[i * 3 + 2] -= v.z * STEP * k; };
-    add(index, 1);
-    for (const [a, b] of STICKS) { if (a === index) add(b, spread); else if (b === index) add(a, spread); }
-  };
-
-  function collide(rd, i) {
-    const p = rd.p, r = RADIUS[i];
-    let x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2], hitGround = false;
-    if (y < r) { y = r; hitGround = true; }
-    const list = M.query(x - r, z - r, x + r, z + r);
-    for (let k = 0; k < list.length; k++) {
-      const b = list[k];
-      const cx = Math.max(b.x0, Math.min(x, b.x1)), cy = Math.max(b.y0, Math.min(y, b.y1)), cz = Math.max(b.z0, Math.min(z, b.z1));
-      const dx = x - cx, dy = y - cy, dz = z - cz, d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 >= r * r) continue;
-      if (d2 > 1e-10) {
-        const d = Math.sqrt(d2), s = (r - d) / d;
-        x += dx * s; y += dy * s; z += dz * s;
-        if (dy > 0.7 * d) hitGround = true;
-      } else {
-        // centre inside the box: leave by the shallowest side
-        const pen = [x - b.x0 + r, b.x1 - x + r, y - b.y0 + r, b.y1 - y + r, z - b.z0 + r, b.z1 - z + r];
-        let m = 0; for (let j = 1; j < 6; j++) if (pen[j] < pen[m]) m = j;
-        if (m === 0) x = b.x0 - r; else if (m === 1) x = b.x1 + r; else if (m === 2) y = b.y0 - r; else if (m === 3) { y = b.y1 + r; hitGround = true; } else if (m === 4) z = b.z0 - r; else z = b.z1 + r;
+    addVelocity(rd, index, v, 1);
+    if (spread) {
+      for (let i = 0; i < rd.sticks.length; i++) {
+        const stick = rd.sticks[i], a = stick[0], b = stick[1];
+        if (a === index) addVelocity(rd, b, v, spread * stick[3]);
+        else if (b === index) addVelocity(rd, a, v, spread * stick[3]);
       }
     }
-    p[i * 3] = x; p[i * 3 + 1] = y; p[i * 3 + 2] = z;
-    rd.contact[i] = hitGround ? 1 : 0;
+    rd.asleep = false; rd.still = 0;
+  };
+
+  function collide(rd, i, boxes) {
+    const p = rd.p, o = i * 3, r = RADIUS[i], normal = rd.normal;
+    let x = p[o], y = p[o + 1], z = p[o + 2], wall = false;
+    if (y < r) { y = r; normal[o] = 0; normal[o + 1] = 1; normal[o + 2] = 0; }
+    for (let k = 0; k < boxes.length; k++) {
+      const b = boxes[k];
+      if (x + r < b.x0 || x - r > b.x1 || y + r < b.y0 || y - r > b.y1 || z + r < b.z0 || z - r > b.z1) continue;
+      const dx = x - G.clamp(x, b.x0, b.x1), dy = y - G.clamp(y, b.y0, b.y1), dz = z - G.clamp(z, b.z0, b.z1);
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= r * r) continue;
+      if (d2 > 1e-10) {
+        const d = Math.sqrt(d2), s = r - d;
+        normal[o] = dx / d; normal[o + 1] = dy / d; normal[o + 2] = dz / d;
+        x += normal[o] * s; y += normal[o + 1] * s; z += normal[o + 2] * s;
+        if (Math.abs(normal[o + 1]) < .6 && s > .005) wall = true;
+      } else {
+        // Prefer the entry face for a fast impact, or the nearest face when starting inside.
+        let depth = x - b.x0, face = 0;
+        if (b.x1 - x < depth) { depth = b.x1 - x; face = 1; }
+        if (y - b.y0 < depth) { depth = y - b.y0; face = 2; }
+        if (b.y1 - y < depth) { depth = b.y1 - y; face = 3; }
+        if (z - b.z0 < depth) { depth = z - b.z0; face = 4; }
+        if (b.z1 - z < depth) face = 5;
+        const old = rd.prev;
+        if (old[o + 1] >= b.y1) face = 3;
+        else if (old[o] <= b.x0) face = 0;
+        else if (old[o] >= b.x1) face = 1;
+        else if (old[o + 2] <= b.z0) face = 4;
+        else if (old[o + 2] >= b.z1) face = 5;
+        else if (old[o + 1] <= b.y0 && b.y0 >= r * 2) face = 2;
+        normal[o] = normal[o + 1] = normal[o + 2] = 0;
+        normal[o + (face >> 1)] = (face & 1) ? 1 : -1;
+        if (face < 2 || face > 3) wall = true;
+        if (face === 0) x = b.x0 - r;
+        else if (face === 1) x = b.x1 + r;
+        else if (face === 2) y = b.y0 - r;
+        else if (face === 3) y = b.y1 + r;
+        else if (face === 4) z = b.z0 - r;
+        else z = b.z1 + r;
+      }
+    }
+    p[o] = x; p[o + 1] = Math.max(r, y); p[o + 2] = z;
+    return wall;
   }
 
   function stepOnce(rd) {
-    const p = rd.p, q = rd.q, n = p.length / 3;
-    let maxMove = 0;
-    for (let i = 0; i < n; i++) {
-      const o = i * 3;
-      const damp = rd.contact[i] ? 0.82 : 0.995;   // friction while touching something
-      const vx = (p[o] - q[o]) * damp, vy = (p[o + 1] - q[o + 1]) * 0.995, vz = (p[o + 2] - q[o + 2]) * damp;
-      q[o] = p[o]; q[o + 1] = p[o + 1]; q[o + 2] = p[o + 2];
+    const p = rd.p, q = rd.q, prev = rd.prev, normal = rd.normal;
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    prev.set(p);
+    normal.fill(0);
+    for (let o = 0; o < p.length; o += 3) {
+      const vx = (p[o] - q[o]) * .989, vy = (p[o + 1] - q[o + 1]) * .989, vz = (p[o + 2] - q[o + 2]) * .989;
       p[o] += vx; p[o + 1] += vy + GRAV * STEP * STEP; p[o + 2] += vz;
-      maxMove = Math.max(maxMove, Math.abs(vx) + Math.abs(vy) + Math.abs(vz));
+      x0 = Math.min(x0, p[o], prev[o]); x1 = Math.max(x1, p[o], prev[o]);
+      z0 = Math.min(z0, p[o + 2], prev[o + 2]); z1 = Math.max(z1, p[o + 2], prev[o + 2]);
     }
-    for (let it = 0; it < ITERS; it++) {
-      for (const [a, b, len, k] of rd.sticks) solve(p, a, b, len, k, false);
-      for (const [a, b, min] of LIMITS) solve(p, a, b, min, 1, true);
+    const boxes = M.query(x0 - .35, z0 - .35, x1 + .35, z1 + .35);
+    let iterations = ITERS;
+    for (let it = 0; it < iterations; it++) {
+      for (let i = 0; i < rd.sticks.length; i++) {
+        const s = rd.sticks[i]; solve(p, s[0], s[1], s[2], s[3], false);
+      }
+      for (let i = 0; i < rd.limits.length; i++) {
+        const s = rd.limits[i]; solve(p, s[0], s[1], s[2], s[3], true);
+      }
       hinge(p, HIL, KNL, FOL); hinge(p, HIR, KNR, FOR);
-      for (let i = 0; i < n; i++) collide(rd, i);
+      for (let i = 0; i < p.length / 3; i++) {
+        if (collide(rd, i, boxes)) iterations = ITERS + WALL_ITERS;
+      }
     }
-    return maxMove;
+    let maxMove = 0, supported = 0;
+    for (let o = 0; o < p.length; o += 3) {
+      const vx = p[o] - prev[o], vy = p[o + 1] - prev[o + 1], vz = p[o + 2] - prev[o + 2];
+      const nx = normal[o], ny = normal[o + 1], nz = normal[o + 2];
+      const dot = vx * nx + vy * ny + vz * nz;
+      const friction = ny > .45 ? .68 : nx || ny || nz ? .82 : .99;
+      supported += ny > .45 ? 1 : 0;
+      const correction = dot * friction - Math.max(0, dot) * .5;
+      q[o] = p[o] - vx * friction + correction * nx;
+      q[o + 1] = p[o + 1] - vy * friction + correction * ny;
+      q[o + 2] = p[o + 2] - vz * friction + correction * nz;
+      maxMove = Math.max(maxMove, vx * vx + vy * vy + vz * vz);
+    }
+    return supported >= 2 && maxMove < .0016 * .0016;
   }
   function solve(p, a, b, len, k, minOnly) {
     const ax = a * 3, bx = b * 3;
@@ -102,24 +166,27 @@
     fwd.crossVectors(tmp2, tmp).normalize();
     const mx = (p[hip * 3] + p[foot * 3]) / 2, my = (p[hip * 3 + 1] + p[foot * 3 + 1]) / 2, mz = (p[hip * 3 + 2] + p[foot * 3 + 2]) / 2;
     const off = (p[knee * 3] - mx) * fwd.x + (p[knee * 3 + 1] - my) * fwd.y + (p[knee * 3 + 2] - mz) * fwd.z;
-    if (off < 0.02) {
-      const push = (0.02 - off) * 0.6;
+    if (off < -.018) {
+      const push = (-.018 - off) * .4;
       p[knee * 3] += fwd.x * push; p[knee * 3 + 1] += fwd.y * push; p[knee * 3 + 2] += fwd.z * push;
     }
   }
 
-  // advance with a fixed step; returns false once asleep
+  // Advance fixed physics steps and interpolate the pose at render time.
   RD.update = function (rd, dt) {
     if (rd.asleep) return false;
-    rd.acc += Math.min(dt, 0.1); rd.t += dt;
-    let steps = 0;
-    while (rd.acc >= STEP && steps < 6) {
-      rd.acc -= STEP; steps++;
-      const mv = stepOnce(rd);
-      if (rd.t > 0.8 && mv < 0.0025) rd.still++; else rd.still = 0;
+    rd.acc += Math.min(dt, .1);
+    while (rd.acc >= STEP) {
+      rd.acc -= STEP;
+      rd.t += STEP;
+      rd.still = stepOnce(rd) && rd.t > .55 ? rd.still + 1 : 0;
+      if (rd.still >= 27) { rd.asleep = true; rd.q.set(rd.p); break; }
     }
-    if (rd.still > 40 || rd.t > 7) rd.asleep = true;
+    rd.alpha = rd.asleep ? 1 : rd.acc / STEP;
     return true;
   };
-  RD.point = function (rd, i, out) { return out.set(rd.p[i * 3], rd.p[i * 3 + 1], rd.p[i * 3 + 2]); };
+  RD.point = function (rd, i, out) {
+    const o = i * 3, a = rd.prev, b = rd.p, t = rd.alpha;
+    return out.set(G.lerp(a[o], b[o], t), G.lerp(a[o + 1], b[o + 1], t), G.lerp(a[o + 2], b[o + 2], t));
+  };
 })(window.G);

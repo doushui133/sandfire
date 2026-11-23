@@ -215,6 +215,11 @@
     if (v.isPlayer) { G.HUD.hurt(attacker ? attacker.pos : null, dmg); G.Audio.hurt(); }
     G.Bots.onDamaged(v, attacker);
     if (v.hp <= 0) { kill(v, attacker, info); return { killed: true, helmet: info.helmet }; }
+    if (dmg > 0 && G.BotModel.flinch) {
+      const source = info.from || (attacker && attacker.pos);
+      if (info.dirx || info.dirz) G.BotModel.flinch(v, info.dirx || 0, info.dirz || 0);
+      else G.BotModel.flinch(v, source ? v.pos.x - source.x : 0, source ? v.pos.z - source.z : 0);
+    }
     return { killed: false, helmet: info.helmet };
   };
   function kill(v, attacker, info) {

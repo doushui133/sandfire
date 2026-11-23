@@ -346,9 +346,10 @@
     const gunTex = mobile ? 'assets/guns/m/' : 'assets/guns/';
     const charTex = mobile ? 'assets/chars/m/' : 'assets/chars/';
     G.GunModels.setAssetBase(gunTex);
-    G.BotModel.setAssetBase(charTex);
+    G.BotModel.setAssetBase(touch ? 'assets/chars/m/' : 'assets/chars/');
     G.VM.setAssetBase(charTex);
-    const budget = mobile ? REAL_BUDGET.mobile : REAL_BUDGET.desktop;
+    const charTextureDelta = 3.87e6; // Full-size character textures minus the phone variants.
+    const budget = (mobile ? REAL_BUDGET.mobile : REAL_BUDGET.desktop) + (Number(mobile) - Number(touch)) * charTextureDelta;
     let loaded = 0;
     const onBytes = (_url, n) => {
       loaded += n;
