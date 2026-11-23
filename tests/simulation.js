@@ -6,8 +6,11 @@ const root = path.join(__dirname,'..'), html=fs.readFileSync(path.join(root,'ind
 const noop = () => {};
 class Element {
   constructor() {
-    this.listeners={}; this.dataset={}; this.style={setProperty:noop}; this.children=[];
-    this.classList={add:noop,remove:noop,toggle:noop}; this.hidden=true;
+    this.listeners={}; this.dataset={}; this.style={setProperty(key,value){this[key]=value;}}; this.children=[];
+    const classes=new Set();
+    this.classList={add:(...keys)=>keys.forEach(k=>classes.add(k)),remove:(...keys)=>keys.forEach(k=>classes.delete(k)),
+      toggle:(key,on)=>on ? classes.add(key) : classes.delete(key),contains:key=>classes.has(key)};
+    this.hidden=true;
   }
   addEventListener(type,fn) { (this.listeners[type] || (this.listeners[type]=[])).push(fn); }
   removeEventListener(type,fn) { this.listeners[type]=(this.listeners[type]||[]).filter((f)=>f!==fn); }
@@ -22,7 +25,13 @@ class Element {
     return null;
   }
   appendChild(el) { this.children.push(el); el.parent=this; }
+  set textContent(value) { this.text=value; this.children.length=0; }
+  get textContent() { return this.text; }
   get firstChild() { return this.children[0]; }
+  getBoundingClientRect() {
+    const value=key=>parseFloat(this.style[key])||0;
+    return {left:value('left'),top:value('top'),width:value('width'),height:value('height')};
+  }
   remove() { if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this),1); }
   getContext() { return new Proxy({},{get:()=>noop}); }
 }
@@ -31,7 +40,7 @@ const nodes={}, actions=Array.from(html.matchAll(/data-action="([^"]+)"/g),m=>{
 });
 const elem=id=>nodes[id] || (nodes[id]=new Element());
 const win=new Element(), document=Object.assign(new Element(),{
-  getElementById:elem, createElement:()=>new Element(), body:new Element(),documentElement:new Element(),
+  getElementById:elem, createElement:()=>new Element(), body:new Element(),documentElement:new Element(),hidden:false,
 });
 elem('stick').firstElementChild=new Element();
 Object.assign(global,{window:global, top:global, document, innerWidth:740,innerHeight:360,history:{},
@@ -226,18 +235,90 @@ G.time+=1; W.update(me,.01,{firePressed:true}); assert(!shotgun.reloading && sho
 console.log('Eight-pellet shot, 4 m / 14 m damage:',close,far,'and interruptible shell reload passed');
 
 field(); G.Touch.enabled=true; G.Touch.portrait=false; G.HUD.buyOpen=G.HUD.scoresOpen=false;
-const pad=elem('game'), touch=(id,x,y,target=pad)=>({identifier:id,clientX:x,clientY:y,target});
-const event=(type,changes,touches)=>document.emit(type,{target:pad,changedTouches:changes,touches});
-let a=touch(10,120,180), b=touch(11,140,190), f=touch(12,630,220,actions.find(e=>e.dataset.action==='fire'));
-event('touchstart',[a],[a]); event('touchmove',[touch(10,180,180)],[a]);
-assert.equal(G.Touch.joystick.x,1);
-event('touchstart',[b,f],[b,f]); assert(!G.Touch.pointers.has(10)); assert(G.input.left);
-event('touchmove',[touch(11,153,190)],[b,f]); assert(G.Touch.joystick.x>0 && G.Touch.joystick.x<.6);
-event('touchend',[f],[]); assert.equal(G.Touch.pointers.size,0); assert.equal(G.Touch.joystick.x,0); assert(!G.input.left);
-event('touchstart',[a],[a]); event('touchcancel',[],[]); assert.equal(G.Touch.pointers.size,0);
-console.log('Document touch movement, replacement, simultaneous fire, end reconciliation and cancel passed');
+const pad=elem('touchSurface'), touch=(id,x,y,target=pad)=>({identifier:id,clientX:x,clientY:y,target});
+const actionButton=name=>actions.find(e=>e.dataset.action===name);
+const event=(type,changes,touches,timeStamp)=>document.emit(type,{target:pad,changedTouches:changes,touches,timeStamp});
+const a=touch(10,10,180), b=touch(11,140,190), f=touch(12,630,220,actionButton('fire'));
+const look=touch(13,560,180);
+event('touchstart',[a],[a]);
+event('touchmove',[touch(10,12,180)],[a]); assert.equal(G.Touch.joystick.x,0);
+event('touchmove',[touch(10,110,180)],[a]); assert.equal(G.Touch.joystick.x,1);
+assert.equal(G.Touch.pointers.get(10).x,65);
+event('touchmove',[touch(10,110,80)],[a]);
+assert(G.Touch.joystick.y<-.9 && Math.abs(Math.hypot(G.Touch.joystick.x,G.Touch.joystick.y)-1)<1e-8);
+event('touchstart',[b,f,look],[a,b,f,look],100);
+assert(G.Touch.pointers.has(10) && !G.Touch.pointers.has(11) && G.input.left);
+event('touchmove',[touch(13,580,180),touch(12,650,220,f.target)],[a,b,f,look],120);
+assert.equal(G.input.dx,20); assert.equal(G.Touch.lookTime,.02);
+event('touchmove',[touch(13,585,180)],[look],125);
+assert.equal(G.Touch.joystick.x,0); assert(!G.input.left);
+assert.equal(G.Touch.pointers.size,1);
+event('touchcancel',[],[]); assert.equal(G.Touch.pointers.size,0);
+G.Touch.reset();
+
+const grenade=actionButton('grenade'), grenades=elem('grenadeFan');
+const gr=grenade.getBoundingClientRect(), gx=gr.left+gr.width/2, gy=gr.top+gr.height/2;
+const g=touch(14,gx,gy,grenade), use=touch(15,100,300,actionButton('use'));
+me.nades={}; me.inv.grenade=null; W.addGrenade(me,'he'); W.addGrenade(me,'flash');
+event('touchstart',[g],[g]); event('touchend',[g],[]); assert(G.input.hit('Digit4'));
+G.Player.update(1/60); assert.equal(me.cur,'grenade');
+G.input.endFrame();
+event('touchstart',[g],[g]); event('touchmove',[touch(14,gx,gy-20,grenade)],[g]);
+assert(!grenades.hidden && grenades.children.length===2);
+const choice=grenades.children[1].getBoundingClientRect();
+event('touchend',[touch(14,choice.left+choice.width/2,choice.top+choice.height/2,grenade)],[]);
+assert(grenades.hidden && me.inv.grenade.id==='flash');
+event('touchstart',[g],[g]); event('touchmove',[touch(14,gx,gy-20,grenade)],[g]);
+event('touchcancel',[g],[]); assert(grenades.hidden && me.inv.grenade.id==='flash' && !G.input.hit('Digit4'));
+const timer=setTimeout;
+let openHeld;
+global.setTimeout=(fn,ms)=>{ assert.equal(ms,220); openHeld=fn; };
+event('touchstart',[g],[g]); assert(grenades.hidden); openHeld(); assert(!grenades.hidden);
+event('touchend',[g],[]); assert(grenades.hidden && me.inv.grenade.id==='flash' && !G.input.hit('Digit4'));
+global.setTimeout=timer;
+event('touchstart',[use],[use]); event('touchend',[use],[]); assert(G.input.down('KeyE'));
+G.Touch.sync(); assert(!G.input.down('KeyE'));
+W.pickupTarget=()=>W.item('p10'); G.Touch.sync();
+assert(actionButton('use').classList.contains('available') && actionButton('use')['aria-label']==='拾取'+W.defs.p10.name);
+delete W.pickupTarget; G.Touch.sync(); assert(!actionButton('use').classList.contains('available'));
+console.log('Follow-base stick, dual touch, lost touch recovery, grenade fan, cancel and pickup prompt passed');
+
+const lookAngles=[60,120,30].map(hz=>{
+  const dt=1/hz;
+  me.yaw=me.pitch=0; G.Touch.realTouch=false;
+  for (let i=0;i<.3*hz;i++) { G.input.dx=1000*dt; G.Player.touchLook(me,dt,.0022*G.settings.touchSens,false); }
+  return -me.yaw*180/Math.PI;
+});
+// 300 px at 1000 px/s: gain 0.95 + 1.15 * 1000/1100, same at every frame rate
+const expectedLook=300*(0.95+1.15*1000/1100)*0.0022*G.settings.touchSens*180/Math.PI;
+for (const angle of lookAngles) assert(Math.abs(angle-expectedLook)<1e-4, angle+' vs '+expectedLook);
+const mediumAngles=[false,true].map(sparse=>{
+  me.yaw=0;
+  const dt=1/120;
+  for (let i=0;i<36;i++) {
+    const sample=!sparse || i%2===1;
+    G.input.dx=sample ? 500*dt*(sparse ? 2 : 1) : 0;
+    G.Touch.lookTime=sample && sparse ? 2*dt : 0;
+    G.Player.touchLook(me,dt,.0022*G.settings.touchSens,false);
+  }
+  return me.yaw;
+});
+assert(Math.abs(mediumAngles[0]-mediumAngles[1])<1e-8);
+G.input.endFrame();
+console.log('300 px drag at 30, 60 and 120 Hz:',lookAngles[0].toFixed(2),'degrees; sparse 60 Hz touch sampling on 120 Hz render passed');
+
+const physicalStep=G.Phys.step;
+let touchSpeed;
+G.Phys.step=(_agent,_x,_z,speed)=>{ touchSpeed=speed; };
+for (const [deflection,expected,walking] of [[.2,.52*.15/.28,true],[.33,.52,true],[.6,1,false],[1,1,false]]) {
+  G.Touch.joystick.x=deflection;
+  G.Player.update(1/60);
+  assert(Math.abs(touchSpeed-W.maxSpeed(me)*expected)<1e-8 && me.walking===walking);
+}
+G.Phys.step=physicalStep;
 
 ally.alive=false; me.pos.set(0,0,40); foe.pos.set(.3,0,30); me.yaw=0; me.pitch=0;
+G.Touch.realTouch=true;
 G.Touch.joystick.x=.3; G.input.dx=G.input.dy=0;
 G.Player.touchLook(me,.03,.002); assert(me.yaw<0 && Math.hypot(me.yaw,me.pitch)<=.03*Math.PI/30+.000001);
 me.yaw=me.pitch=0; G.Touch.realTouch=false; G.Player.touchLook(me,.03,.002); assert.equal(me.yaw,0);
@@ -320,42 +401,31 @@ for (const id of G.GunModels.IDS) {
 G.BotModel.remove(mannequin);
 console.log('All 20 IDs animated by the original third-person soldier and first-person viewmodel');
 
-// Resolve the dimensions from touch.css for the requested safe-area layouts. This checks
-// bounding boxes; native event delivery, text rendering and GPU throughput need device testing.
-const css=fs.readFileSync(path.join(root,'touch.css'),'utf8');
-function prop(selector,key) {
-  let result;
-  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (m[1].trim()!==selector) continue;
-    for (const rule of m[2].split(';')) {
-      const colon=rule.indexOf(':');
-      if (colon>0 && rule.slice(0,colon).trim()===key) result=rule.slice(colon+1).trim();
-    }
-  }
-  assert(result,selector+' '+key); return result;
-}
-for (const [width,height] of [[640,360],[740,360],[844,390],[1024,768]]) {
+// Check the actual button rectangles produced by the layout code.
+const probe=elem('safeProbe');
+for (const [width,height] of [[640,360],[740,360],[844,390],[1024,768],[1180,820],[1280,800]]) {
+  Object.assign(global,{innerWidth:width,innerHeight:height});
   for (const size of [.8,1,1.4]) for (const notch of [0,44]) {
-    const vars={'--button-size':size,'--right':8+notch,'--left':8+notch,'--bottom':5+notch/2};
-    function pixels(expr) {
-      const code=expr.replace(/var\((--[\w-]+)(?:,[^)]+)?\)/g,(_,k)=>String(vars[k]))
-        .replace(/([.\d]+)(vw|vh|px|%)/g,(_,v,u)=>String(+v*(u==='vw'||u==='%'?width/100:u==='vh'?height/100:1)))
-        .replace(/calc\(/g,'(').replace(/min\(/g,'Math.min(');
-      assert(/^[\d.\s,()+*/-]+$/.test(code.replace(/Math\.min/g,'')),code);
-      return vm.runInNewContext(code);
+    G.settings.buttonSize=size;
+    probe.style={left:notch,width:width-2*notch,height:height-notch/2};
+    G.Touch.applyLayout();
+    const rects=actions.filter(el=>el.dataset.action!=='heavy').map(el=>el.getBoundingClientRect());
+    for (const [i,rect] of rects.entries()) {
+      assert(rect.left>=notch && rect.top>=0);
+      assert(rect.left+rect.width<=width-notch && rect.top+rect.height<=height-notch/2);
+      for (const other of rects.slice(i+1)) {
+        const dx=(rect.left+rect.width/2)-(other.left+other.width/2);
+        const dy=(rect.top+rect.height/2)-(other.top+other.height/2);
+        assert(Math.hypot(dx,dy)>=(rect.width+other.width)/2,'default touch buttons overlap');
+      }
     }
-    const unit=vars['--button-unit']=pixels(prop('.touch','--button-unit'));
-    const big=pixels(prop('#touchLayer [data-action=fire]','width'));
-    const grid=2*unit+big+8;
-    const left=pixels(prop('.touch #slots','left')), right=pixels(prop('.touch #slots','right'));
-    const slots=pixels(prop('.touch #slots','max-width'));
-    assert(width-left-right>=slots-.01 && slots>=160);
-    assert(right>=grid+vars['--right']+4);
-    assert(height-grid-vars['--bottom']>=36+5+8);
-    assert(left>vars['--left']+132);
+    if (size===1 && !notch && width===740) assert.equal(document.body.style['--button-unit'],'54px');
+    if (size===1 && !notch && width===1180) assert.equal(document.body.style['--button-unit'],'69.7px');
   }
 }
-console.log('24 calculated control layouts passed at four viewports, three scales and two safe-area settings');
+probe.style={}; G.settings.buttonSize=1;
+Object.assign(global,{innerWidth:740,innerHeight:360}); G.Touch.applyLayout();
+console.log('36 touch layouts passed at six phone and tablet viewports, three scales and two safe-area settings');
 
 // Boot with a renderer stub so wireMenu registers its actual capture and settings listeners.
 async function captureChecks() {
@@ -370,7 +440,24 @@ async function captureChecks() {
   G.Video.init=noop; G.Gfx.initMovingShadow=noop;
   G.HUD.init=noop; global.location={search:'',href:'http://localhost/'};
   global.setTimeout=(fn,ms)=>{ if (!ms) queueMicrotask(fn); };
+  let animationFrame;
+  const raf=requestAnimationFrame;
+  global.requestAnimationFrame=fn=>{ animationFrame=fn; };
   await G.boot();
+  global.requestAnimationFrame=raf;
+  const oldGpu=G.gpu, oldPreset=G.Gfx.preset, oldPause=G.paused;
+  G.Touch.enabled=true; G.paused=true; G.gpu={soft:false}; G.Gfx.preset=G.Gfx.PRESETS.high;
+  Object.assign(global,{innerWidth:1280,innerHeight:800,devicePixelRatio:2});
+  G.setRenderScale(1);
+  assert.equal(G.Video.width*G.Video.height,1099254);
+  let ts=performance.now();
+  for (let i=0;i<29;i++) { ts+=30; animationFrame(ts); }
+  assert.equal(G.DR.scale,.85); assert(G.Video.width*G.Video.height<800000);
+  for (let i=0;i<90;i++) { ts+=1000/60; animationFrame(ts); }
+  assert(G.DR.scale>.85 && G.Video.width*G.Video.height<=1.1e6);
+  G.Touch.enabled=false; G.paused=oldPause; G.gpu=oldGpu; G.Gfx.preset=oldPreset;
+  Object.assign(global,{innerWidth:740,innerHeight:360,devicePixelRatio:1}); G.setRenderScale(1);
+  console.log('Tablet starts at 1,099,254 render pixels, downshifts within 870 ms and recovers on faster frames');
   let clock=10000, pointerCalls=0, fullCalls=0, keyCalls=0;
   const canvas=G.renderer.domElement, overlay=elem('pause'), rootEl=document.documentElement;
   G.now=()=>clock; G.settings.fullscreen=true; G.embedded=false;

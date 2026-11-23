@@ -12,13 +12,17 @@
   // Resizing the canvas clears it, so size changes are only flagged here (`pending`) and applied at the
   // start of the next animation frame, right before it is drawn; resizing after a frame was drawn
   // showed a blank (black) frame each time the scale moved.
-  const DR = { base: 1, scale: 1, acc: 0, n: 0, t: 0, good: 0, bad: 0, auto: true, pending: false };
+  const DR = { base: 1, scale: 1, acc: 0, n: 0, t: 0, good: 0, bad: 0, auto: true, pending: false, touch: false };
   G.DR = DR;
   function baseRatio(preset) {
     // A software rasteriser stays at 1x on the low preset. Real GPUs keep the preset cap,
     // so high and ultra still fill 1x and 1.25x–1.5x displays.
     const cap = G.gpu && G.gpu.soft && preset.key === 'low' ? 1 : preset.dprMax;
-    return Math.min(window.devicePixelRatio || 1, cap);
+    const touch = G.Touch.enabled || G.Touch.primary();
+    if (DR.touch !== touch) DR.acc = DR.n = DR.t = DR.good = DR.bad = 0;
+    DR.touch = touch;
+    const budget = touch ? Math.sqrt(1.1e6 / (innerWidth * innerHeight)) : Infinity;
+    return Math.min(window.devicePixelRatio || 1, cap, budget);
   }
   function applySize() {
     DR.base = baseRatio(G.Gfx.preset);
@@ -26,18 +30,18 @@
     G.camera.aspect = innerWidth / innerHeight; G.camera.updateProjectionMatrix();
     G.VM.resize(innerWidth / innerHeight);
   }
-  G.setRenderScale = function (s) { DR.acc = DR.n = DR.t = DR.good = 0; DR.scale = G.clamp(s, G.Gfx.preset.scaleMin, G.Gfx.preset.scaleMax); applySize(); };
+  G.setRenderScale = function (s) { DR.acc = DR.n = DR.t = DR.good = DR.bad = 0; DR.scale = G.clamp(s, G.Gfx.preset.scaleMin, G.Gfx.preset.scaleMax); applySize(); };
   function trackFrame(ms) {
-    if (!DR.auto || ms <= 0 || ms > 120) return;   // ignore stalls and hidden-tab gaps
+    if (!DR.auto || ms <= 0 || ms > (DR.touch ? 250 : 120) || document.hidden) return;
     DR.acc += ms; DR.n++; DR.t += ms;
-    if (DR.t < 2000 || DR.n < 30) return;
+    if (DR.touch ? DR.t < 400 : DR.t < 2000 || DR.n < 30) return;
     const avg = DR.acc / DR.n, p = G.Gfx.preset;
     DR.acc = DR.n = DR.t = 0;
     let s = DR.scale;
     // hysteresis: two slow windows in a row to step down, three with clear headroom to step up, so a
     // frame time hovering near the target never makes the resolution bounce
     if (avg > 19.5) { DR.good = 0; if (++DR.bad >= 2) { s = Math.max(p.scaleMin, s * Math.max(0.85, Math.sqrt(16.7 / avg))); DR.bad = 0; } }
-    else if (avg < 15.5 && s < p.scaleMax) { DR.bad = 0; if (++DR.good >= 3) { s = Math.min(p.scaleMax, s * 1.06); DR.good = 0; } }
+    else if (avg < (DR.touch ? 17.3 : 15.5) && s < p.scaleMax) { DR.bad = 0; if (++DR.good >= 3) { s = Math.min(p.scaleMax, s * 1.06); DR.good = 0; } }
     else DR.good = DR.bad = 0;
     if (Math.abs(s - DR.scale) > 0.01) { DR.scale = s; DR.pending = true; }
   }
@@ -342,7 +346,7 @@
     else { hint.hidden = false; hint.textContent = text; }
   }
   function startRealisticLoads(preset, touch, geo, surfaces, status) {
-    const mobile = preset.key === 'medium' || preset.key === 'low';
+    const mobile = touch || preset.key === 'medium' || preset.key === 'low';
     const gunTex = mobile ? 'assets/guns/m/' : 'assets/guns/';
     const charTex = mobile ? 'assets/chars/m/' : 'assets/chars/';
     G.GunModels.setAssetBase(gunTex);
