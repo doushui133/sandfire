@@ -846,6 +846,7 @@
   const PARTICLE = RD.P;
   const ragPoints = Object.keys(PARTICLE).map(() => new THREE.Vector3());
   const ragQ = new THREE.Quaternion(), ragX = new THREE.Vector3(), ragY = new THREE.Vector3();
+  const ragDirection = new THREE.Vector3(), ragDelta = new THREE.Quaternion();
   const rx = new THREE.Vector3(), ry = new THREE.Vector3(), rz = new THREE.Vector3(), rmat = new THREE.Matrix4();
   const RAG_ARMS = [
     ['uarmL', 'farmL', 'handL', PARTICLE.SHL, PARTICLE.ELL, PARTICLE.HAL],
@@ -874,9 +875,27 @@
     else { b.position.copy(point); b.quaternion.copy(q).multiply(offset); }
   }
 
-  function ragFoot(q, knee, ankle, toe, heel) {
+  // Carry roll with the body and apply only the change in joint direction in that frame.
+  function ragSwingQ(rig, name, q, frame, from, to, bind) {
+    const i = BI[name];
+    if (bind) rig.ragSwing[i] = { axis: new THREE.Vector3(), rotation: new THREE.Quaternion() };
+    const swing = rig.ragSwing[i];
+    ragDirection.subVectors(to, from);
+    if (ragDirection.lengthSq() > 1e-8) {
+      ragDirection.normalize().applyQuaternion(ragDelta.copy(frame).invert());
+      if (!bind && swing.axis.lengthSq() > .5) {
+        ragDelta.setFromUnitVectors(swing.axis, ragDirection);
+        swing.rotation.premultiply(ragDelta).normalize();
+      }
+      swing.axis.copy(ragDirection);
+    }
+    return q.multiplyQuaternions(frame, swing.rotation);
+  }
+
+  function ragFoot(q, ankle, toe, heel) {
     const back = ragY.subVectors(heel, toe).normalize();
-    const right = ragX.subVectors(knee, ankle).cross(back).normalize();
+    const right = ragX.copy(ankle).addScaledVector(toe, -.5).addScaledVector(heel, -.5)
+      .cross(back).normalize();
     return basisQ(q, right, ry.crossVectors(back, right));
   }
 
@@ -886,25 +905,27 @@
     const pel = p[P.PEL], che = p[P.CHE], nec = p[P.NEC], hea = p[P.HEA];
     const hipX = tp[17].subVectors(p[P.HIR], p[P.HIL]), shX = tp[18].subVectors(p[P.SHR], p[P.SHL]);
     const up = tp[19].subVectors(che, pel);
-    ragBone(rig, 'pelvis', pel, basisQ(tq[0], hipX, up), bind);
+    const pelvisQ = basisQ(tq[0], hipX, up);
+    ragBone(rig, 'pelvis', pel, pelvisQ, bind);
     const spineQ = basisQ(tq[1], tp[20].addVectors(hipX, shX), up);
     const spine = tp[21].copy(pel).lerp(che, .38);
     if (bind) rig.ragSpine.copy(rig.bones[BI.spine].position).applyMatrix4(rig.root.matrixWorld)
       .sub(spine).applyQuaternion(tq[7].copy(spineQ).invert());
     else spine.add(tp[22].copy(rig.ragSpine).applyQuaternion(spineQ));
     ragBone(rig, 'spine', spine, spineQ, bind);
-    ragBone(rig, 'chest', che, basisQ(tq[2], shX, tp[22].subVectors(nec, che)), bind);
-    ragBone(rig, 'head', nec, basisQ(tq[3], shX, tp[22].subVectors(hea, nec)), bind);
+    const chestQ = basisQ(tq[2], shX, up);
+    ragBone(rig, 'chest', che, chestQ, bind);
+    ragBone(rig, 'head', nec, ragSwingQ(rig, 'head', tq[3], chestQ, nec, hea, bind), bind);
     for (let i = 0; i < 2; i++) {
       const arm = RAG_ARMS[i], sh = p[arm[3]], el = p[arm[4]], hand = p[arm[5]];
-      ragBone(rig, arm[0], sh, dirQ(tq[4], sh, el), bind);
-      const forearm = dirQ(tq[4], el, hand);
+      ragBone(rig, arm[0], sh, ragSwingQ(rig, arm[0], tq[4], chestQ, sh, el, bind), bind);
+      const forearm = ragSwingQ(rig, arm[1], tq[4], chestQ, el, hand, bind);
       ragBone(rig, arm[1], el, forearm, bind);
       ragBone(rig, arm[2], hand, forearm, bind);
       const chain = RAG_LEGS[i], leg = chain[0], hip = p[chain[1]], knee = p[chain[2]], ankle = p[chain[3]];
-      ragBone(rig, leg.thigh, hip, dirQ(tq[4], hip, knee), bind);
-      ragBone(rig, leg.shin, knee, dirQ(tq[4], knee, ankle), bind);
-      ragBone(rig, leg.foot, ankle, ragFoot(tq[4], knee, ankle, p[chain[4]], p[chain[5]]), bind);
+      ragBone(rig, leg.thigh, hip, ragSwingQ(rig, leg.thigh, tq[4], pelvisQ, hip, knee, bind), bind);
+      ragBone(rig, leg.shin, knee, ragSwingQ(rig, leg.shin, tq[4], pelvisQ, knee, ankle, bind), bind);
+      ragBone(rig, leg.foot, ankle, ragFoot(tq[4], ankle, p[chain[4]], p[chain[5]]), bind);
     }
   }
 
@@ -924,6 +945,7 @@
       p[chain[5]].set(0, height, .054).applyQuaternion(b.quaternion).add(b.position).applyMatrix4(world);
     }
     rig.ragOffset = BONES.map(() => new THREE.Quaternion());
+    rig.ragSwing = [];
     rig.ragSpine = new THREE.Vector3();
     applyRagdoll(rig, true);
     const info = a.deathInfo || {}, weapon = G.Weapons.defs[info.weapon];

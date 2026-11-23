@@ -472,5 +472,91 @@ function momentChecks() {
   assert(G.timeScale===1 && !p.orbit && !G.renderer.domElement.style.filter);
   console.log('Kill tiers, HUD payloads, wall-clock window, orbit before banner, planted-bomb control, death fall, killer zoom, spectating, pause and menu cleanup passed');
 }
-captureChecks().catch(err=>{console.error(err);process.exitCode=1;});
+function ragdollChecks() {
+  const bm=G.BotModel, mapQuery=G.Map.query, time=G.time;
+  const limbs=[[4,5,'lUarm'],[5,6,'lFarm'],[7,8,'lUarm'],[8,9,'lFarm'],
+    [10,11,'lThigh'],[11,12,'lShin'],[13,14,'lThigh'],[14,15,'lShin']];
+  const right=V(), up=V(), back=V(), cross=V();
+  function checkMatrix(elements, label) {
+    assert(elements.every(Number.isFinite), label+' finite matrix');
+    right.fromArray(elements,0); up.fromArray(elements,4); back.fromArray(elements,8);
+    for (const axis of [right,up,back]) assert(Math.abs(axis.lengthSq()-1)<1e-3, label+' unit axis');
+    assert(Math.abs(right.dot(up))<1e-3 && Math.abs(up.dot(back))<1e-3 && Math.abs(back.dot(right))<1e-3,
+      label+' orthogonal axes');
+    assert(Math.abs(cross.crossVectors(right,up).dot(back)-1)<1e-3, label+' right-handed rotation');
+  }
+
+  function makeRagdoll(pose, weapon, head) {
+    const a=game.makeAgent('atk','布娃娃测试',true);
+    a.alive=true; a.inv.primary=W.item('ar7'); a.cur='primary';
+    a.yaw=.37;
+    a.crouch=pose==='crouched' ? 1 : 0;
+    a.onGround=pose!=='mid-air';
+    a.pos.set(2,a.onGround ? 0 : 1.35,3);
+    if (pose==='running' || pose==='mid-air') a.vel.set(-1.7,a.onGround ? 0 : 2.8,-4.6);
+    bm.create(a,false);
+    a.rig.idleSeed=1;
+    for (let i=0;i<12;i++) {
+      G.time+=1/60;
+      a.pos.addScaledVector(a.vel,1/60);
+      bm.update(a,1/60);
+    }
+    a.deathInfo={weapon,head,dirx:Math.sin(a.yaw),diry:weapon==='bomb' ? .6 : 0,dirz:Math.cos(a.yaw)};
+    bm.prepareDeath(a);
+    a.alive=false; a.vel.set(0,0,0);
+    bm.update(a,0);
+    return a;
+  }
+
+  try {
+    G.Map.query=()=>[];
+    const a=makeRagdoll('standing','ar7',true);
+    try {
+      const { bones, rd }=a.rig;
+      const turn=new THREE.Quaternion().setFromAxisAngle(V(.85,.25,.3).normalize(),2.21);
+      const shift=V(.4,-.2,1.1);
+      const expected=bones.map(b=>[b.position.clone().applyQuaternion(turn).add(shift),turn.clone().multiply(b.quaternion)]);
+      const point=V();
+      // A rigid tumble must preserve the relative twist of jacket and limb bones.
+      for (const buffer of [rd.p,rd.prev]) {
+        for (let i=0;i<buffer.length;i+=3) point.fromArray(buffer,i).applyQuaternion(turn).add(shift).toArray(buffer,i);
+      }
+      bm.update(a,0);
+      bones.forEach((bone,i)=>{
+        assert(bone.position.distanceTo(expected[i][0])<1e-6, 'rigid tumble joint '+i);
+        assert(Math.abs(1-Math.abs(bone.quaternion.dot(expected[i][1])))<1e-6, 'rigid tumble bone roll '+i);
+      });
+    } finally { bm.remove(a); }
+
+    for (const pose of ['standing','running','crouched','mid-air']) {
+      for (const [weapon,head] of [['ar7',true],['ar7',false],['s8',false],['bomb',false]]) {
+        const a=makeRagdoll(pose,weapon,head), {root,mesh,bones,P}=a.rig;
+        const joints=bones.map(()=>V());
+        const dt=[1/60,1/120,1/40];
+        try {
+          // Every three increments advance .05 seconds, exercising fixed-step interpolation.
+          for (let frame=0;frame<=90;frame++) {
+            if (frame) bm.update(a,dt[(frame-1)%dt.length]);
+            root.updateMatrixWorld(true);
+            mesh.skeleton.update();
+            const label=pose+' '+weapon+(head ? ' headshot' : '')+' frame '+frame;
+            bones.forEach((bone,i)=>{
+              checkMatrix(bone.matrixWorld.elements,label+' bone '+i);
+              checkMatrix(mesh.skeleton.boneMatrices.subarray(i*16,i*16+16),label+' skinning bone '+i);
+              joints[i].setFromMatrixPosition(bone.matrixWorld);
+            });
+            for (const [from,to,length] of limbs) {
+              const ratio=joints[from].distanceTo(joints[to])/P[length];
+              assert(Math.abs(ratio-1)<=.05,label+' limb '+from+'–'+to+' length ratio '+ratio);
+            }
+          }
+        } finally { bm.remove(a); }
+      }
+    }
+  } finally {
+    G.Map.query=mapQuery; G.time=time;
+  }
+  console.log('Ragdoll rigid tumble and 16 deaths passed bone matrix and limb length checks');
+}
+captureChecks().then(ragdollChecks).catch(err=>{console.error(err);process.exitCode=1;});
 
