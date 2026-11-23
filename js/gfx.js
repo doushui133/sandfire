@@ -386,6 +386,9 @@
     GLSL_COMMON,
     'uniform sampler2D uDetail; uniform float uDetailScale; uniform vec3 uCamoA; uniform vec3 uCamoB; uniform float uSunVis;',
     'uniform sampler2D map; uniform float uOpacity;',
+    '#ifdef SOLDIER',
+    'uniform vec3 uUniformTint; uniform vec3 uSurface;',
+    '#endif',
     'uniform sampler2D normalMap; uniform vec2 normalScale; uniform sampler2D roughnessMap; uniform sampler2D metalnessMap;',
     'varying vec3 vW; varying vec3 vN; varying vec3 vCol; varying vec4 vRM; varying vec3 vObj; varying vec3 vObjN; varying vec3 vAmb; varying vec2 vUv; varying float vSh; varying vec4 vFog;',
     'void main() {',
@@ -451,6 +454,13 @@
     '  vec3 V = normalize( cameraPosition - vW );',
     '  float ndl = max( dot( N, uSunDir ), 0.0 ), nv = max( dot( N, V ), 0.001 );',
     '  vec3 amb = vAmb * ( 0.72 + 0.28 * N.y );',
+    '#ifdef SOLDIER',
+    '  rough = clamp(rough, uSurface.x, uSurface.y); metal = max(metal, uSurface.z);',
+    '  alb *= uUniformTint;',
+    '  float edge = 1.0 - nv; amb += (vAmb + vec3(.055)) * (.30 * edge * edge);',
+    '  float wrap = .2 * max(1.0 - abs(dot(N, uSunDir)), 0.0);',
+    '  amb += uSunColor * sh * wrap * (1.0 - metal);',
+    '#endif',
     '#if defined( LOW ) || defined( VIEWMODEL )',
     '  vec3 c = alb * ( 1.0 - metal ) * ( uSunColor * ndl * sh + amb );',
     '#else',
@@ -483,6 +493,7 @@
     const defines = {};
     if (opts.detail === 'gun') defines.GUN = ''; else if (opts.detail) defines.CLOTH = '';
     if (opts.viewmodel) defines.VIEWMODEL = '';
+    if (opts.soldierTint) defines.SOLDIER = '';
     if (opts.map) defines.USE_MAP = '';
     if (opts.normalMap) defines.USE_NORMALMAP = '';
     if (opts.roughnessMap) defines.USE_ROUGHNESSMAP = '';
@@ -506,6 +517,10 @@
       skinning: !!opts.skinning,
     });
     if (opts.transparent) { m.transparent = true; m.depthWrite = false; }
+    if (opts.soldierTint) {
+      m.uniforms.uUniformTint = { value: new THREE.Vector3().fromArray(opts.soldierTint) };
+      m.uniforms.uSurface = { value: new THREE.Vector3().fromArray(opts.soldierSurface) };
+    }
     return m;
   };
   // geometry helper: fill the colour / rm attributes for a whole geometry
