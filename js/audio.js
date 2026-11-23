@@ -29,6 +29,11 @@
     mix = ctx.createGain();
     gunBus = ctx.createGain();
     gunBus.connect(mix);
+    // music cues (js/music.js) get their own bus so they can be turned down separately
+    A.ctx = ctx;
+    A.musicBus = ctx.createGain();
+    A.musicBus.gain.value = G.clamp(+G.settings.musicVol >= 0 ? +G.settings.musicVol : 0.6, 0, 1);
+    A.musicBus.connect(mix);
     filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000;
     deathFilter = ctx.createBiquadFilter(); deathFilter.type = 'lowpass'; deathFilter.frequency.value = 20000;
     mix.connect(filter); filter.connect(deathFilter); deathFilter.connect(comp);
