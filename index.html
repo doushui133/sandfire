@@ -103,10 +103,6 @@ input[type=checkbox]{accent-color:var(--sun);width:16px;height:16px;margin:0}
 #buyHint{position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);font-size:13px;color:var(--sand);background:var(--panel);border:1px solid var(--line);padding:4px 12px;border-radius:4px}
 .overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(8,7,5,.55);padding:16px;box-sizing:border-box}
 .slab{background:var(--panel-strong);border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);padding:22px 26px;max-width:min(920px,100%);max-height:100%;overflow:auto;box-sizing:border-box}
-#menu{background:radial-gradient(ellipse at 70% 20%,rgba(255,174,66,.16),transparent 60%),linear-gradient(180deg,rgba(15,13,10,.6),rgba(15,13,10,.92))}
-#menu h1{font-family:var(--num);font-size:64px;margin:0;letter-spacing:.08em;color:var(--sand);line-height:1}
-#menu h1 span{color:var(--sun)}
-#menu .sub{color:var(--muted);margin:6px 0 18px;font-size:14px}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0}
 .row label{color:var(--muted);font-size:13px;min-width:72px}
 button,.chip{font-family:var(--ui);font-size:15px;color:var(--text);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:4px;padding:10px 18px;cursor:pointer}
@@ -138,7 +134,7 @@ table.sb tr.me td{background:rgba(255,174,66,.12)}
 table.sb tr.dead td{opacity:.45}
 table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-align:right}
 #endTitle{font-size:48px;font-family:var(--num);margin:0 0 6px;letter-spacing:.06em}
-@media (max-width:700px){.vit .v{font-size:28px}#clip{font-size:30px}#menu h1{font-size:44px}}
+@media (max-width:700px){.vit .v{font-size:28px}#clip{font-size:30px}}
 #mapOverlay{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;background:rgba(8,7,5,.62);pointer-events:auto;touch-action:none}
 #mapOverlay[hidden]{display:none!important}
 #mapFull{width:min(78vmin,680px);height:min(78vmin,680px);border-radius:8px;border:1px solid var(--line);background:#100e0b;box-shadow:var(--shadow)}
@@ -170,12 +166,38 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   <div id="crosshair"><i class="h" id="chL"></i><i class="h" id="chR"></i><i class="v" id="chT"></i><i class="v" id="chB"></i><i class="d"></i></div>
   <div id="hitmarker"></div>
   <div id="hitFx" hidden></div>
-  <div id="killBanner" class="kill-banner" hidden></div>
+  <div id="killBanner" class="kill-marker" role="img" hidden>
+    <svg class="km-badge" viewBox="0 0 120 120" aria-hidden="true">
+      <defs>
+        <linearGradient id="km-metal" x2="0" y2="1" gradientUnits="objectBoundingBox">
+          <stop stop-color="var(--km-light)"/><stop offset="1" stop-color="var(--km-tone)"/>
+        </linearGradient>
+        <symbol id="km-skull" viewBox="0 0 48 48">
+          <path fill="currentColor" fill-rule="evenodd" d="M24 3 12 6 5 14 4 25l5 7 7 1 2 10 4 2v-7h4v7l4-2 2-10 7-1 5-7-1-11-7-8-12-3ZM9 19l12 3-2 7-7-1-3-4v-5Zm30 0v5l-3 4-7 1-2-7 12-3ZM24 28l-4 7h8l-4-7Z"/>
+        </symbol>
+      </defs>
+      <path class="km-burst" d="M60 2v13m0 90v13M2 60h13m90 0h13M19 19l10 10m62 62 10 10m0-82L91 29M29 91l-10 10M37 5l3 7m40 96 3 7M5 83l7-3m96-40 7-3" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="60" cy="60" r="43" fill="#14151a" fill-opacity=".89" stroke="currentColor" stroke-opacity=".55"/>
+      <circle class="km-ring" cx="60" cy="60" r="40" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="47 8 13 8 35 15"/>
+      <path d="M16 60h10m68 0h10M60 97v7m0-88v7" stroke="currentColor" stroke-width="2"/>
+      <path class="km-blades" d="m28 34 12 3 45 53-4 4-46-49-7-11Zm64 0-12 3-45 53 4 4 46-49 7-11ZM31 86l13 11m32 0 13-11" fill="currentColor" stroke="#14151a" stroke-linejoin="round"/>
+      <path class="km-flame" d="M36 82c-14-8-15-22-7-36 0 9 5 11 7 8 1-17 15-19 12-33 12 7 13 18 12 26 9-3 17-11 15-20 12 9 9 21 14 30l6-9c8 16 2 30-12 39Z" fill="#f57a38" fill-opacity=".85"/>
+      <use href="#km-skull" x="34" y="33" width="52" height="52" class="km-skull"/>
+      <g class="km-hole" fill="none" stroke="#4d2420" stroke-width="1.6">
+        <circle cx="63" cy="47" r="2.6" fill="#4d2420"/>
+        <path d="m63 47-8-4-3-7m11 11 5-6 8-2m-13 8 7 6"/>
+      </g>
+      <path class="km-wall" d="M29 76h19l3-5 10 9 4-8h26v13l-13 10H43L29 85Zm17 0 6 10-3 8m16-22 3 10 8 3 3 9m-11-12-9 4m18-1 13-5" fill="#343641" stroke="#e8eaf1" stroke-width="1.5" stroke-linejoin="round"/>
+      <path class="km-crown" d="m41 16 11 5 8-12 8 12 11-5-5 16H46Z" fill="url(#km-metal)" stroke="#231507" stroke-width="2"/>
+      <circle class="km-flash" cx="60" cy="60" r="44" fill="#fff"/>
+    </svg>
+    <div id="killPips" class="km-pips" aria-hidden="true"></div>
+  </div>
   <div id="centerMsg" hidden><div id="msgTitle"></div><div id="msgSub"></div></div>
   <div id="progress" hidden><div id="progressLabel"></div><div id="progressTrack"><div id="progressBar"></div></div></div>
   <div id="hint" hidden></div>
   <div id="deathCard" hidden></div>
-  <div id="death" hidden></div>
+  <div id="death" hidden><small id="specName"></small></div>
   <div id="buyHint" hidden><span class="mouse-only">按 <b>B</b> 打开购买菜单</span><span class="touch-only">点「购买」选购装备</span></div>
   <div id="vitals">
     <div class="vit vit-hp" id="vitHp">
@@ -243,78 +265,86 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 
 <output id="videoStats" hidden></output>
 <div id="menu" class="overlay">
-  <div class="slab menu-slab">
-    <header class="menu-hero">
-      <h1>烈沙<span>行动</span></h1>
-      <div class="sub">5v5 爆破模式 · 原创沙漠小镇「烈沙镇」· 单人对战机器人</div>
-    </header>
-    <section class="menu-sec">
-      <h2>选择阵营</h2>
-      <div class="row team-row">
-        <button class="big btn-atk" id="btnAtk" disabled>加入进攻方</button>
-        <button class="big btn-def" id="btnDef" disabled>加入防守方</button>
-      </div>
-      <div id="status">正在加载 3D 引擎…</div>
-    </section>
-    <section class="menu-sec">
-      <h2>对局</h2>
-      <div class="row"><label>难度</label>
-        <button class="chip" data-diff="0" id="d0">新兵 · 轻松</button>
-        <button class="chip on" data-diff="1" id="d1">老兵 · 标准</button>
-        <button class="chip" data-diff="2" id="d2">精英 · 挑战</button>
-      </div>
-    </section>
-    <section class="menu-sec">
-      <h2>画面</h2>
-      <div id="gpuWarning" role="status" hidden>当前浏览器没有使用显卡（可能在虚拟机或远程桌面中，或浏览器关闭了硬件加速），画面和帧率会很低，鼠标也可能锁不住。请在有显卡的电脑上用 Chrome 或 Edge 打开，并在浏览器「设置 → 系统」里开启「使用图形加速」。</div>
-      <div class="row video-row"><label for="videoQuality">画质</label>
-        <select id="videoQuality"><option value="auto">自动</option><option value="low">流畅</option><option value="medium">均衡</option><option value="high">高</option><option value="ultra">极致</option></select>
-        <span class="inline-note" id="qNote"></span>
-      </div>
-      <div class="row video-row"><label for="videoScale">渲染分辨率</label>
-        <select id="videoScale"><option value="1">100%</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.5">50%</option></select>
-        <label><input type="checkbox" id="videoDynamic"> 动态分辨率</label>
-        <label><input type="checkbox" id="videoFPS"> 显示帧率</label>
-      </div>
-    </section>
-    <section class="menu-sec">
-      <h2>操作</h2>
-      <div class="row"><label>方式</label>
-        <button class="chip" data-mode="auto">自动</button>
-        <button class="chip" data-mode="touch">触屏</button>
-        <button class="chip" data-mode="mouse">键鼠</button>
-      </div>
-      <div class="row mouse-only"><label for="sens">鼠标灵敏度</label><input type="range" id="sens" min="0.2" max="3" step="0.05" value="1"><span class="num" id="sensVal">1.00</span></div>
-      <div class="row mouse-only"><label>开镜灵敏度 <input data-setting="scopeSens" type="range" min="0.3" max="1.8" step="0.05" value="1"></label></div>
-      <div class="row touch-only"><label for="touchSens">触屏灵敏度</label><input type="range" id="touchSens" min="0.5" max="3" step="0.05" value="1.5"><span class="num" id="touchSensVal">1.50</span></div>
-      <div class="row touch-only"><label>开镜灵敏度 <input data-setting="touchScope" type="range" min="0.3" max="1.8" step="0.05" value="1"></label><label>垂直/水平 <input data-setting="vertRatio" type="range" min="0.5" max="1.5" step="0.05" value="1"></label></div>
-      <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
-      <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
-      <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
-      <div class="row touch-only"><label>陀螺仪灵敏度 <input data-setting="gyroSens" type="range" min="0.2" max="2.5" step="0.05" value="1"></label><button type="button" id="btnLayout">自定义键位</button></div>
-      <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
-      <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
-      <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
-      <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
-      <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
-    </section>
-    <section class="menu-sec">
-      <h2>声音</h2>
-      <div class="row"><label for="vol">音量</label><input type="range" id="vol" min="0" max="1" step="0.05" value="0.7"></div>
-    </section>
-    <div class="keys mouse-only">
-      <div><b>W A S D</b>移动</div><div><b>鼠标</b>瞄准 / 左键射击</div>
-      <div><b>右键</b>狙击开镜 / 匕首重击 / 近抛</div><div><b>空格</b>跳跃</div>
-      <div><b>C</b>蹲下（全屏键盘锁定时也可用 Ctrl）</div><div><b>Shift</b>静步</div>
-      <div><b>R</b>换弹</div><div><b>1 至 5</b>主武器 / 手枪 / 匕首 / 投掷物 / 炸弹</div>
-      <div><b>Q</b>切回上一把</div><div><b>E</b>按住安放 / 拆除炸弹</div>
-      <div><b>B</b>购买（依次按分类和商品数字）</div><div><b>Tab</b>记分板</div>
-      <div><b>G</b>丢弃武器</div><div><b>Esc</b>暂停</div>
-      <div><b>M</b>大地图</div>
+  <div class="menu-sand" aria-hidden="true"></div>
+  <div class="menu-shell">
+    <div class="menu-landing">
+      <header class="menu-hero">
+        <svg viewBox="0 0 72 38" aria-hidden="true"><path d="M2 29h13L29 8h10L25 29h7l9-13h10L37 37H6Zm43 0 9-13h9l-5 8h14l-4 5Z" fill="currentColor"/><path d="M42 2h9l-4 6h-9Z" fill="currentColor"/></svg>
+        <h1>烈沙<span>行动</span></h1>
+        <p class="sub">烈沙镇 · 5 对 5 爆破 · 单人对战机器人</p>
+      </header>
+      <section class="menu-queue" aria-label="开始对局">
+        <div class="row team-row">
+          <button class="big btn-atk" id="btnAtk" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 9h-4v8h-8v-8H4Zm-5 19h10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>加入进攻方</span></button>
+          <button class="big btn-def" id="btnDef" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 4v6c0 4-4 8-8 10-4-2-8-6-8-10V6Zm-3 10 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>加入防守方</span></button>
+        </div>
+        <div class="row menu-difficulty" role="group" aria-label="难度"><span>难度</span>
+          <button class="chip" data-diff="0" id="d0">新兵 · 轻松</button>
+          <button class="chip on" data-diff="1" id="d1">老兵 · 标准</button>
+          <button class="chip" data-diff="2" id="d2">精英 · 挑战</button>
+        </div>
+        <div id="status" role="status">正在加载 3D 引擎…</div>
+      </section>
     </div>
-    <div class="note touch-only">左侧拖动摇杆移动，轻推静步。右侧滑动瞄准：慢拖更准，快甩更快。开火键在右下，跳、蹲、换弹和开镜围在旁边；投掷和使用在左侧，避免误触。点左上角地图可放大。暂停或这里的「自定义键位」可拖动按钮。</div>
-    <div class="note">进攻方：把炸弹安放在 A 点或 B 点并守住它，或消灭所有防守方。防守方：阻止安放、拆除炸弹，或撑到时间结束。先赢 8 局的一方获胜。<span class="mouse-only">需要键盘和鼠标。</span></div>
-    <div id="iosTip" class="note" hidden>在 Safari 点「分享 → 添加到主屏幕」，从主屏幕打开即可全屏游玩。</div>
+    <div class="menu-tools">
+      <button type="button" class="touch-only" id="btnLayout">自定义键位</button>
+      <details class="menu-settings">
+        <summary>设置</summary>
+        <div class="menu-settings-body">
+          <section class="menu-sec">
+            <h2>画面</h2>
+            <div id="gpuWarning" role="status" hidden>当前浏览器没有使用显卡（可能在虚拟机或远程桌面中，或浏览器关闭了硬件加速），画面和帧率会很低，鼠标也可能锁不住。请在有显卡的电脑上用 Chrome 或 Edge 打开，并在浏览器「设置 → 系统」里开启「使用图形加速」。</div>
+            <div class="row video-row"><label for="videoQuality">画质</label>
+              <select id="videoQuality"><option value="auto">自动</option><option value="low">流畅</option><option value="medium">均衡</option><option value="high">高</option><option value="ultra">极致</option></select>
+              <span class="inline-note" id="qNote"></span>
+            </div>
+            <div class="row video-row"><label for="videoScale">渲染分辨率</label>
+              <select id="videoScale"><option value="1">100%</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.5">50%</option></select>
+              <label><input type="checkbox" id="videoDynamic"> 动态分辨率</label>
+              <label><input type="checkbox" id="videoFPS"> 显示帧率</label>
+            </div>
+          </section>
+          <section class="menu-sec">
+            <h2>操作</h2>
+            <div class="row"><label>方式</label>
+              <button class="chip" data-mode="auto">自动</button>
+              <button class="chip" data-mode="touch">触屏</button>
+              <button class="chip" data-mode="mouse">键鼠</button>
+            </div>
+            <div class="row mouse-only"><label for="sens">鼠标灵敏度</label><input type="range" id="sens" min="0.2" max="3" step="0.05" value="1"><span class="num" id="sensVal">1.00</span></div>
+            <div class="row mouse-only"><label>开镜灵敏度 <input data-setting="scopeSens" type="range" min="0.3" max="1.8" step="0.05" value="1"></label></div>
+            <div class="row touch-only"><label for="touchSens">触屏灵敏度</label><input type="range" id="touchSens" min="0.5" max="3" step="0.05" value="1.5"><span class="num" id="touchSensVal">1.50</span></div>
+            <div class="row touch-only"><label>开镜灵敏度 <input data-setting="touchScope" type="range" min="0.3" max="1.8" step="0.05" value="1"></label><label>垂直/水平 <input data-setting="vertRatio" type="range" min="0.5" max="1.5" step="0.05" value="1"></label></div>
+            <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
+            <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
+            <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+            <div class="row touch-only"><label>陀螺仪灵敏度 <input data-setting="gyroSens" type="range" min="0.2" max="2.5" step="0.05" value="1"></label></div>
+            <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
+            <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
+            <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
+            <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
+            <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
+          </section>
+          <section class="menu-sec">
+            <h2>声音</h2>
+            <div class="row"><label for="vol">音量</label><input type="range" id="vol" min="0" max="1" step="0.05" value="0.7"></div>
+          </section>
+          <div class="keys mouse-only">
+            <div><b>W A S D</b>移动</div><div><b>鼠标</b>瞄准 / 左键射击</div>
+            <div><b>右键</b>狙击开镜 / 匕首重击 / 近抛</div><div><b>空格</b>跳跃</div>
+            <div><b>C</b>蹲下（全屏键盘锁定时也可用 Ctrl）</div><div><b>Shift</b>静步</div>
+            <div><b>R</b>换弹</div><div><b>1 至 5</b>主武器 / 手枪 / 匕首 / 投掷物 / 炸弹</div>
+            <div><b>Q</b>切回上一把</div><div><b>E</b>按住安放 / 拆除炸弹</div>
+            <div><b>B</b>购买（依次按分类和商品数字）</div><div><b>Tab</b>记分板</div>
+            <div><b>G</b>丢弃武器</div><div><b>Esc</b>暂停</div>
+            <div><b>M</b>大地图</div>
+          </div>
+          <div class="note touch-only">左侧拖动摇杆移动，轻推静步。右侧滑动瞄准：慢拖更准，快甩更快。开火键在右下，跳、蹲、换弹和开镜围在旁边；投掷和使用在左侧，避免误触。点左上角地图可放大。暂停或这里的「自定义键位」可拖动按钮。</div>
+          <div class="note">进攻方：把炸弹安放在 A 点或 B 点并守住它，或消灭所有防守方。防守方：阻止安放、拆除炸弹，或撑到时间结束。先赢 8 局的一方获胜。<span class="mouse-only">需要键盘和鼠标。</span></div>
+          <div id="iosTip" class="note" hidden>在 Safari 点「分享 → 添加到主屏幕」，从主屏幕打开即可全屏游玩。</div>
+        </div>
+      </details>
+    </div>
   </div>
 </div>
 
