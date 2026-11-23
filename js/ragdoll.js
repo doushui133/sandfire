@@ -14,14 +14,16 @@
   const INVM = [.5, .45, .75, .75, .8, 1, 1, .8, 1, 1, .72, 1, .86, .72, 1, .86, 1, 1, 1, 1];
   const STICKS = [
     [PEL, CHE, 1], [CHE, NEC, 1], [NEC, HEA, 1], [NEC, SHL, 1], [NEC, SHR, 1], [SHL, SHR, 1],
-    [SHL, ELL, 1], [ELL, HAL, 1], [SHR, ELR, 1], [ELR, HAR, 1],
-    [PEL, HIL, 1], [PEL, HIR, 1], [HIL, HIR, 1], [HIL, KNL, 1], [KNL, FOL, 1], [HIR, KNR, 1], [KNR, FOR, 1],
+    [PEL, HIL, 1], [PEL, HIR, 1], [HIL, HIR, 1],
     // keep the torso a rigid-ish block
     [CHE, SHL, 1], [CHE, SHR, 1], [CHE, HIL, 0.9], [CHE, HIR, 0.9], [PEL, SHL, 0.9], [PEL, SHR, 0.9],
     [SHL, HIL, 0.8], [SHR, HIR, 0.8], [SHL, HIR, 0.6], [SHR, HIL, 0.6], [PEL, NEC, 0.9],
     [CHE, HEA, .48], [SHL, HEA, .32], [SHR, HEA, .32],
     [FOL, TOL, 1], [FOL, HLL, 1], [TOL, HLL, 1], [KNL, HLL, .94],
     [FOR, TOR, 1], [FOR, HLR, 1], [TOR, HLR, 1], [KNR, HLR, .94],
+    // Restore limb lengths after the joint limits and ankle constraints.
+    [SHL, ELL, 1], [ELL, HAL, 1], [SHR, ELR, 1], [ELR, HAR, 1],
+    [HIL, KNL, 1], [KNL, FOL, 1], [HIR, KNR, 1], [KNR, FOR, 1],
   ];
   const LIMITS = [[HIL, FOL, .29], [HIR, FOR, .29], [SHL, HAL, .14], [SHR, HAR, .14],
     [HEA, CHE, .22], [KNL, KNR, .09], [FOL, FOR, .085]];
@@ -124,13 +126,13 @@
     const boxes = M.query(x0 - .35, z0 - .35, x1 + .35, z1 + .35);
     let iterations = ITERS;
     for (let it = 0; it < iterations; it++) {
-      for (let i = 0; i < rd.sticks.length; i++) {
-        const s = rd.sticks[i]; solve(p, s[0], s[1], s[2], s[3], false);
-      }
       for (let i = 0; i < rd.limits.length; i++) {
         const s = rd.limits[i]; solve(p, s[0], s[1], s[2], s[3], true);
       }
       hinge(p, HIL, KNL, FOL); hinge(p, HIR, KNR, FOR);
+      for (let i = 0; i < rd.sticks.length; i++) {
+        const s = rd.sticks[i]; solve(p, s[0], s[1], s[2], s[3], false);
+      }
       for (let i = 0; i < p.length / 3; i++) {
         if (collide(rd, i, boxes)) iterations = ITERS + WALL_ITERS;
       }
