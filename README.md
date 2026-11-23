@@ -83,3 +83,10 @@ M18 可连续射击，K5 适合移动射击，U45 射速较低、单发更重。
 渲染使用本地的 three.js r128。小镇的烘焙光照位于 `assets/lightmap.png`，与地图几何数据对应。均衡画质使用 512 像素的 Poly Haven 扫描贴图，高和极致使用 1024 像素。流畅画质和缺失扫描贴图的材质使用程序贴图。[扫描贴图许可](assets/textures/LICENSE-PolyHaven.txt)
 
 three.js 采用 MIT 许可证，版权归 2010–2021 three.js authors 所有。[许可证全文](vendor/three.LICENSE.txt)
+
+## 素材与授权
+
+- 士兵和第一人称手臂：[Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox)（MIT），由 `tools/rocketbox-convert.js` 和 `tools/fparms-convert.js` 转换，进攻方军服重新着色。[许可证](assets/chars/LICENSE-Rocketbox.txt)
+- 枪械、投掷物和炸弹：3DModelsCC0「Free CC0 Guns & Explosives Pack」（CC0），由 `tools/gun-convert.js` 转换。[说明](assets/guns/LICENSE-CC0.txt)
+- 地面和墙面贴图：[Poly Haven](https://polyhaven.com)（CC0）实景扫描材质。[说明](assets/textures/LICENSE-PolyHaven.txt)
+- 「流畅」画质或素材加载失败时，游戏会改用程序生成的人物、枪械和纹理。
