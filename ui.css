@@ -529,7 +529,7 @@ table.sb tr.me td:first-child { box-shadow: inset 2px 0 0 var(--sun); }
 }
 #practicePick button[aria-pressed="true"] { color: #ffda87; border-color: #e6a363; }
 #practicePick kbd { color: var(--muted); }
-.touch #practicePick { bottom: max(4px, env(safe-area-inset-bottom)); }
+.touch #practicePick { bottom: calc(var(--bottom) + 54px); }   /* above the weapon bar */
 .touch #practicePick button { min-height: 44px; pointer-events: auto; touch-action: manipulation; }
 .touch #practicePick kbd { display: none; }
 

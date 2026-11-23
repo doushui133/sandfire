@@ -958,8 +958,11 @@
     const lift = blast ? 2.2 : .65;
     const velocity = tp[1].copy(rig.deathVel).multiplyScalar(.82).addScaledVector(direction, force * .20);
     rig.rd = RD.create(p, velocity);
-    RD.push(rig.rd, index, tp[2].copy(direction).multiplyScalar(force * (info.head ? 1.36 : 1)), info.head ? .11 : .32);
-    RD.push(rig.rd, P.PEL, tp[2].copy(direction).multiplyScalar(force * .18).add(tp[3].set(0, lift, 0)), .25);
+    // A headshot snaps the head, but the push is shared with the chest and pelvis: a kick concentrated
+    // on the head folded the spine far past what the 16-bone skin can bend without tearing the jacket.
+    RD.push(rig.rd, index, tp[2].copy(direction).multiplyScalar(force * (info.head ? 1.05 : 1)), info.head ? .2 : .32);
+    if (info.head) RD.push(rig.rd, P.CHE, tp[2].copy(direction).multiplyScalar(force * .45), .3);
+    RD.push(rig.rd, P.PEL, tp[2].copy(direction).multiplyScalar(force * (info.head ? .32 : .18)).add(tp[3].set(0, lift, 0)), .25);
 
     // Opposing wrist and ankle kicks die out as the limbs come into contact.
     const side = Math.sin(rig.idleSeed) < 0 ? -1 : 1;

@@ -464,10 +464,21 @@
     }
     return null;
   }
+  function hudButtonAt(selector, x, y) {
+    const list = document.querySelectorAll(selector);
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i].getBoundingClientRect();
+      if (x >= r.left - 3 && x <= r.right + 3 && y >= r.top - 3 && y <= r.bottom + 3) return list[i];
+    }
+    return null;
+  }
   function start(id, target, x, y, real, time) {
     const b = target && target.closest && target.closest('[data-action]');
     let action = b && buttons[b.dataset.action] === b ? b.dataset.action : '';
     if (!action && target !== surface) return false;
+    // practice-mode loadout buttons sit under the touch surface too
+    const pick = !action && hudButtonAt('#practicePick:not([hidden]) button', x, y);
+    if (pick) { pick.click(); return true; }
     const slot = !action && G.Player.agent.alive && slotAt(x, y);
     if (slot) {
       const a = G.Player.agent, nade = slot.dataset.nade;

@@ -853,7 +853,7 @@
     if (mvpTime > 0) { mvpTime -= dt; if (mvpTime <= 0) hid(el.roundMvp, true); }
     updateSoundMarkers(p);
     const practice = Gm.mode === 'practice';
-    hid(el.practicePick, !practice || Gm.phase !== 'live' || H.scoresOpen || H.mapOpen);
+    hid(el.practicePick, !practice || Gm.phase !== 'live' || H.scoresOpen || H.mapOpen || (G.Touch.enabled && p.alive));   // touch: pick while waiting to respawn
     hid(el.aliveAtk, practice); hid(el.aliveDef, practice);
     if (practice && Gm.phase === 'live') {
       if (shownPick !== p.practiceLoadout) {
