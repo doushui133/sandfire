@@ -462,7 +462,8 @@ async function runTouch(page, ctx, monitor) {
   await touchAt(page, idLook, 'touchEnd', 640, 180);
   await page.screenshot(path.join(ctx.outDir, 'touch-dual.png'));
 
-  const buttonActions = ['jump', 'crouch', 'reload', 'cycle', 'fire'];
+  // fire before cycle: cycling from the pistol lands on the knife, which has no clip to count
+  const buttonActions = ['jump', 'crouch', 'reload', 'fire', 'cycle'];
   for (const action of buttonActions) {
     const rect = await elementCenter(page, '[data-action="' + action + '"]');
     if (!rect) {
