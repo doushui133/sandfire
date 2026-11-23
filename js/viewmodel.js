@@ -95,7 +95,7 @@
     if (!rolled) b.add(K.tube([from.clone().addScaledVector(d, 0.055), from.clone().addScaledVector(d, 0.078)], [0.034, 0.033], 8), cuffSurf);
   }
   // hand placement per weapon: [position from the gun data, Euler of the grip axis, forearm direction]
-  function buildArms(id, team) {
+  function proceduralArms(id, team) {
     const gm = G.GunModels.get(id), b = new K.Builder(), sv = SLEEVE[team], gv = GLOVE[team], cf = CUFF[team];
     const place = (geoFn, pos, eu) => {
       const sub = new K.Builder(); geoFn(sub);
@@ -129,11 +129,162 @@
     }
     return b.build();
   }
+  // Rocketbox mesh in bind space, with the fingers already articulated. Both hands
+  // share one draw call. Only positions and normals vary between equipped items.
+  const realArms = {};
+  function readSide(buf, meta) {
+    const n = meta.vertexCount, o = meta.offset, count = meta.indexCount;
+    if (!n || !count || count % 3 || o + 26*n + 2*count > buf.byteLength) throw new Error('Invalid arm geometry');
+    const vector = a => new THREE.Vector3().fromArray(a);
+    return {
+      n, joints: meta.joints.map(vector), contact: vector(meta.contact),
+      frame: frame(vector(meta.forward), vector(meta.indexEdge)),
+      pos: new Float32Array(buf, o, 3*n), uv: new Float32Array(buf, o+12*n, 2*n),
+      norm: new Int8Array(buf, o+20*n, 3*n), weights: new Uint8Array(buf, o+23*n, 3*n),
+      index: new Uint16Array(buf, o+26*n, count),
+    };
+  }
+  function topology(sides) {
+    const count = sides.reduce((sum, s) => sum+s.n, 0);
+    const uv = new Float32Array(count*2), indices = [];
+    let offset = 0;
+    for (const s of sides) {
+      uv.set(s.uv, 2*offset);
+      for (const i of s.index) indices.push(offset+i);
+      offset += s.n;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    // paint() uses the position count. Each pose replaces this attribute.
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count*3), 3));
+    G.Gfx.paint(geo, [1,1,1], .8, 0);
+    geo.deleteAttribute('position');
+    geo.setIndex(indices);
+    return geo;
+  }
+  async function loadTeamArms(team) {
+    if (realArms[team]) return;
+    const base = 'assets/chars/', loader = new THREE.TextureLoader();
+    async function file(name) {
+      const r = await fetch(base + name);
+      if (!r.ok) throw new Error(name + ' HTTP ' + r.status);
+      return r;
+    }
+    const name = 'fparms_' + team;
+    const [meta, buf] = await Promise.all([file(name+'.json').then(r => r.json()), file(name+'.bin').then(r => r.arrayBuffer())]);
+    const R = readSide(buf, meta.sides.R), L = readSide(buf, meta.sides.L);
+    const opts = { viewmodel: true };
+    await Promise.all(['map','normalMap','roughnessMap'].map(async key => {
+      const t = await loader.loadAsync(base + meta.material[key]);
+      t.anisotropy = G.Tex.aniso || 1;
+      opts[key] = t;
+    }));
+    const mat = G.Gfx.litMaterial(opts);
+    for (const k of ['uSunDir','uSunVis','uAmbient']) mat.uniforms[k] = gunMat.uniforms[k];
+    realArms[team] = { R, L, mat, both: topology([R,L]), right: topology([R]) };
+  }
+  let loadingArms;
+  VM.loadArms = async function () {
+    if (G.Gfx.preset.key === 'low') return;
+    if (loadingArms) return loadingArms;
+    // Finish both teams before shader warm-up, even if one needs the fallback.
+    loadingArms = Promise.all(['atk','def'].map(team => loadTeamArms(team).catch(e => e))).then(results => {
+      const failure = results.find(Boolean);
+      if (failure) throw failure;
+    });
+    try { await loadingArms; } finally { loadingArms = null; }
+  };
+
+  // An orthonormal frame from a longitudinal direction and a reference across it.
+  function frame(along, across) {
+    const x = along.clone().normalize(), z = new THREE.Vector3().crossVectors(x, across).normalize();
+    return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, z.clone().cross(x), z));
+  }
+  function handFrame(id, hold, right) {
+    const v = (x,y,z) => new THREE.Vector3(x,y,z);
+    // The axes point from wrist to knuckles and from the pinky to the index.
+    if (hold === 'knife') return frame(v(-.9,-.35,-.46), v(.42,.05,-1));
+    if (!right && hold === 'rifle') return frame(v(.92,.20,-.34), v(-.34,0,-.92));
+    if (hold === 'bomb') return frame(v(right ? -.3 : .3,-.35,-1), v(0,1,-.35));
+    if (!right && G.Weapons.defs[id] && G.Weapons.defs[id].slot === 'grenade')
+      return frame(v(.6,.45,-.7), v(-.4,1,0));
+    return frame(v(right ? 0 : .37,-.19,-1), v(0,1,-.22));
+  }
+  // Affine skin transform, with optional length adjustment along the bind bone
+  // only. The fixed viewmodel offsets can put a long handguard past full reach.
+  function boneMatrix(from, to, rot, along, stretch) {
+    const m = new THREE.Matrix4().makeRotationFromQuaternion(rot);
+    if (stretch !== 1) {
+      const a = along.toArray(), scale = new THREE.Matrix4();
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+        scale.elements[i+4*j] += (stretch-1)*a[i]*a[j];
+      m.multiply(scale);
+    }
+    return m.setPosition(to.clone().sub(from.clone().applyMatrix4(m)));
+  }
+  function poseSide(s, right, gm, base, restRot, outP, outN, offset) {
+    const sign = right ? 1 : -1, target = right ? gm.rightHand : gm.leftHand;
+    const [upper, fore, hand] = s.joints;
+    const handRot = handFrame(gm.id, gm.hold, right).multiply(s.frame.clone().invert());
+    const wrist = target.clone().sub(s.contact.clone().sub(hand).applyQuaternion(handRot));
+    // Solve in holder space so animations can continue moving the complete pose.
+    const inv = restRot.clone().invert();
+    const shoulder = new THREE.Vector3(sign*.19,-.26,.17).sub(base).applyQuaternion(inv);
+    const toWrist = wrist.clone().sub(shoulder), reach = toWrist.length(), aim = toWrist.normalize();
+    const bindUpper = fore.clone().sub(upper), bindFore = hand.clone().sub(fore);
+    const u = bindUpper.length(), f = bindFore.length();
+    // Put most of the extra reach into the upper sleeve, just outside the frame.
+    const extra = Math.max(0, reach/.94-u-f);
+    const l1 = u+.75*extra, l2 = f+.25*extra;
+    const along = (l1*l1-l2*l2+reach*reach)/(2*reach);
+    const pole = new THREE.Vector3(sign*.65,-1,.08).applyQuaternion(inv);
+    pole.addScaledVector(aim, -pole.dot(aim)).normalize();
+    const elbow = shoulder.clone().addScaledVector(aim, along).addScaledVector(pole, Math.sqrt(Math.max(0,l1*l1-along*along)));
+    const upperDir = elbow.clone().sub(shoulder).normalize(), foreDir = wrist.clone().sub(elbow).normalize();
+    const bindBend = bindUpper.clone().cross(bindFore), bend = upperDir.clone().cross(foreDir);
+    const upperRot = frame(upperDir, bend).multiply(frame(bindUpper, bindBend).invert());
+    // Transport the wrist roll up the forearm to avoid twisting the cuff at the hand.
+    const foreRot = new THREE.Quaternion().setFromUnitVectors(bindFore.clone().normalize().applyQuaternion(handRot), foreDir).multiply(handRot);
+    const matrices = [boneMatrix(upper, shoulder, upperRot, bindUpper.normalize(), l1/u),
+      boneMatrix(fore, elbow, foreRot, bindFore.normalize(), l2/f), boneMatrix(hand, wrist, handRot, null, 1)];
+    const normals = matrices.map(m => new THREE.Matrix3().getNormalMatrix(m));
+    const p = new THREE.Vector3(), n = p.clone(), t = p.clone(), pos = p.clone(), norm = p.clone();
+    for (let i = 0; i < s.n; i++) {
+      p.fromArray(s.pos, i*3); n.fromArray(s.norm, i*3);
+      pos.set(0,0,0); norm.set(0,0,0);
+      for (let j = 0; j < 3; j++) {
+        const w = s.weights[3*i+j]/255;
+        if (!w) continue;
+        pos.addScaledVector(t.copy(p).applyMatrix4(matrices[j]), w);
+        norm.addScaledVector(t.copy(n).applyMatrix3(normals[j]), w);
+      }
+      pos.toArray(outP, (offset+i)*3); norm.normalize().toArray(outN, (offset+i)*3);
+    }
+  }
+  function buildArms(id, team) {
+    const data = realArms[team];
+    if (!data) return proceduralArms(id, team);
+    const gm = G.GunModels.get(id), left = gm.hold !== 'knife' && gm.leftHand;
+    const shared = left ? data.both : data.right, geo = new THREE.BufferGeometry();
+    for (const k of Object.keys(shared.attributes)) geo.setAttribute(k, shared.attributes[k]);
+    geo.setIndex(shared.index);
+    const pos = new Float32Array(shared.attributes.uv.count*3), norm = new Float32Array(pos.length);
+    const base = new THREE.Vector3().fromArray(BASE[id] || grenadeBase);
+    const restRot = new THREE.Quaternion().setFromEuler(new THREE.Euler(restPitch(id), restYaw(id), 0));
+    poseSide(data.R, true, gm, base, restRot, pos, norm, 0);
+    if (left) poseSide(data.L, false, gm, base, restRot, pos, norm, data.R.n);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(norm,3));
+    return geo;
+  }
+  function restPitch(id) { return id === 'knife' ? .04-.25 : .04; }
+  function restYaw(id) { return id === 'knife' ? .045+.35 : .045; }
   function armMat(team) {
+    if (realArms[team]) return realArms[team].mat;
     if (!armMats[team]) {
       const camo = team === 'atk' ? [K.lin(0x8d7b57), K.lin(0x4a4532)] : [K.lin(0x46505d), K.lin(0x1d2229)];
       const m = G.Gfx.litMaterial({ detail: 'cloth', camo, viewmodel: true, detailScale: 5 });
-      m.uniforms.uSunDir = gunMat.uniforms.uSunDir;
+      for (const k of ['uSunDir','uSunVis','uAmbient']) m.uniforms[k] = gunMat.uniforms[k];
       armMats[team] = m;
     }
     return armMats[team];
@@ -141,9 +292,10 @@
 
   VM.setWeapon = function (id, team) {
     const gm = G.GunModels.get(id);
-    if (id === curId && team === curTeam && VM.cur.gm === gm) return;
+    if (id === curId && team === curTeam && VM.cur.gm === gm && VM.cur.armData === realArms[team]) return;
     const key = id + '|' + team;
-    if (!guns[key] || guns[key].gm !== gm) {
+    if (!guns[key] || guns[key].gm !== gm || guns[key].armData !== realArms[team]) {
+      if (guns[key]) guns[key].arms.geometry.dispose();
       const material = gm.vmMaterial || gunMat;
       if (gm.vmMaterial) {
         for (const k of ['uSunDir','uSunVis','uAmbient']) material.uniforms[k] = gunMat.uniforms[k];
@@ -153,7 +305,7 @@
       const arms = new THREE.Mesh(buildArms(id, team), armMat(team));
       const action = gm.action && new THREE.Mesh(gm.action,material);
       [body, mag, action, arms].forEach((m) => { if (m) m.frustumCulled = false; });
-      guns[key] = { body, mag, arms, gm, action };
+      guns[key] = { body, mag, arms, gm, action, armData: realArms[team] };
     }
     while (holder.children.length) holder.remove(holder.children[0]);
     const g = guns[key];
@@ -220,7 +372,6 @@
     G.Gfx.probeAt(p.pos.x, p.pos.z, tmpC);
     st.amb.lerp(tmpC, 1 - Math.exp(-dt * 5));
     gunMat.uniforms.uAmbient.value.copy(st.amb);
-    const am = armMat(p.team); am.uniforms.uSunVis.value = VM.shade; am.uniforms.uAmbient.value.copy(st.amb);
     if (!holder.visible) return;
     const base = BASE[id] || grenadeBase;
     // bob + sway
@@ -234,7 +385,7 @@
     let x = base[0] + Math.sin(st.bob) * 0.009 * f + st.swayX;
     let y = base[1] - Math.abs(Math.cos(st.bob)) * 0.01 * f + st.swayY - p.crouch * 0.008 - st.land - (p.onGround ? 0 : 0.012);
     let z = base[2] + st.kick;
-    let rx = 0.04 + st.kickRot, ry = 0.045 + st.swayX * 1.5 + st.kickSide, rz = st.swayX * 2 + Math.sin(st.bob) * 0.012 * f;
+    let rx = restPitch(id) + st.kickRot, ry = restYaw(id) + st.swayX * 1.5 + st.kickSide, rz = st.swayX * 2 + Math.sin(st.bob) * 0.012 * f;
     if (st.drawT < 1) {
       st.drawT = Math.min(1, st.drawT + dt / 0.45);
       const e = 1 - Math.pow(1 - st.drawT, 3);
@@ -282,7 +433,6 @@
       if (st.swingT >= 1) st.swingT = -1;
       else { const s = Math.sin(Math.PI * st.swingT); ry += (st.heavy ? 1.0 : 0.8) * s; rz -= 0.5 * s; x -= 0.12 * s; z -= 0.1 * s; rx -= st.heavy ? 0.35 * s : 0.1 * s; }
     }
-    if (id === 'knife') { rx += -0.25; ry += 0.35; }
     if (p.planting || p.defusing) { y -= 0.06; rx -= 0.5; }
     holder.position.set(x, y, z); holder.rotation.set(rx, ry, rz);
     // muzzle flash
