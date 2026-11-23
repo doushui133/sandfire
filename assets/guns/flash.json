@@ -1,0 +1,62 @@
+{
+  "id": "flash",
+  "source": "Flashbang/Flashbang",
+  "vertexCount": 5098,
+  "indexCount": 16686,
+  "index32": false,
+  "ranges": {
+    "body": [
+      0,
+      14214
+    ],
+    "mag": [
+      14214,
+      2472
+    ],
+    "action": [
+      16686,
+      0
+    ]
+  },
+  "anchors": {
+    "rightHand": [
+      0,
+      -0.015,
+      0
+    ],
+    "leftHand": [
+      -0.031,
+      0.053,
+      0
+    ],
+    "magPivot": [
+      0,
+      0.064,
+      0
+    ],
+    "muzzle": [
+      0,
+      0.07,
+      -0.02474675141274929
+    ],
+    "eject": [
+      0,
+      0,
+      0
+    ]
+  },
+  "hold": "pistol",
+  "sight": 0,
+  "tint": [
+    1,
+    1,
+    1
+  ],
+  "textures": {
+    "map": "Flashbang_Base_Color.jpg",
+    "normalMap": "Flashbang_Normal_DirectX.jpg",
+    "roughnessMap": "Flashbang_Roughness.jpg",
+    "metalnessMap": "Flashbang_Metallic.jpg"
+  },
+  "normalFlipY": true
+}

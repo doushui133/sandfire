@@ -121,6 +121,8 @@
     if (G.Gfx.preset.key !== 'low') {   // realistic soldiers; the procedural ones remain the fallback
       status.textContent = '正在载入人物模型…';
       try { await G.BotModel.loadReal(); } catch (e) { console.warn('realistic soldiers unavailable', e); }
+      status.textContent = '正在载入武器模型…';
+      try { await G.GunModels.loadReal(); } catch (e) { console.warn('realistic weapons unavailable', e); }
     }
     status.textContent = '正在编译着色器…';
     await yieldFrame();

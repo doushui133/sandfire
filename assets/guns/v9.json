@@ -1,0 +1,62 @@
+{
+  "id": "v9",
+  "source": "Suomi_KP/Suomi_KP",
+  "vertexCount": 8594,
+  "indexCount": 27624,
+  "index32": false,
+  "ranges": {
+    "body": [
+      0,
+      22548
+    ],
+    "mag": [
+      22548,
+      4332
+    ],
+    "action": [
+      26880,
+      744
+    ]
+  },
+  "anchors": {
+    "rightHand": [
+      0,
+      -0.035,
+      0.035
+    ],
+    "leftHand": [
+      0,
+      0.015499999999999996,
+      -0.28500000000000003
+    ],
+    "muzzle": [
+      0,
+      0.027999999999999997,
+      -0.5438560247421265
+    ],
+    "eject": [
+      0.0123,
+      0.030999999999999993,
+      -0.175
+    ],
+    "magPivot": [
+      0.000023793429136276245,
+      -0.05122787691652775,
+      -0.1960044652223587
+    ]
+  },
+  "hold": "rifle",
+  "sight": 0.06294350326061249,
+  "tint": [
+    1,
+    1,
+    1
+  ],
+  "textures": {
+    "map": "Suomi_KP_Base_Color.jpg",
+    "normalMap": "Suomi_KP_Normal.jpg",
+    "roughnessMap": "Suomi_KP_Roughness.jpg",
+    "metalnessMap": "Suomi_KP_Metallic.jpg"
+  },
+  "normalFlipY": false
+}

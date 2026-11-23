@@ -120,10 +120,12 @@
       place((s) => gripHand(s, gv, cf, 0.015, team), rh, [Math.PI / 2 - 0.2, 0, 0]);
       place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.3, -0.5, 1), 0.55, team), rh.clone().add(new THREE.Vector3(0.02, -0.035, 0.06)), [0, 0, 0]);
     } else {
-      place((s) => gripHand(s, gv, cf, 0.02, team), new THREE.Vector3(0.1, 0.02, 0.0), [0, 0, -0.3]);
-      place((s) => gripHand(s, gv, cf, 0.02, team), new THREE.Vector3(-0.1, 0.02, 0.0), [0, Math.PI, 0.3]);
-      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.3, -0.45, 0.8), 0.55, team), new THREE.Vector3(0.12, -0.05, 0.04), [0, 0, 0]);
-      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.3, -0.45, 0.8), 0.55, team), new THREE.Vector3(-0.12, -0.05, 0.04), [0, 0, 0]);
+      const right = gm.vmMaterial ? rh : new THREE.Vector3(.1,.02,0);
+      const left = gm.vmMaterial ? lh : new THREE.Vector3(-.1,.02,0);
+      place((s) => gripHand(s, gv, cf, 0.02, team), right, [0, 0, -0.3]);
+      place((s) => gripHand(s, gv, cf, 0.02, team), left, [0, Math.PI, 0.3]);
+      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(0.3, -0.45, 0.8), 0.55, team), right.clone().add(new THREE.Vector3(.02,-.07,.04)), [0, 0, 0]);
+      place((s) => forearm(s, sv, cf, new THREE.Vector3(), new THREE.Vector3(-0.3, -0.45, 0.8), 0.55, team), left.clone().add(new THREE.Vector3(-.02,-.07,.04)), [0, 0, 0]);
     }
     return b.build();
   }
@@ -138,14 +140,19 @@
   }
 
   VM.setWeapon = function (id, team) {
-    if (id === curId && team === curTeam) return;
+    const gm = G.GunModels.get(id);
+    if (id === curId && team === curTeam && VM.cur.gm === gm) return;
     const key = id + '|' + team;
-    if (!guns[key]) {
-      const gm = G.GunModels.get(id);
-      const body = new THREE.Mesh(gm.body, gunMat), mag = gm.mag ? new THREE.Mesh(gm.mag, gunMat) : null;
+    if (!guns[key] || guns[key].gm !== gm) {
+      const material = gm.vmMaterial || gunMat;
+      if (gm.vmMaterial) {
+        for (const k of ['uSunDir','uSunVis','uAmbient']) material.uniforms[k] = gunMat.uniforms[k];
+      }
+      const body = new THREE.Mesh(gm.body,material);
+      const mag = gm.reloadShell ? new THREE.Mesh(gm.reloadShell,gunMat) : gm.mag && new THREE.Mesh(gm.mag,material);
       const arms = new THREE.Mesh(buildArms(id, team), armMat(team));
-      [body, mag, arms].forEach((m) => { if (m) m.frustumCulled = false; });
-      const action = gm.action && new THREE.Mesh(gm.action,gunMat);
+      const action = gm.action && new THREE.Mesh(gm.action,material);
+      [body, mag, action, arms].forEach((m) => { if (m) m.frustumCulled = false; });
       guns[key] = { body, mag, arms, gm, action };
     }
     while (holder.children.length) holder.remove(holder.children[0]);
@@ -161,7 +168,10 @@
   // build every weapon for both sides and compile the shaders up front
   VM.warm = function (renderer) {
     for (const team of ['atk', 'def']) for (const id of G.GunModels.IDS) VM.setWeapon(id, team);
-    for (const k in guns) { holder.add(guns[k].body); if (guns[k].mag) holder.add(guns[k].mag); holder.add(guns[k].arms); }
+    for (const k in guns) {
+      const g = guns[k];
+      holder.add(g.body,g.arms); if (g.mag) holder.add(g.mag); if (g.action) holder.add(g.action);
+    }
     flash.visible = flash2.visible = true;
     renderer.compile(scene, cam);
     flash.visible = flash2.visible = false;
@@ -242,11 +252,23 @@
       }
     }
     if (magMesh) { magMesh.position.set(0, -magDrop * 0.16, magDrop * 0.03); magMesh.rotation.set(magDrop * 0.3, 0, 0); magMesh.visible = magDrop < 0.98; }
+    if (magDrop && VM.cur.gm.vmMaterial && VM.cur.gm.mag) {
+      const pivot = VM.cur.gm.magPivot;
+      magMesh.position.add(pivot).sub(rotatedPivot.copy(pivot).applyQuaternion(magMesh.quaternion));
+    }
     if (id === 's8' && magMesh) { magMesh.visible = st.reloadT >= 0; magMesh.position.y=-0.09*(1-Math.max(0,st.reloadT)); }
     if (VM.cur.action) {
       const t=G.clamp((G.time-p.lastShot-0.07)/0.45,0,1), travel=Math.sin(t*Math.PI);
       VM.cur.action.position.z=travel*(id==='s8' ? 0.095 : 0.058);
-      if (id==='s40') VM.cur.action.rotation.z=travel*0.45;
+      if (id==='s40') {
+        const action = VM.cur.action;
+        action.rotation.z=travel*0.45;
+        if (VM.cur.gm.vmMaterial) {
+          const axis = VM.cur.gm.muzzle;
+          rotatedPivot.set(axis.x,axis.y,0).applyQuaternion(action.quaternion);
+          action.position.x = axis.x-rotatedPivot.x; action.position.y = axis.y-rotatedPivot.y;
+        }
+      }
     }
     if (id === 'l60' && st.reloadT>=0) rz+=0.32*Math.sin(st.reloadT*Math.PI);
     if (G.Weapons.defs[id] && G.Weapons.defs[id].slot==='grenade') {
@@ -268,6 +290,7 @@
     flash.visible = flash2.visible = st.flashT > 0 && id !== 'knife' && id !== 'bomb';
   };
   const grenadeBase = [.105,-.15,-.34];
+  const rotatedPivot = new THREE.Vector3();
   const tmpC = new THREE.Color();
   VM.render = function (renderer) {
     if (!scene || !holder.visible) return;

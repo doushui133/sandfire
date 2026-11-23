@@ -1,0 +1,62 @@
+{
+  "id": "u45",
+  "source": "GreaseGun/Grease_Gun",
+  "vertexCount": 7319,
+  "indexCount": 23175,
+  "index32": false,
+  "ranges": {
+    "body": [
+      0,
+      22086
+    ],
+    "mag": [
+      22086,
+      636
+    ],
+    "action": [
+      22722,
+      453
+    ]
+  },
+  "anchors": {
+    "rightHand": [
+      0,
+      -0.035,
+      0.035
+    ],
+    "leftHand": [
+      0,
+      -0.015000000000000013,
+      -0.222
+    ],
+    "muzzle": [
+      0,
+      0.060899999999999996,
+      -0.4703175723552704
+    ],
+    "eject": [
+      0.0139,
+      0.075,
+      -0.192
+    ],
+    "magPivot": [
+      -0.000012413132935762405,
+      -0.07832969911396503,
+      -0.22166801989078522
+    ]
+  },
+  "hold": "rifle",
+  "sight": 0.115230493247509,
+  "tint": [
+    1,
+    1,
+    1
+  ],
+  "textures": {
+    "map": "Grease_Gun_Base_Color.jpg",
+    "normalMap": "Grease_Gun_Normal_DirectX.jpg",
+    "roughnessMap": "Grease_Gun_Roughness.jpg",
+    "metalnessMap": "Grease_Gun_Metallic.jpg"
+  },
+  "normalFlipY": true
+}

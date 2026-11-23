@@ -1,0 +1,62 @@
+{
+  "id": "s40",
+  "source": "Sniper/Sniper",
+  "vertexCount": 4359,
+  "indexCount": 14424,
+  "index32": false,
+  "ranges": {
+    "body": [
+      0,
+      12384
+    ],
+    "mag": [
+      12384,
+      864
+    ],
+    "action": [
+      13248,
+      1176
+    ]
+  },
+  "anchors": {
+    "rightHand": [
+      0,
+      -0.035,
+      0.035
+    ],
+    "leftHand": [
+      0,
+      -0.004970000000000004,
+      -0.31535
+    ],
+    "muzzle": [
+      0,
+      0.027607999999999997,
+      -0.7276850938796997
+    ],
+    "eject": [
+      0.013832,
+      0.020509999999999997,
+      -0.10605000000000003
+    ],
+    "magPivot": [
+      -0.00003672530874609947,
+      -0.04387821373529732,
+      -0.11465637385845184
+    ]
+  },
+  "hold": "rifle",
+  "sight": 0.060095,
+  "tint": [
+    0.77,
+    0.91,
+    0.64
+  ],
+  "textures": {
+    "map": "Sniper_Base_Color.jpg",
+    "normalMap": "Sniper_Normal.jpg",
+    "roughnessMap": "Sniper_Roughness.jpg",
+    "metalnessMap": "Sniper_Metallic.jpg"
+  },
+  "normalFlipY": false
+}

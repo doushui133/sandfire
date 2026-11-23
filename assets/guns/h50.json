@@ -1,0 +1,62 @@
+{
+  "id": "h50",
+  "source": "Luger/Luger",
+  "vertexCount": 4885,
+  "indexCount": 14910,
+  "index32": false,
+  "ranges": {
+    "body": [
+      0,
+      10026
+    ],
+    "mag": [
+      10026,
+      1080
+    ],
+    "action": [
+      11106,
+      3804
+    ]
+  },
+  "anchors": {
+    "rightHand": [
+      0,
+      -0.035,
+      0.012
+    ],
+    "leftHand": [
+      -0.01496120449155569,
+      -0.044,
+      0.008
+    ],
+    "muzzle": [
+      0,
+      0.0446,
+      -0.17678506672382355
+    ],
+    "eject": [
+      0.0081,
+      0.047999999999999994,
+      -0.042499999999999996
+    ],
+    "magPivot": [
+      0.000016898149624466896,
+      -0.03187689930200577,
+      0.011805888265371323
+    ]
+  },
+  "hold": "pistol",
+  "sight": 0.061855994164943695,
+  "tint": [
+    1,
+    1,
+    1
+  ],
+  "textures": {
+    "map": "Luger_Base_Color.jpg",
+    "normalMap": "Luger_Normal_DirectX.jpg",
+    "roughnessMap": "Luger_Roughness.jpg",
+    "metalnessMap": "Luger_Metallic.jpg"
+  },
+  "normalFlipY": true
+}

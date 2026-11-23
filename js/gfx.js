@@ -301,7 +301,7 @@
     GLSL_COMMON,
     'uniform sampler2D uDetail; uniform float uDetailScale; uniform vec3 uCamoA; uniform vec3 uCamoB; uniform float uSunVis;',
     'uniform sampler2D map; uniform float uOpacity;',
-    'uniform sampler2D normalMap; uniform vec2 normalScale; uniform sampler2D roughnessMap;',
+    'uniform sampler2D normalMap; uniform vec2 normalScale; uniform sampler2D roughnessMap; uniform sampler2D metalnessMap;',
     'varying vec3 vW; varying vec3 vN; varying vec3 vCol; varying vec4 vRM; varying vec3 vObj; varying vec3 vObjN; varying vec3 vAmb; varying vec2 vUv; varying float vSh; varying vec4 vFog;',
     'void main() {',
     '  vec3 alb = vCol; float rough = vRM.x, metal = vRM.y;',
@@ -312,6 +312,9 @@
     '#endif',
     '#ifdef USE_ROUGHNESSMAP',
     '  rough = texture2D( roughnessMap, vUv ).g;',
+    '#endif',
+    '#ifdef USE_METALNESSMAP',
+    '  metal = texture2D( metalnessMap, vUv ).g;',
     '#endif',
     '  vec3 N = normalize( vN );',
     '#ifdef DOUBLE_SIDED',
@@ -398,6 +401,7 @@
     if (opts.map) defines.USE_MAP = '';
     if (opts.normalMap) defines.USE_NORMALMAP = '';
     if (opts.roughnessMap) defines.USE_ROUGHNESSMAP = '';
+    if (opts.metalnessMap) defines.USE_METALNESSMAP = '';
     if (Gfx.preset && Gfx.preset.pcf9) defines.PCF9 = '';
     if (Gfx.preset && Gfx.preset.key === 'low') defines.LOW = '';
     const det = opts.detail === 'gun' ? G.Tex.gunDetail() : G.Tex.detail();
@@ -410,7 +414,7 @@
         uSunVis: { value: 1 }, uAmbient: { value: new THREE.Color(0.5, 0.5, 0.52) },
         map: { value: opts.map || null }, uOpacity: { value: 1 },
         normalMap: { value: opts.normalMap || null }, normalScale: { value: new THREE.Vector2(1, opts.normalFlipY ? -1 : 1) },
-        roughnessMap: { value: opts.roughnessMap || null },
+        roughnessMap: { value: opts.roughnessMap || null }, metalnessMap: { value: opts.metalnessMap || null },
       }, U),
       vertexShader: LIT_VS, fragmentShader: LIT_FS,
       side: opts.doubleSide ? THREE.DoubleSide : THREE.FrontSide,

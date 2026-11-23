@@ -1,0 +1,62 @@
+{
+  "id": "ar7",
+  "source": "AK-47/AK47",
+  "vertexCount": 5156,
+  "indexCount": 14415,
+  "index32": false,
+  "ranges": {
+    "body": [
+      0,
+      12327
+    ],
+    "mag": [
+      12327,
+      1332
+    ],
+    "action": [
+      13659,
+      756
+    ]
+  },
+  "anchors": {
+    "rightHand": [
+      0,
+      -0.035,
+      0.035
+    ],
+    "leftHand": [
+      0,
+      0.039999999999999994,
+      -0.301
+    ],
+    "muzzle": [
+      0,
+      0.043,
+      -0.5766886472702026
+    ],
+    "eject": [
+      0.015500000000000002,
+      0.067,
+      -0.131
+    ],
+    "magPivot": [
+      -0.00004691816866397858,
+      -0.06107576750218868,
+      -0.14813122153282166
+    ]
+  },
+  "hold": "rifle",
+  "sight": 0.1050475537776947,
+  "tint": [
+    1,
+    1,
+    1
+  ],
+  "textures": {
+    "map": "AK47_Base_Color.jpg",
+    "normalMap": "AK47_Normal_DirectX.jpg",
+    "roughnessMap": "AK47_Roughness.jpg",
+    "metalnessMap": "AK47_Metallic.jpg"
+  },
+  "normalFlipY": true
+}

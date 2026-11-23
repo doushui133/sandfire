@@ -263,6 +263,10 @@
     k5:[.22,.33,.17,S.olive], u45:[.31,.48,.23,S.black], s8:[.32,.78,.32,S.wood],
     fa2:[.36,.62,.27,S.tan], s40:[.35,.84,.35,S.woodDark], l60:[.47,.79,.34,S.box],
   };
+  function addReloadShell(mg) {
+    cylZ(mg,S.wireR,.01,.01,.054,-.035,-.019,-.12);
+    cylZ(mg,S.brass,.011,.011,.01,-.035,-.019,-.089);
+  }
   function longGun(id) {
     const [length,reach,stock,finish]=frames[id], b=new K.Builder(), mg=new K.Builder();
     const pump=id==='s8', bolt=id==='s40', belt=id==='l60', compact=id==='k5';
@@ -298,8 +302,7 @@
       action=new K.Builder();
       rbox(action,S.wood,.061,.046,.18,.014,0,.018,-.46);
       for (let i=0;i<8;i++) box(action,S.woodDark,.062,.027,.006,0,.017,-.39-i*.02);
-      cylZ(mg,S.wireR,.01,.01,.054,-.035,-.019,-.12);
-      cylZ(mg,S.brass,.011,.011,.01,-.035,-.019,-.089);
+      addReloadShell(mg);
     } else if (belt) {
       rbox(mg,S.box,.12,.14,.16,.012,-.018,-.065,magazineZ);
       for (let i=0;i<5;i++) box(mg,S.dark,.124,.005,.13,-.018,-.015-i*.023,magazineZ);
@@ -409,9 +412,71 @@
   GM.material = function () {
     return GM.mat || (GM.mat = G.Gfx.litMaterial({ detail: 'gun' }));
   };
+  const realIds = ['p10','h50','v9','u45','ar7','tr4','fa2','r90','s40','s8','bomb','he','flash','smoke','molotov','incendiary'];
+  const base = 'assets/guns/', materialSets = {};
+  async function materials(meta) {
+    const opts = { normalFlipY: meta.normalFlipY }, loader = new THREE.TextureLoader();
+    await Promise.all(Object.keys(meta.textures).map(async (key) => {
+      const texture = await loader.loadAsync(base + meta.textures[key]);
+      texture.anisotropy = G.Tex.aniso || 1;
+      opts[key] = texture;
+    }));
+    return { worldMaterial: G.Gfx.litMaterial(opts), vmMaterial: G.Gfx.litMaterial(Object.assign({viewmodel:true},opts)) };
+  }
+  async function file(name) {
+    const response = await fetch(base + name);
+    if (!response.ok) throw new Error(name + ' HTTP ' + response.status);
+    return response;
+  }
+  async function loadModel(id) {
+    const [meta, buf] = await Promise.all([file(id + '.json').then(r => r.json()), file(id + '.bin').then(r => r.arrayBuffer())]);
+    const n = meta.vertexCount, uvOffset = Math.ceil(n * 15 / 4) * 4;
+    const Index = meta.index32 ? Uint32Array : Uint16Array;
+    if (meta.id !== id || !n || buf.byteLength !== uvOffset + n * 8 + meta.indexCount * Index.BYTES_PER_ELEMENT)
+      throw new Error('Invalid model data for ' + id);
+    const indices = new Index(buf, uvOffset + n * 8, meta.indexCount), whole = new THREE.BufferGeometry();
+    whole.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf,0,n*3),3));
+    whole.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(buf,n*12,n*3),3,true));
+    whole.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(buf,uvOffset,n*2),2));
+    whole.setIndex(new THREE.BufferAttribute(indices,1));
+    G.Gfx.paint(whole,meta.tint,.6,0);
+    whole.computeBoundingSphere();
+    // All parts reuse the same GPU buffers. Draw ranges are in index units.
+    function part(name) {
+      const [start,count] = meta.ranges[name];
+      if (!count) return null;
+      if (count === indices.length) return whole;
+      const g = new THREE.BufferGeometry();
+      for (const k of Object.keys(whole.attributes)) g.setAttribute(k,whole.attributes[k]);
+      g.setIndex(whole.index); g.setDrawRange(start,count);
+      g.boundingSphere = whole.boundingSphere;
+      return g;
+    }
+    const gm = { id, whole, body: part('body'), mag: part('mag'), action: part('action'), hold: meta.hold, sight: meta.sight };
+    for (const k of Object.keys(meta.anchors)) gm[k] = meta.anchors[k] && new THREE.Vector3().fromArray(meta.anchors[k]);
+    if (id === 's8') {
+      // The loose round appears only during shell-by-shell loading. The FBX supplies the pump.
+      const b = new K.Builder(); addReloadShell(b);
+      gm.reloadShell = b.build();
+    }
+    if (!materialSets[meta.source]) materialSets[meta.source] = materials(meta).catch(e => {
+      delete materialSets[meta.source]; throw e;
+    });
+    cache[id] = Object.assign(gm, await materialSets[meta.source]);
+  }
+  let loading = null;
+  GM.loadReal = async function () {
+    if (G.Gfx.preset.key === 'low') return;
+    if (loading) return loading;
+    loading = Promise.all(realIds.map(async id => {
+      if (cache[id] && cache[id].worldMaterial) return;
+      try { await loadModel(id); } catch (e) { console.warn('Using procedural ' + id, e); }
+    }));
+    try { await loading; } finally { loading = null; }
+  };
   // a whole-gun mesh for the world (held by soldiers, dropped on the ground)
   GM.mesh = function (id) {
-    const m = new THREE.Mesh(GM.get(id).whole, GM.material());
+    const gm = GM.get(id), m = new THREE.Mesh(gm.whole, gm.worldMaterial || GM.material());
     m.userData.gun = id;
     return m;
   };
