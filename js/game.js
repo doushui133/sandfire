@@ -75,6 +75,7 @@
   Gm.update = function (dt) {
     if (Gm.phase === 'menu' || Gm.phase === 'over') return;
     G.Nades.update(dt);
+    W.updateDrops(dt);
     const b = Gm.bomb;
     if (Gm.phase === 'freeze') {
       Gm.phaseT -= dt;
@@ -135,28 +136,35 @@
     G.scene.add(bombMesh);
   }
 
-  // hold-to-use: plant for the bomb carrier, defuse for defenders
-  Gm.handleUse = function (a, held, dt) {
-    if (!a.alive) return;
+  Gm.bombUse = function (a) {
+    if (Gm.phase !== 'live' || !a.onGround) return null;
+    if (a.inv.bomb) return M.siteAt(a.pos.x, a.pos.z);
     const b = Gm.bomb;
-    if (a.inv.bomb) {
-      const site = M.siteAt(a.pos.x, a.pos.z);
-      if (held && site && a.onGround && Gm.phase === 'live') {
-        if (!a.planting) { G.Nades.cancel(a); a.planting = true; a.plantT = 0; if (a.cur !== 'bomb') { a.prevSlot = a.cur; a.cur = 'bomb'; } G.Audio.click('tick'); }
-        const before = a.plantT; a.plantT += dt;
-        if (Math.floor(before / 0.6) !== Math.floor(a.plantT / 0.6)) G.Audio.beep(a.pos, false);
-        if (a.plantT >= CFG.plant) plant(a, site);
-      } else if (a.planting) { a.planting = false; a.plantT = 0; }
+    if (a.team === 'def' && b.state === 'planted' && (!b.defuser || b.defuser === a) &&
+        G.dist2D(a.pos, b.pos) < 1.6 && Math.abs(a.pos.y - b.pos.y) < 1.2) return 'defuse';
+    return null;
+  };
+  Gm.handleUse = function (a, held, dt, pressed) {
+    if (!a.alive) return;
+    const b = Gm.bomb, action = Gm.bombUse(a);
+    const use = pressed || (held && !a.useHeld);
+    a.useHeld = held;
+    if (held && action === 'defuse') {
+      if (!a.defusing) { G.Nades.cancel(a); a.defusing = true; a.defuseT = 0; b.defuser = a; G.Audio.click('reload1'); }
+      a.defuseT += dt;
+      if (a.defuseT >= (a.kit ? CFG.defuseKit : CFG.defuse)) defuse(a);
       return;
     }
-    if (a.team === 'def' && b.state === 'planted' && (Gm.phase === 'live')) {
-      const near = G.dist2D(a.pos, b.pos) < 1.6 && Math.abs(a.pos.y - b.pos.y) < 1.2;
-      if (held && near && a.onGround && (!b.defuser || b.defuser === a)) {
-        if (!a.defusing) { a.defusing = true; a.defuseT = 0; b.defuser = a; G.Audio.click('reload1'); }
-        a.defuseT += dt;
-        if (a.defuseT >= (a.kit ? CFG.defuseKit : CFG.defuse)) defuse(a);
-      } else if (a.defusing) { a.defusing = false; a.defuseT = 0; if (b.defuser === a) b.defuser = null; }
+    if (held && action) {
+      if (!a.planting) { G.Nades.cancel(a); a.planting = true; a.plantT = 0; if (a.cur !== 'bomb') { a.prevSlot = a.cur; a.cur = 'bomb'; } G.Audio.click('tick'); }
+      const before = a.plantT; a.plantT += dt;
+      if (Math.floor(before / 0.6) !== Math.floor(a.plantT / 0.6)) G.Audio.beep(a.pos, false);
+      if (a.plantT >= CFG.plant) plant(a, action);
+      return;
     }
+    if (a.planting) { a.planting = false; a.plantT = 0; }
+    if (a.defusing) { a.defusing = false; a.defuseT = 0; if (b.defuser === a) b.defuser = null; }
+    if (!action && use && a.isPlayer) W.tryPickup(a, true);
   };
   function plant(a, site) {
     const b = Gm.bomb;
@@ -249,7 +257,7 @@
     G.Nades.cancel(v);
     if (v.cur === 'grenade') W.drop(v, 'grenade');
     if (v.inv.bomb) Gm.dropBomb(v, true);
-    if (v.inv.primary) W.drop(v, 'primary'); else if (v.inv.pistol && v.isBot) W.drop(v, 'pistol');
+    if (v.inv.primary) W.drop(v, 'primary'); else if (v.inv.pistol) W.drop(v, 'pistol');
     const wname = info.weapon === 'bomb' ? '爆炸' : (W.defs[info.weapon] ? W.defs[info.weapon].name : '');
     G.HUD.killfeed(attacker, v, wname, info.head);
     if (v.isPlayer) {

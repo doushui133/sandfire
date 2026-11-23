@@ -6,7 +6,8 @@
   const STEP = 1/90, R = 0.065, eye = new T.Vector3(), direction = new T.Vector3(), point = new T.Vector3();
   const trial = { pos:new T.Vector3(), vel:new T.Vector3() }, meshes = {};
   const overlay = document.getElementById('gasView'), white = document.getElementById('flashView');
-  let dots, previewAt = 0;
+  let dots, landing, previewAt = 0;
+  const speeds = [0, 18, 6.5, 12], chargeTime = 0.65, minPower = 0.45;
 
   // Sweep the centre against radius-expanded map boxes. Keep the first contact, even when
   // the whole box fits between two steps. The map's shared query array is consumed immediately.
@@ -70,9 +71,10 @@
   }
   N.throw = function (a,id,pos,vel) {
     if (G.time < a.throwReady || !a.nades[id]) return false;
+    const mode = a.primed;
     launch(id,a,pos,vel); W.takeGrenade(a,id);
     a.throwReady = G.time + 0.72;
-    if (a.isPlayer) G.VM.onThrow(id);
+    if (a.isPlayer) G.VM.onThrow(id, mode);
     return true;
   };
   function preview(a, speed) {
@@ -81,6 +83,9 @@
       geo.setAttribute('position', new T.Float32BufferAttribute(new Float32Array(76*3),3));
       dots = new T.Points(geo,new T.PointsMaterial({ color:0xffdf92, size:0.085 }));
       dots.frustumCulled = false; G.scene.add(dots);
+      dots.visible = false;
+      landing = new T.Mesh(new T.SphereGeometry(0.085,8,6), new T.MeshBasicMaterial({ color:0xffdf92 }));
+      G.scene.add(landing);
     }
     if (dots.visible && previewAt > G.time) return;
     previewAt = G.time + 1/24;
@@ -93,25 +98,106 @@
       if (bursts(trial)) break;
     }
     attr.needsUpdate = true; dots.geometry.setDrawRange(0,n); dots.visible = true;
+    landing.position.copy(trial.pos); landing.visible = true;
   }
-  N.cancel = function (a) {
+  function clearCharge(a, latch) {
+    a.primed = a.chargeAt = a.throwPower = a.pendingThrow = 0;
+    a.throwLatch = latch;
+    if (a.isPlayer && dots) dots.visible = landing.visible = false;
+  }
+  N.cancel = function (a, blockHeld = true) {
     if (!a) return;
-    a.primed = 0; a.throwLatch = false;
-    if (a.isPlayer && dots) dots.visible = false;
+    const inp = G.input;
+    clearCharge(a, blockHeld && a.isPlayer && (inp.left || inp.right || inp.leftPressed || inp.rightPressed));
+    if (wheel.agent === a) closeWheel();
   };
   N.control = function (a, ctl) {
     if (!a.isPlayer) return;
-    if (G.Game.frozen || G.HUD.buyOpen || a.planting || a.defusing) { N.cancel(a); return; }
+    if (!a.alive || G.paused || G.Game.frozen || G.HUD.buyOpen || a.planting || a.defusing || ctl.blocked) {
+      clearCharge(a, G.input.left || G.input.right);
+      return;
+    }
     const held = (ctl.fire ? 1 : 0) | (ctl.alt ? 2 : 0);
-    if (a.throwLatch) { if (!held) a.throwLatch = false; return; }
-    if (G.time < a.throwReady || G.time < a.switchEnd) return;
-    if (!a.primed) a.primed = (ctl.firePressed ? 1 : 0) | (ctl.altPressed ? 2 : 0);
-    if (!a.primed && !held) return;
-    a.primed |= held;
-    const speed = a.primed === 3 ? 12 : a.primed === 2 ? 6.5 : 18;
+    const pressed = (ctl.firePressed ? 1 : 0) | (ctl.altPressed ? 2 : 0);
+    if (a.throwLatch) {
+      if (!held) a.throwLatch = false;
+      return;
+    }
+    if (G.time < a.switchEnd) {
+      if (pressed) a.pendingThrow = held | pressed;
+      return;
+    }
+    if (G.time < a.throwReady) return;
+    if (!a.primed) {
+      a.primed = (held | pressed) || a.pendingThrow || 0;
+      a.pendingThrow = 0;
+      if (!a.primed) return;
+      a.chargeAt = G.time;
+      G.Audio.click('reload1');
+    }
+    if ((a.primed & held) === a.primed) a.primed = held;
+    const remaining = 1 - G.clamp((G.time - a.chargeAt) / chargeTime, 0, 1);
+    a.throwPower = 1 - (1 - minPower) * remaining * remaining;
+    const speed = speeds[a.primed] * a.throwPower;
     if ((a.primed & held) === a.primed) { preview(a,speed); return; }
     aim(a,speed,trial); N.throw(a,a.inv.grenade.id,trial.pos,trial.vel);
-    N.cancel(a); a.throwLatch = !!held;
+    clearCharge(a, !!held);
+  };
+
+  const wheel = N.wheel = { agent:null, open:false, options:null, index:-1, x:0, y:0 };
+  const cursor = { x:0, y:0, seen:false };
+  let wheelAt = 0, wheelX = 0, wheelY = 0, cursorX = 0, cursorY = 0;
+  function closeWheel() {
+    wheel.agent = null; wheel.open = false; wheel.options = null; wheel.index = -1;
+  }
+  window.addEventListener('mousemove', (e) => {
+    if (G.input.locked || !G.input.active || G.Touch.enabled) return;
+    cursor.x = e.clientX; cursor.y = e.clientY; cursor.seen = true;
+  });
+  window.addEventListener('blur', () => {
+    cursor.seen = false;
+    if (G.Player) N.cancel(G.Player.agent);
+  });
+  N.updateWheel = function (a, inp, blocked) {
+    if (blocked || G.Touch.enabled) { closeWheel(); return false; }
+    if (inp.hit('Digit4')) {
+      if (!inp.down('Digit4')) { W.switchTo(a, 'grenade'); return false; }
+      if (!a.inv.grenade) return false;
+      wheel.agent = a; wheelAt = G.now() + 250;
+    }
+    if (wheel.agent !== a) return false;
+    if (!wheel.open) {
+      if (!inp.down('Digit4')) { closeWheel(); W.switchTo(a, 'grenade'); return false; }
+      if (G.now() < wheelAt) return false;
+      if (!a.inv.grenade) { closeWheel(); return false; }
+      wheel.open = true; wheel.options = W.grenadeList(a);
+      wheelX = wheelY = 0;
+      cursorX = !inp.locked && cursor.seen ? cursor.x : window.innerWidth / 2;
+      cursorY = !inp.locked && cursor.seen ? cursor.y : window.innerHeight / 2;
+      wheel.x = G.clamp(cursorX, 123, Math.max(123, window.innerWidth - 123));
+      wheel.y = G.clamp(cursorY, 123, Math.max(123, window.innerHeight - 123));
+      clearCharge(a, G.input.left || G.input.right);
+      return true;
+    }
+    if (inp.locked) {
+      wheelX += inp.dx; wheelY += inp.dy;
+      const length = Math.hypot(wheelX, wheelY);
+      if (length > 95) { wheelX *= 95 / length; wheelY *= 95 / length; }
+    } else if (cursor.seen && (cursor.x !== cursorX || cursor.y !== cursorY)) {
+      wheelX = cursor.x - wheel.x; wheelY = cursor.y - wheel.y;
+      cursorX = cursor.x; cursorY = cursor.y;
+    }
+    if (Math.hypot(wheelX, wheelY) < 14) wheel.index = -1;
+    else {
+      const count = wheel.options.length;
+      wheel.index = (Math.round(Math.atan2(wheelX, -wheelY) * count / (2 * Math.PI)) + count) % count;
+    }
+    if (!inp.down('Digit4')) {
+      const choice = wheel.options[wheel.index];
+      closeWheel();
+      if (choice) W.selectGrenade(a, choice.id);
+    }
+    return true;
   };
 
   N.blocks = function (a,b) {
@@ -187,7 +273,7 @@
     for (const s of N.smokes) G.FX.recycleCloud(s.cloud);
     for (const f of N.fires) { if (f.stop) f.stop(); if (f.scorch && G.FX.fadeScorch) G.FX.fadeScorch(f.scorch); }
     N.flying.length = N.smokes.length = N.fires.length = 0;
-    if (dots) dots.visible = false;
+    N.cancel(G.Player.agent, false);
     overlay.hidden = white.hidden = true;
   };
   N.update = function (dt) {
@@ -238,7 +324,7 @@
     if (d.slot==='grenade') {
       let given=0;
       while (given<(count===undefined ? 1 : count) && W.addGrenade(a,id)) given++;
-      if (given) { a.inv.grenade=W.item(id); if (a.cur!=='grenade') W.switchTo(a,'grenade'); }
+      if (given) W.selectGrenade(a,id);
       return given;
     }
     a.inv[d.slot]=W.item(id); W.switchTo(a,d.slot); return true;

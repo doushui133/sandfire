@@ -14,7 +14,7 @@
     ['hud', 'radar', 'scoreAtk', 'scoreDef', 'timer', 'aliveAtk', 'aliveDef', 'killfeed', 'hp', 'armor', 'armorIco', 'armorMark', 'hpBar', 'armorBar', 'vitHp', 'money', 'moneyDelta', 'clip', 'reserve', 'ammoIcon', 'slots',
       'crosshair', 'chL', 'chR', 'chT', 'chB', 'hitmarker', 'hitFx', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
       'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner',
-      'mapOverlay', 'mapFull', 'mapClose'].forEach((k) => (el[k] = $(k)));
+      'mapOverlay', 'mapFull', 'mapClose', 'nadeWheel', 'nadeCharge'].forEach((k) => (el[k] = $(k)));
     rctx = el.radar.getContext('2d');
     fctx = el.mapFull ? el.mapFull.getContext('2d') : null;
     if (el.radar) el.radar.addEventListener('pointerup', (e) => {
@@ -671,6 +671,36 @@
   function cls(e, name, on) { const k = '_c' + name; if (e[k] !== on) { e[k] = on; e.classList.toggle(name, on); } }
   function sty(e, prop, v) { const k = '_s' + prop; if (e[k] !== v) { e[k] = v; e.style[prop] = v; } }
   function hid(e, h) { if (e._h !== h) { e._h = h; e.hidden = h; } }
+  function nadeIcon(id) {
+    const url = G.Icons && G.Icons.get ? G.Icons.get(id) : '';
+    return url ? '<img class="wico wico-sm" alt="" draggable="false" src="' + url + '">' :
+      '<i class="nade-glyph">' + W.defs[id].icon + '</i>';
+  }
+  const nadeKeys = { he: 6, flash: 7, smoke: 8, molotov: 9, incendiary: 9 };
+  function updateNadeHUD(p) {
+    const wheel = G.Nades.wheel, showWheel = p.alive && wheel.open;
+    const showCharge = p.alive && !!p.primed;
+    hid(el.nadeWheel, !showWheel);
+    hid(el.nadeCharge, !showCharge);
+    if (showWheel) {
+      const e = el.nadeWheel, list = wheel.options;
+      if (e._options !== list) {
+        e._options = list;
+        e.innerHTML = '<span class="nade-wheel-caption">松开 <kbd>4</kbd> 选择</span>' + list.map(({ id, name, count }, i) => {
+          const angle = i * 2 * Math.PI / list.length;
+          const x = Math.round(78 * Math.sin(angle)), y = Math.round(-78 * Math.cos(angle));
+          return '<span class="nade-wheel-item" data-index="' + i + '" style="--x:' + x + 'px;--y:' + y + 'px">' +
+            nadeIcon(id) + '<b>×' + count + '</b><small>' + esc(name) + '</small></span>';
+        }).join('');
+        sty(e, 'left', wheel.x + 'px'); sty(e, 'top', wheel.y + 'px');
+      }
+      if (e._choice !== wheel.index) { e._choice = wheel.index; e.dataset.choice = wheel.index; }
+    }
+    if (showCharge) {
+      const e = el.nadeCharge, angle = Math.round(p.throwPower * 108);
+      if (e._angle !== angle) { e._angle = angle; e.style.setProperty('--charge', angle + 'deg'); }
+    }
+  }
   const slotCache = {};
   function updateSlots(view, p) {
     let counts = 0;
@@ -685,8 +715,9 @@
       if (!has) return '';
       let body;
       if (s === 'grenade') {
-        body = W.grenades.filter((id) => view.nades[id]).map((id) =>
-          '<span class="nade-chip' + (id === has.id ? ' selected' : '') + '">' + ico(id, 'wico-sm') + '<b>×' + view.nades[id] + '</b></span>').join('');
+        body = W.grenadeList(view).map(({ id, name, count }) =>
+          '<span class="nade-chip' + (id === has.id ? ' selected' : '') + '" title="' + esc(name) + '">' +
+          (touch ? '' : '<kbd>' + nadeKeys[id] + '</kbd>') + nadeIcon(id) + '<b>×' + count + '</b></span>').join('');
       } else if (s === 'bomb') body = ico('bomb', 'wico-sm') + '<em class="slot-name">炸弹</em>';
       else {
         const full = has.def.name, short = full.split(' ')[0];
@@ -799,13 +830,25 @@
       sty(el.progressBar, 'width', Math.min(100, Math.round((p.planting ? p.plantT : p.defuseT) / dur * 200) / 2) + '%');
     } else hid(el.progress, true);
 
+    updateNadeHUD(p);
     // context hint
     let hint = '';
-    if (p.alive && Gm.phase === 'live') {
-      if (p.inv.bomb && !p.planting) hint = M.siteAt(p.pos.x, p.pos.z) ? '按住 E 安放炸弹' : '';
-      else if (p.team === 'def' && b.state === 'planted' && !p.defusing && G.dist2D(p.pos, b.pos) < 1.6) hint = '按住 E 拆除炸弹' + (p.kit ? '（拆弹器：5 秒）' : '（10 秒）');
+    if (p.alive && !H.buyOpen && !H.scoresOpen && !H.mapOpen && !G.Nades.wheel.open && !p.planting && !p.defusing) {
+      const action = Gm.bombUse(p), touch = G.Touch.enabled;
+      if (action === 'defuse') {
+        hint = (touch ? '按住「使用」拆除炸弹' : '按住 E 拆除炸弹') + (p.kit ? '（拆弹器：5 秒）' : '（10 秒）');
+      } else if (action) hint = touch ? '按住「使用」安放炸弹' : '按住 E 安放炸弹';
+      else {
+        const target = W.pickupTarget(p);
+        if (target) {
+          if (el.hint._def !== target.def || el.hint._touch !== touch) {
+            el.hint._def = target.def; el.hint._touch = touch;
+            el.hint._pickup = (touch ? '点「使用」拾取 ' : '按 E 拾取 ') + target.def.name;
+          }
+          hint = el.hint._pickup;
+        }
+      }
     }
-    if (hint && G.Touch.enabled) hint = hint.replace(' E ', '「使用」');
     if (hint !== lastHint) { el.hint.textContent = hint; el.hint.hidden = !hint; lastHint = hint; }
     hid(el.buyHint, !(Gm.canBuy(p) && !H.buyOpen));
     if (H.buyOpen) {

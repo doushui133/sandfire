@@ -218,7 +218,10 @@
     } else if (p.action === 'heavy' || p.action === 'scope') {
       inp.right = false;
       if (cancelled) { inp.rightPressed = false; G.Nades.cancel(G.Player.agent); }
-    } else if (p.action === 'use') inp.keys.KeyE = false;
+    } else if (p.action === 'use') {
+      inp.keys.KeyE = false;
+      if (cancelled) inp.pressed.KeyE = false;
+    }
     else if (!cancelled && p.action === 'slot' && playable()) {
       const a = G.Player.agent;
       if (a.cur === p.slot && G.now() - p.start >= 600) inp.pressed.KeyG = true;
@@ -297,7 +300,7 @@
     } else if (fireAction(action)) inp.left = inp.leftPressed = true;
     else if (action === 'look' && !G.Player.agent.alive) inp.leftPressed = true;
     else if (action === 'scope' || action === 'heavy') inp.right = inp.rightPressed = true;
-    else if (action === 'use') inp.keys.KeyE = true;
+    else if (action === 'use') inp.keys.KeyE = inp.pressed.KeyE = true;
     else if (action === 'jump') inp.pressed.Space = true;
     else if (action === 'reload') inp.pressed.KeyR = true;
     else if (action === 'grenade') inp.pressed.Digit4 = true;

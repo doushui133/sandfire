@@ -246,14 +246,90 @@ N.clear(); me.pos.set(cover.x-2,0,cover.z); foe.pos.set(cover.x+2,0,cover.z+.11)
 G.Player.touchLook(me,.03,.002); assert.equal(me.yaw,-Math.PI/2);
 console.log('Aim assist speed bound, mouse exclusion, wall and smoke occlusion passed');
 
-field(); me.nades={}; me.inv.grenade=null;
+field(); G.input.releaseAll(); G.input.endFrame(); me.nades={}; me.inv.grenade=null;
 assert.equal(G.debugGive('flash',3),2); assert.equal(G.debugGive('smoke',1),1); assert.equal(G.debugGive('he',2),1);
 assert.equal(G.debugGive('molotov',1),0); assert.equal(W.grenadeCount(me),4);
+assert.deepEqual(W.grenadeList(me), [
+  {id:'he',count:1,name:'高爆手雷'}, {id:'flash',count:2,name:'闪光弹'}, {id:'smoke',count:1,name:'烟雾弹'},
+]);
+assert(!W.selectGrenade(me,'molotov')); assert.equal(me.inv.grenade.id,'he');
+W.switchTo(me,'pistol'); assert(W.selectGrenade(me,'flash'));
+assert.equal(me.cur,'grenade'); assert.equal(me.inv.grenade.id,'flash');
 const selected=me.inv.grenade.id; W.switchTo(me,'grenade'); assert.notEqual(me.inv.grenade.id,selected);
 me.switchEnd=0; const item=me.inv.grenade.id;
 W.update(me,.01,{fire:true,firePressed:true}); assert(me.primed);
 W.update(me,.01,{}); assert.equal(N.flying[0].id,item); assert.equal(W.grenadeCount(me),3);
-console.log('Carry caps, slot cycling and release-to-throw passed');
+assert(Math.abs(N.flying[0].vel.length()-18*.45)<1e-8);
+console.log('Grenade list, direct selection, carry caps, slot cycling and quick throw passed');
+
+function playerStep(sec=1/60) {
+  G.time+=sec; G.Player.update(sec); G.input.endFrame();
+}
+field(); G.Touch.enabled=false; G.input.releaseAll(); G.input.endFrame();
+me.nades={}; me.inv.grenade=null; W.addGrenade(me,'he'); W.addGrenade(me,'flash'); W.addGrenade(me,'incendiary');
+const savedNow=G.now;
+G.now=()=>G.time*1000;
+try {
+  win.emit('keydown',{code:'Digit4'}); playerStep(); assert.equal(me.cur,'pistol');
+  win.emit('keyup',{code:'Digit4'}); playerStep(); assert.equal(me.inv.grenade.id,'he');
+  win.emit('keydown',{code:'Digit9'}); playerStep(); assert.equal(me.inv.grenade.id,'incendiary');
+  win.emit('keydown',{code:'Digit8'}); playerStep(); assert.equal(me.inv.grenade.id,'incendiary');
+  win.emit('mousemove',{clientX:360,clientY:180});
+  win.emit('keydown',{code:'Digit4'}); playerStep();
+  playerStep(.24); assert(!N.wheel.open);
+  playerStep(.02); assert(N.wheel.open);
+  assert.deepEqual(N.wheel.options.map(o=>o.id),['he','flash','incendiary']);
+  win.emit('mousemove',{clientX:425,clientY:215}); win.emit('keyup',{code:'Digit4'});
+  playerStep(); assert(!N.wheel.open); assert.equal(me.inv.grenade.id,'flash');
+  G.input.locked=true;
+  win.emit('keydown',{code:'Digit4'}); playerStep(); playerStep(.26);
+  const yaw=me.yaw;
+  G.input.dx=-60; G.input.dy=30; playerStep();
+  assert.equal(me.yaw,yaw); assert.equal(N.wheel.index,2);
+  win.emit('keyup',{code:'Digit4'}); playerStep(); assert.equal(me.inv.grenade.id,'incendiary');
+} finally { G.now=savedNow; G.input.locked=false; G.input.releaseAll(); G.input.endFrame(); }
+console.log('Desktop grenade keys and radial selection with locked and unlocked mouse passed');
+
+field(); me.nades={}; me.inv.grenade=null; W.addGrenade(me,'flash');
+assert(W.selectGrenade(me,'flash'));
+W.update(me,.01,{fire:true,firePressed:true}); G.time+=.15;
+W.update(me,.01,{}); assert.equal(N.flying.length,0);
+G.time=me.switchEnd+.001; W.update(me,.01,{});
+assert.equal(N.flying.length,1); assert(Math.abs(N.flying[0].vel.length()-18*.45)<1e-8);
+
+field(); me.nades={}; me.inv.grenade=null; W.addGrenade(me,'flash'); W.addGrenade(me,'flash');
+assert(W.selectGrenade(me,'flash'));
+W.update(me,.01,{fire:true,firePressed:true}); G.time=me.switchEnd+.001;
+W.update(me,.01,{fire:true}); assert(Math.abs(me.throwPower-.45)<1e-8);
+const chargeStart=G.time, dots=G.scene.children.find(obj=>obj.isPoints && obj.material.size===.085);
+assert(dots.visible); G.HUD.update(.01); assert(!elem('nadeCharge').hidden);
+G.time=chargeStart+.325; W.update(me,.01,{fire:true});
+assert(Math.abs(me.throwPower-.8625)<1e-8);
+G.time=chargeStart+.65; W.update(me,.01,{fire:true});
+assert.equal(me.throwPower,1);
+W.update(me,.01,{}); assert(!dots.visible); assert(Math.abs(N.flying[0].vel.length()-18)<1e-8);
+W.update(me,.01,{fire:true,firePressed:true}); assert(!me.primed);
+G.time=me.throwReady+.001; W.update(me,.01,{fire:true}); assert(me.primed);
+W.switchTo(me,'pistol'); assert(!dots.visible && !me.primed); assert.equal(N.flying.length,1);
+console.log('Charge ramp, aim preview, switch timing, cooldown and switch cancellation passed');
+
+field(); G.Touch.enabled=true; G.Touch.portrait=false; G.input.releaseAll(); G.input.endFrame();
+me.nades={}; me.inv.grenade=null; G.debugGive('flash',2);
+event('touchstart',[f],[f]); playerStep(); assert(me.pendingThrow && !me.primed);
+event('touchcancel',[f],[]); playerStep(.61); assert(!me.pendingThrow && !N.flying.length);
+event('touchstart',[f],[f]); playerStep(); assert(me.primed && dots.visible);
+event('touchcancel',[f],[]); playerStep(); assert(!me.primed && !dots.visible); assert.equal(N.flying.length,0);
+event('touchstart',[f],[f]); playerStep(.05);
+event('touchend',[f],[]); playerStep(); assert.equal(N.flying.length,1);
+G.time=me.throwReady+.01;
+const lob=touch(13,630,170,actions.find(e=>e.dataset.action==='scope'));
+event('touchstart',[f,lob],[f,lob]); playerStep(); assert.equal(me.primed,3);
+event('touchend',[f],[lob]); playerStep(); assert.equal(N.flying.length,2); assert(me.throwLatch);
+W.addGrenade(me,'smoke'); W.selectGrenade(me,'smoke');
+G.time+=1; playerStep(); assert(!me.primed);
+event('touchend',[lob],[]); playerStep(); assert.equal(N.flying.length,2);
+G.HUD.update(.01); assert(elem('nadeCharge').hidden);
+console.log('Touch release, touch cancellation and two-button release latch passed');
 
 field(); me.pos.set(0,0,42); foe.pos.set(0,0,34); ally.alive=false;
 G.Touch.realTouch=true; G.Touch.joystick.x=0; G.input.releaseAll(); G.input.endFrame();
@@ -270,12 +346,74 @@ me.vel.set(2,0,-1); me.yaw=me.pitch=0;
 for (const [alt,both,speed] of [[true,false,6.5],[true,true,12]]) {
   G.time+=1;
   W.update(me,.01,{fire:both,alt});
+  G.time+=.66;
   W.update(me,.01,{});
   assert(Math.abs(N.flying[N.flying.length-1].vel.clone().sub(me.vel).length()-speed)<1e-8);
 }
-G.debugGive('he'); game.damage(me,foe,999,{weapon:'fa2'});
+G.debugGive('he'); G.time+=1; W.update(me,.01,{fire:true});
+assert(me.primed && dots.visible);
+game.damage(me,foe,999,{weapon:'fa2'}); assert(!me.primed && !dots.visible);
 assert(W.drops.some(d=>d.item.id==='he'));
 console.log('Lob strengths, inherited movement and held-grenade death drop passed');
+
+field(); W.clearDrops(); G.Touch.enabled=false;
+const oldRifle=W.item('fa2'), enemyRifle=W.item('ar7');
+oldRifle.clip=7; oldRifle.reserve=13; enemyRifle.clip=4; enemyRifle.reserve=28;
+me.inv.primary=oldRifle; me.cur='primary'; me.yaw=me.pitch=0; me.inv.bomb=false;
+foe.inv.primary=enemyRifle; foe.cur='primary'; foe.pos.set(0,0,37.5); foe.yaw=0;
+W.drop(foe,'primary');
+let dropped=W.drops[0];
+assert(!W.pickupTarget(me)); const startY=dropped.mesh.position.y;
+W.updateDrops(.08); assert(dropped.mesh.position.y>startY && dropped.mesh.rotation.z>0);
+W.updateDrops(.6); assert(dropped.settled && dropped.mesh.parent===G.scene);
+assert.equal(dropped.mesh.rotation.z,Math.PI/2);
+assert(new THREE.Box3().setFromObject(dropped.mesh).min.y>=0);
+me.yaw=Math.PI; assert(!W.pickupTarget(me)); me.yaw=0;
+assert.deepEqual(W.pickupTarget(me),{item:enemyRifle,def:enemyRifle.def,mesh:dropped.mesh});
+G.HUD.update(.01); assert.equal(elem('hint').textContent,'按 E 拾取 '+enemyRifle.def.name);
+win.emit('keydown',{code:'KeyE'}); playerStep();
+assert.equal(me.inv.primary,enemyRifle); assert.deepEqual([enemyRifle.clip,enemyRifle.reserve],[4,28]);
+assert.equal(W.drops.length,1); assert.equal(W.drops[0].item,oldRifle);
+assert.deepEqual([oldRifle.clip,oldRifle.reserve],[7,13]);
+assert(!dropped.mesh.parent);
+W.updateDrops(.7); playerStep(); assert.equal(me.inv.primary,enemyRifle);
+win.emit('keyup',{code:'KeyE'}); playerStep();
+me.inv.primary=null; me.cur='pistol';
+assert(!W.tryPickup(me),'no automatic pickup of an item just dropped by the same player');
+assert(W.tryPickup(foe)); assert.equal(foe.inv.primary,oldRifle);
+assert.deepEqual([foe.inv.primary.clip,foe.inv.primary.reserve],[7,13]);
+
+const step=G.Map.boxes.find(box=>box.kind==='step' || box.kind==='plat');
+assert(step);
+foe.pos.set((step.x0+step.x1)/2,step.y1,(step.z0+step.z1)/2);
+W.drop(foe,'primary'); W.updateDrops(.7);
+dropped=W.drops[0];
+assert(dropped.settled && Math.abs(dropped.floor-step.y1)<1e-8);
+assert(new THREE.Box3().setFromObject(dropped.mesh).min.y>=step.y1);
+me.pos.set(dropped.mesh.position.x,step.y1,dropped.mesh.position.z);
+assert(W.tryPickup(me)); assert.equal(me.inv.primary,oldRifle);
+
+W.clearDrops(); me.pos.copy(G.Map.sites.A.center); me.onGround=true; me.inv.bomb=true; me.useHeld=false;
+foe.pos.copy(me.pos); foe.inv.primary=enemyRifle;
+W.drop(foe,'primary'); W.updateDrops(.7);
+me.pos.x=W.drops[0].mesh.position.x; me.pos.z=W.drops[0].mesh.position.z;
+assert.equal(game.bombUse(me),'A'); assert(!W.pickupTarget(me));
+game.handleUse(me,true,.1,true); assert(me.planting && me.plantT===.1); assert.equal(me.inv.primary,oldRifle);
+game.handleUse(me,false,.1); assert(!me.planting);
+const savedBomb=game.bomb;
+game.bomb={state:'planted',pos:me.pos.clone(),defuser:null};
+foe.pos.copy(me.pos); foe.onGround=true; foe.useHeld=false;
+assert.equal(game.bombUse(foe),'defuse'); assert(!W.pickupTarget(foe));
+game.handleUse(foe,true,.1,true); assert(foe.defusing && foe.defuseT===.1);
+game.handleUse(foe,false,.1); assert(!foe.defusing);
+game.bomb=savedBomb;
+me.inv.bomb=false; me.cur='primary'; G.Touch.enabled=true;
+const useButton=touch(14,630,120,actions.find(e=>e.dataset.action==='use'));
+event('touchstart',[useButton],[useButton]); event('touchcancel',[useButton],[]); playerStep();
+assert.equal(me.inv.primary,oldRifle);
+event('touchstart',[useButton],[useButton]); event('touchend',[useButton],[]); playerStep();
+assert.equal(me.inv.primary,enemyRifle); W.clearDrops();
+console.log('Pickup aim and hint, E swap with ammo, touch use tap, flat floor and step settling, automatic pickup and plant/defuse priority passed');
 
 field(); G.Touch.enabled=false; me.money=16000; game.buyUntil=Infinity;
 me.pos.copy(G.Map.spawns.atk[0]); G.HUD.toggleBuy(true);
@@ -284,6 +422,11 @@ key(5); assert(elem('buymenu').innerHTML.includes('AR-7') && !elem('buymenu').in
 key(1); assert.equal(me.inv.primary.id,'fa2');
 key(0); key(7); assert(!elem('buymenu').innerHTML.includes('燃烧弹'));
 key(2); assert((me.nades.flash||0)>0); G.onEscape(); assert(!G.HUD.buyOpen);
+W.selectGrenade(me,'flash'); G.time=me.switchEnd+.01;
+G.input.left=true; W.update(me,.01,{fire:true}); assert(dots.visible);
+G.HUD.toggleBuy(true); assert(!me.primed && !dots.visible); G.HUD.toggleBuy(false);
+W.update(me,.01,{fire:true}); assert(!me.primed);
+G.input.left=false; W.update(me,.01,{}); assert.equal(N.flying.length,0);
 console.log('Keyboard category/item buying, team restrictions and Esc close passed');
 
 // Fire across a real wooden crate; optical targeting still stops at its surface.
