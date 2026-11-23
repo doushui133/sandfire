@@ -25,6 +25,7 @@
     return Math.min(window.devicePixelRatio || 1, cap, budget);
   }
   function applySize() {
+    restoreMenuCanvas();
     DR.base = baseRatio(G.Gfx.preset);
     G.Video.resize(G.renderer, DR.base, G.settings.renderScale * DR.scale);
     G.camera.aspect = innerWidth / innerHeight; G.camera.updateProjectionMatrix();
@@ -142,6 +143,8 @@
     G.Gfx.initMovingShadow(preset.movingShadow);
     applySize();
     warmUp(renderer, scene, camera);
+    menuRoot = $('menu');
+    menuMotion = !det.soft && preset.key !== 'low' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     window.addEventListener('resize', () => { DR.pending = true; });
     wireMenu();
@@ -162,13 +165,52 @@
       // the first frame after the long boot can carry a timestamp from before it ended (ms < 0)
       const dt = G.clamp(ms / 1000, 0, 0.05);
       if (DR.pending) { DR.pending = false; applySize(); }   // clears the canvas: only right before drawing
-      if (G.loopOn) { frame(dt, now / 1000); trackFrame(ms); G.Video.stats(ms); }
+      if (G.loopOn) {
+        frame(dt, now / 1000);
+        if (G.Game.phase !== 'menu') { trackFrame(ms); G.Video.stats(ms); }
+      }
     });
   };
+
+  let menuRoot, menuMotion, menuRatio = 0, menuStart = 0, nextMenuFrame = 0;
+  function restoreMenuCanvas() {
+    if (!menuRatio) return;
+    G.renderer.setPixelRatio(menuRatio);
+    menuRatio = 0;
+  }
+  function renderMenu(t) {
+    const r = G.renderer, cam = G.camera;
+    const first = !menuRatio;
+    if (first) {
+      menuRatio = r.getPixelRatio();
+      r.setPixelRatio(Math.min(menuRatio * 0.75, 0.75, 960 / innerWidth, 540 / innerHeight));
+      menuStart = t;
+      nextMenuFrame = t;
+    } else if (menuRoot.hidden || !menuMotion || t + 0.001 < nextMenuFrame) return;
+    nextMenuFrame = Math.max(t + 1 / 120, nextMenuFrame + 1 / 30);
+    const sweep = menuMotion ? (t - menuStart) * 0.048 : 0;
+    const angle = 0.66 + Math.sin(sweep) * 0.44;
+    cam.position.set(Math.sin(angle) * 42, 23 + Math.sin(sweep * 2) * 3, Math.cos(angle) * 42);
+    cam.lookAt(-5, 2.5, -10);
+    if (cam.fov !== 53) { cam.fov = 53; cam.updateProjectionMatrix(); }
+    G.Gfx.U.uTime.value = t;
+    G.MapMesh.updateDetail(cam);
+    r.info.reset();
+    r.setRenderTarget(null);
+    r.clear();
+    r.render(G.scene, cam);
+    if (first) menuRoot.classList.add('town-ready');
+  }
 
   let lastActiveFrame = null;
   function frame(dt, t) {
     const cam = G.camera, inp = G.input;
+    if (!inp.active && G.Game.phase === 'menu' && menuRoot) {
+      lastActiveFrame = null;
+      renderMenu(t);
+      return;
+    }
+    restoreMenuCanvas();
     inp.beginFrame(G.now());
     G.Gfx.U.uTime.value = t;
     if (inp.active && !G.paused) {
@@ -186,12 +228,6 @@
     } else {
       lastActiveFrame = null;
       G.timeScale = 1;
-    }
-    if (!inp.active && G.Game.phase === 'menu') {
-      const a = t * 0.04;
-      cam.position.set(Math.sin(a) * 44, 26, Math.cos(a) * 44);
-      cam.lookAt(0, 2, -4);
-      if (cam.fov !== 60) { cam.fov = 60; cam.updateProjectionMatrix(); }
     }
     inp.endFrame();
     const r = G.renderer;

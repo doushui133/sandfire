@@ -104,12 +104,13 @@
   };
 
   // ---------------- local player ----------------
-  const FALL = 0.65, DEATHCAM = FALL + 2.5, ORBIT = 2;
+  const IMPACT = 0.15, FALL = 1.4, DEATHCAM = 3.2, ORBIT = 2;
   G.timeScale = 1;
   const P = G.Player = {
     agent: null, camY: 0, stepDist: 0, shadeT: 0, shadeTarget: 1,
     clock: 0, slowUntil: 0, orbit: null, specTarget: null, specY: 0, deathT: -99, killer: null,
-    death: { pos: new THREE.Vector3(), floor: 0, yaw0: 0, pitch0: 0 },
+    death: { pos: new THREE.Vector3(), dir: new THREE.Vector3(), pullFrom: new THREE.Vector3(), rotation: new THREE.Quaternion(),
+      yaw: 0, pitch: 0, roll: 0, fov: 74, force: 0, active: false },
   };
   const eye = new THREE.Vector3();
   const SLOTKEYS = { Digit1: 'primary', Digit2: 'pistol', Digit3: 'knife', Digit5: 'bomb' };
@@ -342,89 +343,175 @@
   };
   P.onDeath = function (killer) {
     const a = P.agent, d = P.death, cam = G.camera;
-    if (P.orbit) G.eyePos(a, d.pos);
-    else d.pos.copy(cam.position);
+    const hit = a.deathInfo || {};
+    if (!P.orbit && cameraClear(cam.position, 0.12)) d.pos.copy(cam.position);
+    else G.eyePos(a, d.pos);
+    if (!cameraClear(d.pos, 0.12)) d.pos.set(a.pos.x, a.pos.y + 1, a.pos.z);
+    d.yaw = P.orbit ? a.yaw : cam.rotation.y;
+    d.pitch = P.orbit ? a.pitch : cam.rotation.x;
+    d.fov = P.orbit ? 74 : cam.fov;
     P.orbit = null;
     P.deathT = P.clock;
-    P.slowUntil = P.clock + FALL;
-    G.timeScale = 0.35;
-    G.Audio.deathMix(true);
-    G.FX.deathGrade(1);
+    P.slowUntil = 0;
+    G.timeScale = 0.32;
+    d.active = true;
     P.killer = killer && killer !== a ? killer : null;
     P.specTarget = null;
-    d.floor = a.pos.y + 0.45;
-    d.yaw0 = a.yaw + a.recoilY * 0.5;
-    d.pitch0 = a.pitch + a.recoilP * 0.5;
+    d.dir.set(hit.dirx || 0, hit.diry || 0, hit.dirz || 0);
+    if (!d.dir.lengthSq() && P.killer) d.dir.subVectors(a.pos, P.killer.pos);
+    if (!d.dir.lengthSq()) d.dir.set(Math.sin(d.yaw), -0.35, Math.cos(d.yaw));
+    d.dir.normalize();
+    d.force = hit.head ? 1 : 0.65;
+    d.roll = (d.dir.x * Math.cos(d.yaw) - d.dir.z * Math.sin(d.yaw) < -0.04 ? -1 : 1) * d.force;
+    cameraGoal.copy(d.pos); cameraGoal.y -= 0.16;
+    placeCamera(d.pos, cameraGoal, d.pullFrom);
+    d.rotation.setFromEuler(deathEuler.set(d.pitch - 0.12, d.yaw, d.roll * 0.13, 'YXZ'));
+    G.Audio.deathMix(true);
+    G.FX.deathGrade(0.85);
+    G.FX.deathImpact(!!hit.head);
   };
+  function endDeathCam() {
+    P.death.active = false;
+    G.timeScale = 1;
+    G.FX.deathGrade(0);
+    G.FX.deathHighlight(null);
+    G.Audio.deathMix(false);
+    G.HUD.deathStage('');
+  }
   P.resetSpectate = function () {
-    G.timeScale = 1; P.slowUntil = 0; P.orbit = null;
+    endDeathCam();
+    P.slowUntil = 0; P.orbit = null;
     P.specTarget = null; P.deathT = -99; P.killer = null;
-    G.FX.deathGrade(0); G.Audio.deathMix(false); showBodies(null);
+    showBodies(null);
   };
   // the body you watch from the inside is not drawn
   function showBodies(hidden) { for (const x of G.Game.agents) if (x.rig) x.rig.hidden = x === hidden; }
   P.spectateTarget = function () {
     const t = P.specTarget;
-    return t && t.alive && P.clock - P.deathT >= DEATHCAM ? t : null;
+    return t && t.alive && !P.death.active ? t : null;
   };
   // living teammates in a fixed order; enemies only once the whole team is down
+  const pool = [];
+  const byId = (x, y) => x.id - y.id;
   function specPool(a) {
-    const alive = G.Game.agents.filter((x) => x.alive && x !== a);
-    const mates = alive.filter((x) => x.team === a.team);
-    return (mates.length ? mates : alive).sort((x, y) => x.id - y.id);
+    pool.length = 0;
+    let mates = false;
+    for (const x of G.Game.agents) {
+      if (!x.alive || x === a) continue;
+      if (!mates && x.team === a.team) { pool.length = 0; mates = true; }
+      if (!mates || x.team === a.team) pool.push(x);
+    }
+    return pool.sort(byId);
   }
-  const focus = new THREE.Vector3(), offset = new THREE.Vector3();
-  function watchPoint(point, angle, distance, height, fov) {
-    const cam = G.camera;
-    offset.set(Math.sin(angle) * distance, height, Math.cos(angle) * distance);
+  const focus = new THREE.Vector3(), offset = new THREE.Vector3(), cameraGoal = new THREE.Vector3();
+  const cameraBackup = new THREE.Vector3(), deathEuler = new THREE.Euler();
+  function cameraClear(p, margin) {
+    if (p.y < margin) return false;
+    const boxes = M.query(p.x - margin, p.z - margin, p.x + margin, p.z + margin);
+    for (const b of boxes) {
+      if (b.x0 < p.x + margin && b.x1 > p.x - margin && b.y0 < p.y + margin &&
+          b.y1 > p.y - margin && b.z0 < p.z + margin && b.z1 > p.z - margin) return false;
+    }
+    return true;
+  }
+  function placeCamera(point, goal, pos = G.camera.position) {
+    offset.subVectors(goal, point);
     const reach = offset.length();
+    if (reach < 0.001) { pos.copy(point); return 0; }
     offset.divideScalar(reach);
     const hit = M.raycast(point.x, point.y, point.z, offset.x, offset.y, offset.z, reach);
-    cam.position.copy(point).addScaledVector(offset, hit ? Math.max(0.025, hit.t - 0.18) : reach);
-    cam.lookAt(point); setFov(cam, fov);
-    G.Audio.updateListener(cam.position, G.yawTo(point.x - cam.position.x, point.z - cam.position.z));
+    let distance = hit ? Math.max(0, hit.t - 0.18) : reach;
+    pos.copy(point).addScaledVector(offset, distance);
+    while (distance > 0 && !cameraClear(pos, 0.12)) {
+      distance = Math.max(0, distance - 0.12);
+      pos.copy(point).addScaledVector(offset, distance);
+    }
+    return distance;
+  }
+  function watchPoint(point, angle, distance, height, fov, roll = 0, from = null, pull = 1) {
+    const cam = G.camera;
+    let reach = -1;
+    // Look along the wall when the intended side has no room.
+    for (let i = 0; i < 3; i++) {
+      const side = angle + (i === 0 ? 0 : i === 1 ? 1.35 : -1.35);
+      cameraGoal.set(point.x + Math.sin(side) * distance, point.y + height, point.z + Math.cos(side) * distance);
+      if (from) cameraGoal.lerp(from, 1 - pull);
+      const room = placeCamera(point, cameraGoal);
+      if (room > reach) { reach = room; cameraBackup.copy(cam.position); }
+      if (reach >= 0.65 * pull) break;
+    }
+    cam.position.copy(cameraBackup);
+    cam.lookAt(point);
+    cam.rotateZ(roll);
+    if (from) cam.quaternion.slerp(P.death.rotation, 1 - pull);
+    setFov(cam, fov);
+    G.Audio.updateListener(cam.position, cam.rotation.y);
+  }
+  function bodyFocus(agent, height) {
+    if (G.BotModel.ragdollPoint(agent, 1, focus)) {
+      focus.y = Math.max(0.13, focus.y);
+      if (cameraClear(focus, 0.12)) return;
+    }
+    focus.copy(agent.pos); focus.y += height - agent.crouch * 0.44;
   }
   // Sample after the ragdoll physics step so the camera follows the falling chest.
   P.orbitCamera = function () {
     const orbit = P.orbit;
     if (!orbit) return;
     const t = G.clamp(1 - (orbit.end - P.clock) / ORBIT, 0, 1);
-    if (!G.BotModel.ragdollPoint(orbit.victim, 1, focus)) {
-      focus.copy(orbit.victim.pos); focus.y += 0.75;
-    }
-    watchPoint(focus, orbit.yaw + t * 1.65, 2.5 + t * 0.55, 0.9, 56 + 5 * t);
+    bodyFocus(orbit.victim, 0.75);
+    watchPoint(focus, orbit.yaw + (1 - (1 - t) * (1 - t)) * 1.65, 2.2 + t * 0.85, 0.9, 54 + 7 * t, 0.05 * (1 - t));
   };
   function deathCam(since) {
     const cam = G.camera, d = P.death;
-    if (since < FALL) {
-      const t = G.clamp(since / FALL, 0, 1);
-      cam.position.copy(d.pos);
-      cam.position.y = G.lerp(d.pos.y, d.floor, t * t);
-      cam.rotation.set(d.pitch0 - t * 0.22, d.yaw0, 0.34 * t, 'YXZ');
-      setFov(cam, 74 - t * 5);
-      G.Audio.updateListener(cam.position, d.yaw0);
+    if (since < IMPACT) {
+      const t = since / IMPACT;
+      const kick = Math.pow(Math.sin(Math.PI * Math.pow(t, 0.45)), 0.85) * d.force;
+      cameraGoal.copy(d.pos).addScaledVector(d.dir, 0.22 * kick);
+      cameraGoal.y -= 0.16 * t;
+      placeCamera(d.pos, cameraGoal);
+      const side = d.dir.x * Math.cos(d.yaw) - d.dir.z * Math.sin(d.yaw);
+      cam.rotation.set(d.pitch + (d.dir.y * 0.18 - 0.09) * kick - 0.12 * t,
+        d.yaw - side * 0.25 * kick, d.roll * (0.24 * kick + 0.13 * t), 'YXZ');
+      setFov(cam, G.lerp(d.fov, 74, t) + 6 * kick);
+      G.Audio.updateListener(cam.position, cam.rotation.y);
+    } else if (since < FALL || !P.killer) {
+      const t = G.clamp((since - IMPACT) / (FALL - IMPACT), 0, 1);
+      const pull = G.clamp(t / 0.56, 0, 1), ease = pull * pull * (3 - 2 * pull);
+      bodyFocus(P.agent, 1.15);
+      watchPoint(focus, d.yaw + 0.65 + t * 0.92, 2.65 + t * 0.6, 0.55 + t * 0.6,
+        G.lerp(74, 63, ease), d.roll * (0.17 - t * 0.05), ease < 1 ? d.pullFrom : null, ease);
     } else {
-      const subject = P.killer || P.agent;
-      if (!G.BotModel.ragdollPoint(subject, 1, focus)) {
-        focus.copy(subject.pos); focus.y += 1.34 - subject.crouch * 0.44;
-      }
-      const t = G.clamp((since - FALL) / 2.5, 0, 1);
+      bodyFocus(P.killer, 1.18);
+      const t = G.clamp((since - FALL) / (DEATHCAM - FALL), 0, 1);
       const angle = Math.atan2(d.pos.x - focus.x, d.pos.z - focus.z);
-      watchPoint(focus, angle + 0.24, 3.8 - 0.5 * t, 0.35, 63 - 21 * t);
+      watchPoint(focus, angle + 0.16 + t * 0.18, 3.55 - 0.5 * t, 0.34 + 0.3 * (1 - t), 60 - 14 * t);
     }
     showBodies(null);
   }
   // first-person view of a living player; changing who you watch is an instant cut
   function spectate(dt) {
-    const a = P.agent, cam = G.camera, since = P.clock - P.deathT;
-    G.FX.deathGrade(G.clamp((DEATHCAM - since) / 0.55, 0, 1));
-    if (since >= DEATHCAM) G.Audio.deathMix(false);
-    const pool = specPool(a);
-    if (since < DEATHCAM || !pool.length) { deathCam(since); G.HUD.spectating(null); return; }
+    const a = P.agent, cam = G.camera, since = P.clock - P.deathT, inp = G.input;
+    if (P.death.active) {
+      if (since < DEATHCAM && !inp.leftPressed && !inp.rightPressed) {
+        const recovery = G.clamp((since - IMPACT) / (FALL - IMPACT), 0, 1);
+        G.timeScale = G.lerp(0.32, 1, recovery * recovery * (3 - 2 * recovery));
+        const reveal = since >= FALL;
+        G.FX.deathGrade(reveal ? Math.min(0.38, (DEATHCAM - since) * 1.5) : 0.85);
+        G.FX.deathHighlight(reveal ? P.killer : null);
+        G.HUD.deathStage(reveal ? 'killer' : 'fall');
+        deathCam(since);
+        return;
+      }
+      endDeathCam();
+    }
+    specPool(a);
+    if (!pool.length) { G.HUD.spectating(null); return; }
     let t = P.specTarget, cut = false;
     if (!t || !t.alive || pool.indexOf(t) < 0) {
       const from = t ? t.pos : P.death.pos;   // whoever is closest to the action you were watching
-      t = pool.reduce((b, x) => (G.dist2D(x.pos, from) < G.dist2D(b.pos, from) ? x : b), pool[0]);
+      t = pool[0];
+      for (const x of pool) if (G.dist2D(x.pos, from) < G.dist2D(t.pos, from)) t = x;
       cut = true;
     } else if (G.input.leftPressed && pool.length > 1) {
       t = pool[(pool.indexOf(t) + 1) % pool.length];

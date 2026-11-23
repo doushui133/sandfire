@@ -14,7 +14,7 @@
     ['hud', 'radar', 'scoreAtk', 'scoreDef', 'timer', 'aliveAtk', 'aliveDef', 'killfeed', 'hp', 'armor', 'armorIco', 'armorMark', 'hpBar', 'armorBar', 'vitHp', 'money', 'moneyDelta', 'clip', 'reserve', 'ammoIcon', 'slots',
       'crosshair', 'chL', 'chR', 'chT', 'chB', 'chDot', 'hitmarker', 'hitFx', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
       'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner',
-      'mapOverlay', 'mapFull', 'mapClose', 'nadeWheel', 'nadeCharge'].forEach((k) => (el[k] = $(k)));
+      'mapOverlay', 'mapFull', 'mapClose', 'nadeWheel', 'nadeCharge', 'killPips', 'specName'].forEach((k) => (el[k] = $(k)));
     rctx = el.radar.getContext('2d');
     fctx = el.mapFull ? el.mapFull.getContext('2d') : null;
     if (el.radar) el.radar.addEventListener('pointerup', (e) => {
@@ -95,9 +95,8 @@
     el.msgTitle.style.color = '';
   };
   function clearKills() {
-    killQ = [];
-    killHold = false;
-    killArm = false;
+    killQ.length = 0;
+    killPhase = '';
     if (killTimer) { clearTimeout(killTimer); killTimer = 0; }
     if (el.killBanner) el.killBanner.hidden = true;
   }
@@ -106,8 +105,7 @@
     const p = G.Player.agent;
     const sub = hasBomb ? '你携带炸弹 · 前往 A 点或 B 点安放' : p.team === 'atk' ? '进攻：掩护队友安放炸弹' : '防守：守住 A、B 两个包点';
     H.message('第 ' + round + ' 回合', sub, G.Game.CFG.freeze);
-    el.death.hidden = true;
-    if (el.deathCard) el.deathCard.hidden = true;
+    H.deathStage('');
     clearKills();
   };
   H.roundEnd = function (winner, reason) {
@@ -116,7 +114,6 @@
     H.message((mine ? '我方获胜 · ' : '敌方获胜 · ') + TEAM[winner], why, G.Game.CFG.endDelay);
     el.msgTitle.style.color = winner === 'atk' ? 'var(--atk)' : 'var(--def)';
     H.toggleBuy(false);
-    clearKills();
   };
   H.matchOver = function (winner) {
     const p = G.Player.agent, s = G.Game.score;
@@ -190,105 +187,97 @@
   };
 
   // ---------- kill / death moments ----------
-  let killQ = [], killHold = false, killTimer = 0, killArm = false;
-  function badgeSVG(tier) {
-    const n = tier, gap = n > 3 ? 6 : 8, start = 36 - (n - 1) * gap * 0.5;
-    let chev = '';
-    for (let i = 0; i < n; i++) {
-      const y = start + i * gap;
-      chev += '<path d="M22 ' + y.toFixed(1) + ' L32 ' + (y + 5).toFixed(1) + ' L42 ' + y.toFixed(1) + '" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
-    }
-    return '<svg viewBox="0 0 64 72" aria-hidden="true"><path d="M32 4 L56 15 V38 C56 52 32 67 32 67 C32 67 8 52 8 38 V15 Z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2"/>' + chev + '</svg>';
-  }
+  const killQ = [];
+  let killPhase = '', killTimer = 0, killStarted = 0, killUntil = 0;
+  const skullPip = '<svg viewBox="0 0 48 48"><use href="#km-skull"/></svg>';
   function paintKill(info, fast) {
-    let tier = info.multi | 0;
-    if (info.ace) tier = 5;
-    if (tier < 1) tier = 1;
-    if (tier > 5) tier = 5;
-    const title = (info.ace || tier === 5) ? '全歼' : MULTI[tier];
-    const tags = [];
-    if (info.headshot) tags.push('爆头');
-    if (info.knife) tags.push('刀杀');
-    if (info.grenade) tags.push('雷杀');
-    if (info.wallbang) tags.push('穿墙');
-    if (info.first) tags.push('首杀');
-    if (info.last) tags.push('终结');
-    if ((info.streak | 0) > 1) tags.push('连击 ' + (info.streak | 0));
-    const victim = agentName(info.victim);
-    const wid = weaponId(info.weapon);
-    const wlabel = weaponLabel(info.weapon);
-    let tagsHtml = '';
-    for (let i = 0; i < tags.length; i++) tagsHtml += '<span class="mark">' + tags[i] + '</span>';
-    el.killBanner.innerHTML =
-      '<div class="kb-badge">' + badgeSVG(tier) + '</div>' +
-      '<div class="kb-title">' + title + '</div>' +
-      '<div class="kb-sub">' + ico(wid, 'wico-sm') + '<span>' + esc(victim) + '</span>' +
-      (wlabel ? '<span class="kb-w">' + esc(wlabel) + '</span>' : '') + '</div>' +
-      (tagsHtml ? '<div class="kb-tags">' + tagsHtml + '</div>' : '');
+    const tier = info.ace ? 5 : G.clamp(info.multi | 0, 1, 5);
+    const label = [MULTI[tier], agentName(info.victim), weaponLabel(info.weapon)];
+    let classes = 'kill-marker' + (fast ? ' fast' : '') + (tier === 5 ? ' ace' : '');
+    if (info.headshot) { classes += ' headshot'; label.push('爆头'); }
+    if (info.knife) { classes += ' knife'; label.push('刀杀'); }
+    if (info.grenade) { classes += ' grenade'; label.push('雷杀'); }
+    if (info.wallbang) { classes += ' wallbang'; label.push('穿墙'); }
+    if (info.first) label.push('首杀');
+    if (info.last) label.push('终结');
+    if (info.streak > 1) label.push('连击 ' + info.streak);
+    el.killPips.innerHTML = skullPip.repeat(tier);
+    el.killBanner.setAttribute('aria-label', label.filter(Boolean).join('，'));
+    el.killBanner.className = classes;
     el.killBanner.hidden = false;
-    el.killBanner.className = 'kill-banner t' + tier + (fast ? ' fast' : '');
-    void el.killBanner.offsetWidth;
-    el.killBanner.classList.add('pop');
+  }
+  function scheduleKillExit(until) {
+    killUntil = until;
+    clearTimeout(killTimer);
+    killTimer = setTimeout(() => {
+      killPhase = 'leave';
+      el.killBanner.classList.add('leaving');
+      killTimer = setTimeout(playKill, 160);
+    }, Math.max(0, until - G.now()));
   }
   function playKill() {
-    if (!el.killBanner || !killQ.length) { killHold = false; if (el.killBanner) el.killBanner.hidden = true; return; }
+    killTimer = 0;
+    if (!killQ.length) { clearKills(); return; }
     const info = killQ.shift();
     const fast = killQ.length > 0;
     paintKill(info, fast);
-    killHold = true;
-    killTimer = setTimeout(() => { killTimer = 0; playKill(); }, fast ? 950 : 1900);
+    killPhase = 'hold';
+    killStarted = G.now();
+    scheduleKillExit(killStarted + (fast ? 450 : 1600));
   }
   H.killFx = function (info) {
     if (!info || !el || !el.killBanner) return;
-    while (killQ.length > 5) killQ.shift();
+    if (killQ.length >= 5) killQ.shift();
     killQ.push(info);
-    if (killHold) return;
-    if (killArm) return;
-    killArm = true;
-    const kick = () => { killArm = false; if (!killHold) playKill(); };
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(kick);
-    else kick();
-  };
-  function fillDeath(info) {
-    if (!el.deathCard) return;
-    const killer = info.killer;
-    const name = agentName(killer);
-    const team = killer && killer.team ? killer.team : '';
-    const wid = weaponId(info.weapon);
-    const label = weaponLabel(info.weapon);
-    const hp = info.killerHp != null ? info.killerHp : (killer && typeof killer.hp === 'number' ? killer.hp : null);
-    let html = '<div class="dc-title">你已阵亡</div>';
-    if (name || wid || label) {
-      html += '<div class="dc-card' + (team ? ' team-' + team : '') + '"><div class="dc-row">' + ico(wid, 'wico-lg') +
-        '<div><b class="' + (team ? 't-' + team : '') + '">' + esc(name || '未知') + '</b><div class="dc-w">' + esc(label) +
-        (info.headshot ? ' <span class="mark hs">爆头</span>' : '') + '</div></div></div>';
-      if (hp != null) {
-        const n = Math.max(0, Math.round(hp));
-        html += '<div class="dc-hp"><span>剩余</span><b class="num">' + n + '</b><s><i style="width:' + Math.max(0, Math.min(100, n)) + '%"></i></s></div>';
-      }
-      html += '</div>';
+    if (!killPhase) playKill();
+    else if (killPhase === 'hold') {
+      const until = Math.max(killStarted + 450, G.now() + 120);
+      if (until < killUntil) scheduleKillExit(until);
     }
-    el.deathCard.innerHTML = html;
-    el.deathCard.hidden = false;
-    el.deathCard.classList.remove('pop');
-    void el.deathCard.offsetWidth;
-    el.deathCard.classList.add('pop');
+  };
+  let deathInfo, deathActor, deathStage = '', deathHp, specActor, specTouch;
+  function fillDeath(info, hp) {
+    const name = agentName(info.killer);
+    const team = deathActor ? deathActor.team : '';
+    const wid = weaponId(info.weapon);
+    const head = info.headshot ? '<svg class="dc-head" viewBox="0 0 24 24" role="img" aria-label="爆头"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor"/><path d="M12 1v7m0 8v7M1 12h7m8 0h7" stroke="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>' : '';
+    el.deathCard.innerHTML = '<div class="dc-card"><div class="dc-weapon" title="' + esc(weaponLabel(info.weapon)) + '">' +
+      ico(wid, 'wico-lg') + '</div><div class="dc-details"><div class="dc-row"><b class="' + (team ? 't-' + team : '') +
+      '">' + esc(name || '你已阵亡') + '</b>' + head + '</div>' +
+      (hp == null ? '' : '<div class="dc-hp" aria-label="剩余生命 ' + hp + '"><span aria-hidden="true">+</span><s><i style="width:' +
+        Math.min(100, hp) + '%"></i></s><b class="num">' + hp + '</b></div>') + '</div></div>';
   }
   H.deathFx = function (info) {
-    if (!el || !el.deathCard) return;
-    info = info || {};
-    fillDeath({ killer: info.killer, weapon: info.weapon, headshot: !!info.headshot, killerHp: info.killerHp });
+    if (info) deathInfo = info;
   };
   H.died = function (k, wname, head) {
     if (G.Touch.enabled) G.Touch.reset();
-    fillDeath({ killer: k, weapon: wname, headshot: !!head, killerHp: k && typeof k.hp === 'number' ? k.hp : null });
-    el.death.innerHTML = '<small id="specName">' + (G.Touch.enabled ? '轻点右侧切换观察队友' : '左键切换观察队友') + '</small>';
-    el.death.hidden = false;
+    deathActor = k && k !== G.Player.agent ? k : null;
+    deathInfo = { killer: k, weapon: wname, headshot: !!head };
+    H.deathStage('fall');
     H.toggleBuy(false);
   };
+  H.deathStage = function (stage) {
+    if (!el) return;
+    if (deathStage !== stage) {
+      deathStage = stage;
+      if (!stage) { deathInfo = deathActor = specActor = null; }
+      el.deathCard.hidden = stage !== 'killer' || !deathInfo;
+      el.death.hidden = stage !== 'fall' && stage !== 'killer';
+      if (!el.death.hidden) el.specName.textContent = G.Touch.enabled ? '轻点跳过' : '点击跳过';
+      deathHp = undefined;
+    }
+    if (stage !== 'killer' || !deathInfo) return;
+    const rawHp = deathActor ? deathActor.hp : deathInfo.killer !== '爆炸' ? deathInfo.killerHp : null;
+    const hp = Number.isFinite(rawHp) ? Math.max(0, Math.round(rawHp)) : null;
+    if (hp !== deathHp) { deathHp = hp; fillDeath(deathInfo, hp); }
+  };
   H.spectating = function (t) {
-    const s = $('specName'), txt = t ? '正在观察：' + t.name + (G.Touch.enabled ? ' · 轻点右侧切换' : ' · 左键切换') : '';
-    if (s && s.textContent !== txt) s.textContent = txt;
+    if (el.death.hidden === !!t) el.death.hidden = !t;
+    if (specActor === t && specTouch === G.Touch.enabled) return;
+    specActor = t;
+    specTouch = G.Touch.enabled;
+    if (t) el.specName.textContent = '正在观察：' + t.name + (specTouch ? ' · 轻点切换' : ' · 左键切换');
   };
   // glow on the screen edge while the fallback cursor turns the view
   H.edge = function (e) {

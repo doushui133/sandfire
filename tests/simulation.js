@@ -696,7 +696,7 @@ field(); ally.alive=false; me.pos.copy(cover); me.pos.x-=2;
 foe.pos.copy(cover); foe.pos.x+=2; foe.hp=1;
 me.yaw=-Math.PI/2; me.pitch=Math.atan2(1.18-G.eyeHeight(0),4);
 me.inv.primary=W.item('ar7'); me.cur='primary'; me.inacc=me.recoilP=me.recoilY=0;
-const killEvents=[];
+const killEvents=[], hudKillFx=G.HUD.killFx;
 G.HUD.killFx=info=>killEvents.push(info);
 W.update(me,.016,{fire:true});
 assert(!foe.alive && killEvents.pop().wallbang);
@@ -708,7 +708,7 @@ for (const id of ['r90','s40']) for (const range of [1,25,220]) {
   W.applyDamage(foe,me,W.defs[id],'body',range,0,-1);
   assert(!foe.alive, id+' armored body');
 }
-delete G.HUD.killFx;
+G.HUD.killFx=hudKillFx;
 console.log('Crate penetration kill and armored sniper body / leg boundaries passed');
 
 // Exercise the original third-person holding-pose lookup as well as the new model builders.
@@ -887,8 +887,11 @@ function botRoundChecks() {
 async function captureChecks() {
   class Renderer {
     constructor(){ this.domElement=new Element(); this.capabilities={isWebGL2:true,maxSamples:4,getMaxAnisotropy:()=>16}; this.info={autoReset:true,render:{calls:0,triangles:0},memory:{},reset:noop}; this.shadowMap={}; }
+    setPixelRatio(ratio) { this.ratio=ratio; }
+    getPixelRatio() { return this.ratio; }
+    render() { this.draws=(this.draws || 0)+1; }
   }
-  for (const method of ['setPixelRatio','setSize','setClearColor','compile','render','clear','clearDepth','setRenderTarget','setViewport','setScissor','setScissorTest','dispose','initTexture']) Renderer.prototype[method]=noop;
+  for (const method of ['setSize','setClearColor','compile','clear','clearDepth','setRenderTarget','setViewport','setScissor','setScissorTest','dispose','initTexture']) Renderer.prototype[method]=noop;
   THREE.WebGLRenderer=Renderer; G.Gfx.detect=()=>({webgl2:true,soft:true});
   G.Gfx.loadLightmaps=G.Gfx.buildShadow=G.Gfx.makeSky=noop;
   G.MapMesh={build:noop, updateDetail:noop}; G.MapGeo.build=()=>({}); G.Map.buildRadar=()=>elem('radar');
@@ -914,12 +917,18 @@ async function captureChecks() {
   G.Touch.enabled=false; G.paused=oldPause; G.gpu=oldGpu; G.Gfx.preset=oldPreset;
   Object.assign(global,{innerWidth:740,innerHeight:360,devicePixelRatio:1}); G.setRenderScale(1);
   console.log('Tablet starts at 1,099,254 render pixels, downshifts within 870 ms and recovers on faster frames');
+  elem('btnQuit').emit('click');
+  const ratio=G.renderer.getPixelRatio(), draws=G.renderer.draws;
+  G.frame(0,0); G.frame(0,.1);
+  assert.equal(G.renderer.draws,draws+1);
+  assert(G.renderer.getPixelRatio()<ratio);
   let clock=10000, pointerCalls=0, fullCalls=0, keyCalls=0;
   const canvas=G.renderer.domElement, overlay=elem('pause'), rootEl=document.documentElement;
   G.now=()=>clock; G.settings.fullscreen=true; G.embedded=false;
   canvas.requestPointerLock=()=>{pointerCalls++; throw Error('test denial');};
   rootEl.requestFullscreen=()=>{fullCalls++; return Promise.reject(Error('windowed'));};
   G.startMatch('def'); assert(G.paused && !overlay.hidden && !G.input.freeLook);
+  G.frame(0,.2); assert.equal(G.renderer.getPixelRatio(),ratio);
   overlay.emit('click',{target:overlay}); assert.equal(pointerCalls,4); assert.equal(fullCalls,2);
   assert(G.paused && !G.input.freeLook);
   canvas.requestPointerLock=()=>{pointerCalls++;};
@@ -945,8 +954,33 @@ async function captureChecks() {
 }
 function momentChecks() {
   const p=G.Player, kills=[], hits=[], deaths=[], banners=[], hudSteps=[];
+  const timers={set:global.setTimeout,clear:global.clearTimeout,now:G.now};
+  let time=0, pending;
+  global.setTimeout=(fn,delay)=>(pending={fn,time:time+delay});
+  global.clearTimeout=id=>{ if (pending===id) pending=null; };
+  G.now=()=>time;
+  function nextTimer() {
+    const tick=pending;
+    pending=null; time=tick.time; tick.fn();
+  }
+  try {
+    G.HUD.killFx({multi:1,wallbang:true});
+    assert(elem('killBanner').className.includes('wallbang') && pending.time===1600);
+    G.HUD.killFx({multi:2,knife:true});
+    G.HUD.killFx({multi:5,ace:true,headshot:true});
+    assert(pending.time===450 && elem('killBanner').className.includes('wallbang'));
+    nextTimer(); nextTimer();
+    assert(elem('killBanner').className.includes('knife') && elem('killPips').innerHTML.match(/<svg/g).length===2);
+    nextTimer(); nextTimer();
+    assert(elem('killBanner').className.includes('ace headshot') && elem('killPips').innerHTML.match(/<svg/g).length===5);
+    nextTimer(); nextTimer(); assert(elem('killBanner').hidden);
+  } finally {
+    global.setTimeout=timers.set; global.clearTimeout=timers.clear; G.now=timers.now;
+  }
   G.HUD.killFx=info=>kills.push(info); G.HUD.hitFx=info=>hits.push(info);
-  G.HUD.deathFx=info=>deaths.push(info); G.HUD.roundEnd=(...args)=>banners.push(args);
+  const deathFx=G.HUD.deathFx;
+  G.HUD.deathFx=info=>{ deaths.push(info); deathFx(info); };
+  G.HUD.roundEnd=(...args)=>banners.push(args);
   const hudUpdate=G.HUD.update;
   G.HUD.update=dt=>{ hudSteps.push(dt); hudUpdate(dt); };
   let t=0;
@@ -996,17 +1030,41 @@ function momentChecks() {
   game.newRound(); assert.equal(G.timeScale,1);
 
   advance(.05);
-  const height=G.camera.position.y;
-  game.damage(player,foes[0],200,{weapon:'fa2',head:true});
+  const impactFrom=G.camera.position.clone();
+  game.damage(player,foes[0],200,{weapon:'fa2',head:true,dirx:1});
   assert.deepEqual(deaths.pop(),{killer:foes[0].name,weapon:'fa2',headshot:true,killerHp:foes[0].hp});
-  advance(.3);
-  assert(G.timeScale===.35 && G.camera.position.y<height && G.camera.rotation.z>.1);
+  advance(.05);
+  assert(G.timeScale===.32 && G.camera.position.x>impactFrom.x && Math.abs(G.camera.rotation.z)>.1);
+  assert(elem('deathCard').hidden && !elem('death').hidden);
   G.paused=true; advance(.3); assert.equal(G.timeScale,1);
-  G.paused=false; advance(.4);
-  const wide=G.camera.fov;
-  assert(G.timeScale===1 && !p.spectateTarget() && G.renderer.domElement.style.filter);
-  advance(2.2); assert(G.camera.fov<wide && !p.spectateTarget());
-  advance(.3); assert(p.spectateTarget() && G.camera.fov===74 && !G.renderer.domElement.style.filter);
+  G.paused=false; advance(.85);
+  assert(G.timeScale>.32 && G.timeScale<1 && !p.spectateTarget() && G.renderer.domElement.style.filter);
+  assert(player.rig.rd && G.camera.position.distanceTo(impactFrom)>1 && elem('deathCard').hidden);
+  advance(.65);
+  const wide=G.camera.fov, killerMesh=foes[0].rig.mesh;
+  assert(G.timeScale===1 && !elem('deathCard').hidden && killerMesh.children.some(o=>o.isSkinnedMesh));
+  game.damage(foes[0],mate,200,{weapon:'p10'});
+  advance(1.35);
+  assert(foes[0].rig.rd && G.camera.fov<wide && !p.spectateTarget() && elem('deathCard').innerHTML.includes('剩余生命 0'));
+  advance(.4);
+  assert(p.spectateTarget() && G.camera.fov===74 && !G.renderer.domElement.style.filter && elem('deathCard').hidden);
+  assert(!killerMesh.children.some(o=>o.isSkinnedMesh));
+  game.newRound();
+  const wall=G.Map.query(cover.x-.1,cover.z-.1,cover.x+.1,cover.z+.1).find(b=>b.y1>1);
+  assert(wall);
+  player.pos.set(wall.x0-.32,0,(wall.z0+wall.z1)/2);
+  player.yaw=Math.PI/2-.65;
+  advance(.05);
+  game.damage(player,null,200,{weapon:'bomb'});
+  for (let i=0;i<15;i++) {
+    advance(.1);
+    const {x,y,z}=G.camera.position;
+    assert(!G.Map.query(x-.06,z-.06,x+.06,z+.06).some(b=>
+      x+.06>b.x0 && x-.06<b.x1 && y+.06>b.y0 && y-.06<b.y1 && z+.06>b.z0 && z-.06<b.z1));
+  }
+  assert(!p.killer && !elem('deathCard').hidden && !p.spectateTarget());
+  G.input.rightPressed=true; advance(.05);
+  assert(p.spectateTarget() && G.timeScale===1 && elem('deathCard').hidden);
   game.newRound(); game.phase='end'; game.phaseT=.001; game.over='atk';
   game.damage(player,null,200,{weapon:'bomb'}); advance(.05);
   assert(game.phase==='over' && G.timeScale===1 && !G.renderer.domElement.style.filter);
@@ -1014,7 +1072,7 @@ function momentChecks() {
   game.damage(p.agent,null,200,{weapon:'bomb'});
   elem('btnQuit').emit('click');
   assert(G.timeScale===1 && !p.orbit && !G.renderer.domElement.style.filter);
-  console.log('Kill tiers, HUD payloads, wall-clock window, orbit before banner, planted-bomb control, death fall, killer zoom, spectating, pause and menu cleanup passed');
+  console.log('Kill tiers, HUD payloads, last-kill orbit, death impact and pullback, killer outline, bomb death, skip, pause and menu still frame passed');
 }
 mapChecks();
 botRoundChecks();

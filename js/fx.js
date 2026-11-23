@@ -229,18 +229,47 @@
   }
   const dustCol = [0.62, 0.52, 0.4];
   const caps = [];
-  let capGeometry, capMaterial, deathVeil, grade = 0;
+  let capGeometry, capMaterial, deathVeil, deathFlash, outline, grade = 0;
   FX.deathGrade = function (amount) {
+    amount = Math.round(amount * 32) / 32;
     if (grade === amount) return;
     grade = amount;
     const canvas = G.renderer && G.renderer.domElement;
     if (canvas) canvas.style.filter = amount ? 'saturate(' + (1 - 0.88 * amount) + ')' : '';
     if (!deathVeil && amount) {
       deathVeil = document.createElement('div');
-      deathVeil.style.cssText = 'position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse,transparent 32%,rgba(116,5,9,.78) 100%)';
+      deathVeil.className = 'death-veil';
       document.getElementById('game').appendChild(deathVeil);
     }
     if (deathVeil) { deathVeil.hidden = !amount; deathVeil.style.opacity = amount; }
+    if (!amount && deathFlash) deathFlash.hidden = true;
+  };
+  FX.deathImpact = function (headshot) {
+    if (!deathFlash) {
+      deathFlash = document.createElement('div');
+      document.getElementById('game').appendChild(deathFlash);
+    }
+    deathFlash.className = 'death-impact' + (headshot ? ' headshot' : '');
+    deathFlash.hidden = false;
+  };
+  FX.deathHighlight = function (subject) {
+    const mesh = subject && subject.rig && subject.rig.mesh;
+    if (!mesh) {
+      if (outline && outline.parent) outline.parent.remove(outline);
+      return;
+    }
+    if (outline && outline.parent === mesh && outline.geometry === mesh.geometry) return;
+    if (!outline) {
+      const material = new THREE.MeshBasicMaterial({ color: 0xffc777, side: THREE.BackSide, toneMapped: false });
+      material.onBeforeCompile = shader => {
+        shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = position + normalize(normal) * 0.035;');
+      };
+      outline = new THREE.SkinnedMesh(mesh.geometry, material);
+      outline.frustumCulled = false;
+    }
+    outline.geometry = mesh.geometry;
+    outline.bind(mesh.skeleton, mesh.bindMatrix);
+    mesh.add(outline);
   };
   FX.deathBurst = function (a, dir, head) {
     const y = a.pos.y + (head ? 1.63 : 1.16) - a.crouch * 0.45;
