@@ -369,7 +369,7 @@
     flash2.rotation.set(0, Math.PI / 2, Math.random() * 0.4 - 0.2);
     G.FX.shell(VM.ejectWorld(), d.model);
   };
-  VM.onThrow = function (id) { st.thrown = id; st.thrownAt = G.time; };
+  VM.onThrow = function (id, mode) { st.thrown = id; st.throwMode = mode; st.thrownAt = G.time; };
   VM.onKnife = function (heavy) { st.swingT = 0; st.heavy = heavy; };
   VM.onReload = function (dur) { st.reloadT = 0; st.reloadDur = dur; };
   VM.onSwitch = function () { st.drawT = 0; st.reloadT = -1; };
@@ -449,9 +449,14 @@
     }
     if (id === 'l60' && st.reloadT>=0) rz+=0.32*Math.sin(st.reloadT*Math.PI);
     if (G.Weapons.defs[id] && G.Weapons.defs[id].slot==='grenade') {
-      const pull=p.primed ? 1 : 0, swing=throwing ? (G.time-st.thrownAt)/0.28 : 0;
-      rx+=pull*.44-swing*1.18; y+=pull*.025+swing*.06; z-=swing*.17;
-      magMesh.position.set(-pull*.06,pull*.026,0); magMesh.visible=!throwing;
+      const primeAge = p.chargeAt === undefined ? 0.16 : G.time - p.chargeAt;
+      const pin = p.primed ? G.clamp(primeAge / 0.16, 0, 1) : 0;
+      const pull = pin * (2 - pin), windup = p.primed ? p.throwPower || 0 : 0;
+      const swing = throwing ? (G.time - st.thrownAt) / 0.28 : 0, lob = st.throwMode === 2;
+      rx += pull * 0.28 + windup * 0.2 + swing * (lob ? 0.8 : -1.18);
+      y += pull * 0.025 + swing * (lob ? -0.05 : 0.06);
+      z += windup * 0.035 - swing * 0.17;
+      if (magMesh) { magMesh.position.set(-pull * 0.075, pull * 0.04, 0); magMesh.visible = !throwing; }
       gunMesh.visible=!throwing || swing<0.26;
     } else gunMesh.visible=true;
     if (st.swingT >= 0) {

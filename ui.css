@@ -120,9 +120,37 @@
 #ammo.reloading #ammoIcon { opacity: .4; }
 .slot-key { font-style: normal; font-family: var(--num); font-variant-numeric: tabular-nums; color: var(--sun); min-width: 12px; font-size: 12px; }
 .slot-name { font-style: normal; }
-.nade-chip { display: inline-flex; align-items: center; gap: 1px; margin-right: 3px; color: var(--muted); }
-.nade-chip b { font-weight: 600; font-size: .85em; }
-.nade-chip.selected { color: var(--sand); }
+.nade-chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 3px; color: var(--muted); border: 1px solid transparent; border-radius: 3px; }
+.nade-chip b { font-weight: 600; font-size: .85em; white-space: nowrap; }
+.nade-chip.selected { color: var(--text); background: #5a3b1f; border-color: var(--sun); }
+.nade-chip kbd { color: var(--sand); font: 10px var(--num); }
+.nade-glyph { font-size: 12px; font-style: normal; color: var(--sand); }
+#slots .nade-chip .wico-sm { width: 24px; }
+#nadeCharge {
+  position: absolute; left: 50%; top: 50%; width: 66px; height: 66px; transform: translate(-50%, -50%);
+  background: conic-gradient(from 306deg, var(--sun) 0deg var(--charge, 0deg), #382e21 var(--charge, 0deg) 108deg, transparent 108deg);
+  -webkit-mask-image: radial-gradient(circle closest-side, transparent 80%, #000 84% 94%, transparent 98%);
+  mask-image: radial-gradient(circle closest-side, transparent 80%, #000 84% 94%, transparent 98%);
+}
+#nadeWheel {
+  position: absolute; width: 236px; height: 236px; transform: translate(-50%, -50%);
+  display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line);
+  background: #16120ded; box-shadow: var(--shadow);
+}
+.nade-wheel-caption { color: var(--sand); font-size: 11px; white-space: nowrap; }
+.nade-wheel-caption kbd { color: var(--sun); }
+.nade-wheel-item {
+  position: absolute; left: calc(50% + var(--x)); top: calc(50% + var(--y)); width: 66px;
+  transform: translate(-50%, -50%); padding: 5px 2px; text-align: center; color: var(--sand);
+  border: 1px solid var(--line); border-radius: 5px; background: #261e15; font-size: 11px;
+}
+.nade-wheel-item .wico { width: 24px; height: 16px; vertical-align: middle; }
+.nade-wheel-item b { margin-left: 3px; }
+.nade-wheel-item small { display: block; font-size: 10px; margin-top: 3px; }
+#nadeWheel[data-choice="0"] [data-index="0"],
+#nadeWheel[data-choice="1"] [data-index="1"],
+#nadeWheel[data-choice="2"] [data-index="2"],
+#nadeWheel[data-choice="3"] [data-index="3"] { color: var(--text); border-color: var(--sun); background: #5a3b1f; }
 #slots .wico-sm { width: 40px; height: 16px; }
 
 .bomb-stat {
@@ -259,11 +287,11 @@ table.sb tr.me td:first-child { box-shadow: inset 2px 0 0 var(--sun); }
 .touch #slots .slot-key { position: absolute; left: 2px; top: 0; min-width: 0; font-size: 8px; }
 .touch #slots .wico, .touch #slots .wico-sm { width: 26px; height: 11px; }
 .touch #slots .slot-name { font-size: 9px; line-height: 1.1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.touch #slots .nade-chip { margin-right: 1px; }
+.touch #slots .nade-chip { flex-direction: column; gap: 1px; padding: 1px; }
 .touch #slots .nade-chip b { font-size: 8px; }
-.touch #slots [data-slot=grenade] { flex-direction: row; flex-wrap: nowrap; width: auto; max-width: 76px; height: 46px; overflow: hidden; }
-.touch #slots [data-slot=grenade] .wico,
-.touch #slots [data-slot=grenade] .wico-sm { width: 14px; height: 10px; }
+.touch #slots [data-slot=grenade] { flex: 0 0 auto; flex-direction: row; gap: 1px; width: auto; max-width: 82px; padding: 8px 2px 2px; }
+.touch #slots .nade-chip .wico-sm { width: 13px; height: 11px; }
+.touch #slots .nade-glyph { font-size: 9px; }
 .touch .bomb-stat { font-size: 9px; letter-spacing: 0; padding: 0 3px; }
 .touch #buymenu .slab { padding: 8px 10px; }
 .touch #buymenu .bm-head { margin-bottom: 4px; }

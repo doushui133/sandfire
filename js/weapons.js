@@ -41,9 +41,31 @@
     W.defs[id] = { name, price, icon, team, slot:'grenade', speed:6, limit:id === 'flash' ? 2 : 1, kill:300 };
   });
   W.grenadeCount = (a) => W.grenades.reduce((n, id) => n + (a.nades[id] || 0), 0);
+  W.grenadeList = function (a) {
+    const list = [];
+    for (const id of W.grenades) {
+      const count = a.nades[id];
+      if (count > 0) list.push({ id, count, name: W.defs[id].name });
+    }
+    return list;
+  };
+  W.selectGrenade = function (a, id) {
+    if (!W.grenades.includes(id) || !(a.nades[id] > 0)) return false;
+    const selected = a.inv.grenade;
+    if (a.cur !== 'grenade') {
+      if (!selected || selected.id !== id) a.inv.grenade = W.item(id);
+      return W.switchTo(a, 'grenade');
+    }
+    if (selected && selected.id === id) return true;
+    G.Nades.cancel(a);
+    a.inv.grenade = W.item(id);
+    if (a.isPlayer) { G.Audio.click('switch'); if (G.VM) G.VM.onSwitch(); }
+    return true;
+  };
   W.canCarry = function (a, id) {
     const fire = id === 'molotov' || id === 'incendiary';
-    return (a.nades[id] || 0) < W.defs[id].limit && W.grenadeCount(a) < 4 && !(fire && (a.nades.molotov || a.nades.incendiary));
+    return W.grenades.includes(id) && (a.nades[id] || 0) < W.defs[id].limit &&
+      W.grenadeCount(a) < 4 && !(fire && (a.nades.molotov || a.nades.incendiary));
   };
   W.addGrenade = function (a, id) {
     if (!W.canCarry(a,id)) return false;
@@ -327,11 +349,11 @@
       const i = W.grenades.indexOf(a.inv.grenade.id);
       for (let n = 1; n < W.grenades.length; n++) {
         const id = W.grenades[(i+n) % W.grenades.length];
-        if (a.nades[id]) { G.Nades.cancel(a); a.inv.grenade = W.item(id); if (a.isPlayer) G.VM.onSwitch(); return true; }
+        if (a.nades[id]) return W.selectGrenade(a, id);
       }
       return false;
     }
-    G.Nades.cancel(a);
+    G.Nades.cancel(a, a.cur === 'grenade' || !!a.throwLatch);
     const old = W.current(a);
     if (old) { old.reloading = false; old.zoom = 0; old.rezoom = 0; }
     a.prevSlot = a.cur; a.cur = slot; a.switchEnd = G.time + (slot === 'knife' ? 0.35 : 0.6);
@@ -343,34 +365,133 @@
 
   // ---------- dropped weapons ----------
   W.drops = [];
+  const dropBounds = new THREE.Box3(), coverBox = new THREE.Box3();
+  const pickupEye = new THREE.Vector3(), pickupPoint = new THREE.Vector3(), aimDir = new THREE.Vector3();
+  const pickupRay = new THREE.Ray(), coverHit = new THREE.Vector3();
+  function boundsFor(mesh) {
+    mesh.updateMatrix();
+    return dropBounds.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrix);
+  }
+  function toss(a, item, scene) {
+    item.reloading = false; item.zoom = item.rezoom = 0;
+    const mesh = W.makeGunMesh(item.id), yaw = a.yaw + G.rand(-0.55, 0.55);
+    mesh.position.copy(a.pos); mesh.position.y += 0.43;
+    mesh.rotation.set(0, yaw, 0, 'YXZ');
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    const def = item.def;
+    (scene || G.scene).add(mesh);
+    W.drops.push({ item, def, mesh, t: G.time, dropper: a, target: { item, def, mesh },
+      bottom: boundsFor(mesh).min.y, vx: -Math.sin(yaw) * 1.7, vz: -Math.cos(yaw) * 1.7, vy: 1.9, floor: 0, settled: false });
+  }
   W.drop = function (a, slot, scene) {
     const it = a.inv[slot];
     if (!it || slot === 'knife') return;
-    if (slot === 'grenade') { G.Nades.cancel(a); W.takeGrenade(a, it.id); }
-    else a.inv[slot] = null;
-    const mesh = W.makeGunMesh(it.id);
-    mesh.position.set(a.pos.x + G.rand(-0.3, 0.3), a.pos.y + 0.03, a.pos.z + G.rand(-0.3, 0.3));
-    mesh.rotation.set(0, Math.random() * 6.28, Math.PI / 2, 'YXZ');
-    (scene || G.scene).add(mesh);
-    W.drops.push({ item: it, mesh, t: G.time });
-    if (a.cur === slot) { a.cur = W.bestSlot(a); a.switchEnd = G.time + 0.5; if (a.isPlayer && G.VM) G.VM.onSwitch(); }
+    if (slot === 'grenade') { if (a.cur === slot) G.Nades.cancel(a); W.takeGrenade(a, it.id); }
+    else {
+      a.inv[slot] = null;
+      if (a.cur === slot) W.switchTo(a, W.bestSlot(a));
+    }
+    toss(a, it, scene);
   };
-  W.tryPickup = function (a) {
-    for (let i = W.drops.length - 1; i >= 0; i--) {
-      const dr = W.drops[i];
-      if (G.time - dr.t < 0.8) continue;
-      const slot = dr.item.def.slot;
-      if (slot !== 'grenade' && a.inv[slot]) continue;
-      if (Math.hypot(dr.mesh.position.x - a.pos.x, dr.mesh.position.z - a.pos.z) < 1.1 && Math.abs(dr.mesh.position.y - a.pos.y) < 1.2) {
-        if (slot === 'grenade') { if (!W.addGrenade(a, dr.item.id)) continue; }
-        else a.inv[slot] = dr.item;
-        G.scene.remove(dr.mesh); W.drops.splice(i, 1);
-        if (a.isPlayer) G.Audio.click('switch');
-        if (slot === 'primary' && a.cur !== 'primary') W.switchTo(a, 'primary');
-        return true;
+
+  function dropSurface(bounds, bottom, moving) {
+    const lo = bounds.min, hi = bounds.max;
+    const boxes = G.Map.query(lo.x, lo.z, hi.x, hi.z);
+    let floor = 0;
+    for (const b of boxes) {
+      if (b.x0 >= hi.x || b.x1 <= lo.x || b.z0 >= hi.z || b.z1 <= lo.z) continue;
+      if (b.y1 <= bottom + 0.015) floor = Math.max(floor, b.y1);
+      else if (moving && b.y0 < hi.y) return Infinity;
+    }
+    return floor;
+  }
+  W.updateDrops = function (dt) {
+    for (const dr of W.drops) {
+      if (dr.settled) continue;
+      const mesh = dr.mesh, p = mesh.position;
+      for (let left = dt; left > 1e-6 && !dr.settled;) {
+        const step = Math.min(left, 1 / 90), x = p.x, z = p.z;
+        left -= step;
+        p.x += dr.vx * step; p.z += dr.vz * step;
+        p.y += dr.vy * step; dr.vy -= 16 * step;
+        mesh.rotation.z += step * 13;
+        let floor = dropSurface(boundsFor(mesh), dr.bottom, dr.vx !== 0 || dr.vz !== 0);
+        if (floor === Infinity) {
+          p.x = x; p.z = z; dr.vx = dr.vz = 0;
+          floor = dropSurface(boundsFor(mesh), dr.bottom, false);
+        }
+        if (dropBounds.min.y <= floor + 0.012) {
+          mesh.rotation.z = Math.PI / 2;
+          floor = Math.max(floor, dropSurface(boundsFor(mesh), dr.bottom, false));
+          p.y += floor + 0.012 - dropBounds.min.y;
+          dr.floor = floor; dr.settled = true;
+        } else dr.bottom = dropBounds.min.y;
       }
     }
-    return false;
   };
-  W.clearDrops = function () { W.drops.forEach((d) => G.scene.remove(d.mesh)); W.drops.length = 0; };
+
+  function pickupVisible(a, p) {
+    pickupRay.origin.copy(pickupEye);
+    pickupRay.direction.subVectors(p, pickupEye);
+    const reach = pickupRay.direction.length() - 0.025;
+    pickupRay.direction.normalize();
+    const boxes = G.Map.query(Math.min(a.pos.x, p.x), Math.min(a.pos.z, p.z), Math.max(a.pos.x, p.x), Math.max(a.pos.z, p.z));
+    for (const b of boxes) {
+      coverBox.min.set(b.x0, b.y0, b.z0); coverBox.max.set(b.x1, b.y1, b.z1);
+      if (pickupRay.intersectBox(coverBox, coverHit) && pickupEye.distanceTo(coverHit) < reach) return false;
+    }
+    return true;
+  }
+  function findPickup(a, swap) {
+    if (!a || !a.alive || a.planting || a.defusing || !W.drops.length) return null;
+    if (swap && (G.Game.bombUse(a) || (a.isPlayer &&
+        (G.paused || G.HUD.buyOpen || G.HUD.scoresOpen || G.HUD.mapOpen || G.Nades.wheel.open)))) return null;
+    G.eyePos(a, pickupEye);
+    if (swap) G.forward(a.yaw, a.pitch, aimDir);
+    let best = null, distance = swap ? 2.1 : 1.1;
+    for (const dr of W.drops) {
+      if (!dr.settled) continue;
+      const pos = dr.mesh.position, dx = pos.x - a.pos.x, dz = pos.z - a.pos.z;
+      const dist = Math.hypot(dx, dz), height = Math.abs(dr.floor - a.pos.y);
+      const slot = dr.def.slot;
+      if (!swap && dr.dropper === a) {
+        if (dist < 1.1 && height < 1.05) continue;
+        dr.dropper = null;
+      }
+      if (dist >= distance || height >= 1.05) continue;
+      if (slot === 'grenade' ? swap || !W.canCarry(a, dr.item.id) : !swap && a.inv[slot]) continue;
+      pickupPoint.set(pos.x, Math.max(pos.y, dr.floor + 0.05), pos.z);
+      if (swap && dist >= 0.65) {
+        const dy = pickupPoint.y - pickupEye.y;
+        if (aimDir.x * dx + aimDir.y * dy + aimDir.z * dz < 0.45 * Math.hypot(dist, dy)) continue;
+      }
+      if (!pickupVisible(a, pickupPoint)) continue;
+      best = dr; distance = dist;
+    }
+    return best;
+  }
+  W.pickupTarget = function (a) {
+    const dr = findPickup(a, true);
+    return dr ? dr.target : null;
+  };
+  function removeDrop(dr) { if (dr.mesh.parent) dr.mesh.parent.remove(dr.mesh); }
+  W.tryPickup = function (a, swap = false) {
+    const dr = findPickup(a, swap);
+    if (!dr) return false;
+    const slot = dr.def.slot;
+    if (slot === 'grenade') W.addGrenade(a, dr.item.id);
+    else {
+      const old = a.inv[slot];
+      if (old) toss(a, old);
+      a.inv[slot] = dr.item;
+      if (old && a.cur === slot) {
+        a.switchEnd = G.time + 0.6; a.shots = 0;
+        if (a.isPlayer && G.VM) G.VM.onSwitch();
+      }
+    }
+    removeDrop(dr); W.drops.splice(W.drops.indexOf(dr), 1);
+    if (!(slot === 'primary' && W.switchTo(a, slot)) && a.isPlayer) G.Audio.click('switch');
+    return true;
+  };
+  W.clearDrops = function () { W.drops.forEach(removeDrop); W.drops.length = 0; };
 })(window.G);

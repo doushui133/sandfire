@@ -107,7 +107,9 @@
     death: { pos: new THREE.Vector3(), floor: 0, yaw0: 0, pitch0: 0 },
   };
   const eye = new THREE.Vector3();
-  const SLOTKEYS = { Digit1: 'primary', Digit2: 'pistol', Digit3: 'knife', Digit4: 'grenade', Digit5: 'bomb' };
+  const SLOTKEYS = { Digit1: 'primary', Digit2: 'pistol', Digit3: 'knife', Digit5: 'bomb' };
+  const GRENADEKEYS = { Digit6: 'he', Digit7: 'flash', Digit8: 'smoke' };
+  const weaponControls = {};
   const setFov = (cam, fov) => { if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); } };
 
   // how far the visible cursor sits inside the left/right turning strip (fallback mode only), -1..1
@@ -200,7 +202,7 @@
     let edge = 0;
     if (G.HUD.buyOpen) {
       if (inp.locked) G.HUD.moveCursor(inp.dx, inp.dy, inp.leftPressed);
-    } else if (touch || inp.canAim()) {
+    } else if (!G.Nades.wheel.open && (touch || inp.canAim())) {
       if (touch) P.touchLook(a, realDt, sens, zoom > 0);
       else { a.yaw = G.wrapAngle(a.yaw - inp.dx * sens); a.pitch = G.clamp(a.pitch - inp.dy * sens, -1.53, 1.53); }
       if (!touch && inp.freeLook && inp.cursorIn) {
@@ -247,26 +249,40 @@
     }
 
     // weapon selection
-    if (!G.HUD.buyOpen) for (const k in SLOTKEYS) if (inp.hit(k)) G.Weapons.switchTo(a, SLOTKEYS[k]);
-    if (inp.hit('KeyQ') && a.prevSlot) G.Weapons.switchTo(a, a.prevSlot);
-    if (inp.wheel) {
-      const order = ['primary', 'pistol', 'knife', 'grenade', 'bomb'].filter((s) => (s === 'bomb' ? a.inv.bomb : a.inv[s]));
-      const i = order.indexOf(a.cur);
-      if (order.length > 1) G.Weapons.switchTo(a, order[(i + (inp.wheel > 0 ? 1 : order.length - 1)) % order.length]);
+    const W = G.Weapons;
+    const menu = G.HUD.buyOpen || (touch && G.HUD.scoresOpen) || G.HUD.mapOpen;
+    if (!inp.left && !inp.right && !inp.leftPressed && !inp.rightPressed) a.throwLatch = false;
+    const blockFire = G.Nades.updateWheel(a, inp, menu) || menu;
+    if (!blockFire) {
+      for (const k in SLOTKEYS) if (inp.hit(k)) W.switchTo(a, SLOTKEYS[k]);
+      if (touch && inp.hit('Digit4')) W.switchTo(a, 'grenade');
+      if (!touch) {
+        for (const k in GRENADEKEYS) if (inp.hit(k)) W.selectGrenade(a, GRENADEKEYS[k]);
+        if (inp.hit('Digit9')) W.selectGrenade(a, a.nades.molotov ? 'molotov' : 'incendiary');
+      }
+      if (inp.hit('KeyQ') && a.prevSlot) W.switchTo(a, a.prevSlot);
+      if (inp.wheel) {
+        const order = ['primary', 'pistol', 'knife', 'grenade', 'bomb'].filter((s) => (s === 'bomb' ? a.inv.bomb : a.inv[s]));
+        const i = order.indexOf(a.cur);
+        if (order.length > 1) W.switchTo(a, order[(i + (inp.wheel > 0 ? 1 : order.length - 1)) % order.length]);
+      }
+      if (inp.hit('KeyG')) {
+        if (a.cur === 'bomb') G.Game.dropBomb(a);
+        else W.drop(a, a.cur);
+      }
     }
-    if (inp.hit('KeyG')) {
-      if (a.cur === 'bomb') G.Game.dropBomb(a);
-      else G.Weapons.drop(a, a.cur);
-    }
-    G.Weapons.tryPickup(a);
-    const blockFire = G.HUD.buyOpen || (touch && G.HUD.scoresOpen);
-    const automatic = touch && !blockFire && !frozen && autoTarget(a,G.Weapons.current(a));
+    G.Game.handleUse(a, !blockFire && inp.down('KeyE'), dt, !blockFire && inp.hit('KeyE'));
+    if (!blockFire) W.tryPickup(a);
+    const stopFire = blockFire || frozen || a.planting || a.defusing;
+    const automatic = touch && !stopFire && autoTarget(a,W.current(a));
     a.viewPunch = (a.viewPunch || 0) * Math.exp(-dt * 14);
-    G.Weapons.update(a, dt, {
-      fire: (inp.left || automatic) && !blockFire && !frozen, firePressed: (inp.leftPressed || automatic) && !blockFire && !frozen,
-      alt: inp.right && !blockFire && !frozen, altPressed: inp.rightPressed && !blockFire && !frozen, reload: inp.hit('KeyR'),
-    });
-    G.Game.handleUse(a, inp.down('KeyE'), dt);
+    weaponControls.fire = (inp.left || automatic) && !stopFire;
+    weaponControls.firePressed = (inp.leftPressed || automatic) && !stopFire;
+    weaponControls.alt = inp.right && !stopFire;
+    weaponControls.altPressed = inp.rightPressed && !stopFire;
+    weaponControls.reload = inp.hit('KeyR');
+    weaponControls.blocked = stopFire;
+    W.update(a, dt, weaponControls);
 
     // camera
     const eyeH = G.eyeHeight(a.crouch);
