@@ -405,7 +405,7 @@
     $('btnQuit').addEventListener('click', toMenu);
     $('btnRestart').addEventListener('click', () => startMatch(lastTeam));
     $('pause').addEventListener('click', (e) => {
-      if (!G.Touch.enabled && !e.target.closest('input,label,button,.direct-address')) resume();
+      if (!G.Touch.enabled && !e.target.closest('input,label,button,.direct-address,summary,details')) resume();
     });
     document.addEventListener('pointerlockchange', () => { if (!G.input.locked) keyboardOff(); });
     document.addEventListener('fullscreenchange', () => {

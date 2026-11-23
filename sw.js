@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-globals */
 // Bump CACHE_VERSION when shipping changes to js/ or other cached assets (see README).
-const CACHE_VERSION = 'sandfire-load-v1';
+const CACHE_VERSION = 'sandfire-v2';
 const CACHE = CACHE_VERSION;
 
 const INDEX = /\/(?:index\.html)?$/;
@@ -44,6 +44,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   const path = url.pathname.replace(/\/+$/, '') || '/';
-  const isIndex = path === '/' || INDEX.test(path);
-  event.respondWith((isIndex ? networkFirst : cacheFirst)(event.request));
+  // code and pages: network first (fresh after every deploy, cached copy when offline);
+  // large assets (models, textures, lightmap, three.js): cache first
+  const isCode = path === '/' || INDEX.test(path) || (/\.(?:js|css|html|webmanifest)$/.test(path) && path.indexOf('/vendor/') < 0);
+  event.respondWith((isCode ? networkFirst : cacheFirst)(event.request));
 });

@@ -24,8 +24,8 @@
   font-size: 10px; letter-spacing: .08em; line-height: 1.5;
   border: 1px solid currentColor; border-radius: 2px; padding: 0 4px;
 }
-.kill-banner.pop { animation: kb-pop 1.15s ease both; }
-.kill-banner.pop.fast { animation-duration: .7s; }
+.kill-banner.pop { animation: kb-pop 1.9s ease both; }
+.kill-banner.pop.fast { animation-duration: .95s; }
 @keyframes kb-pop {
   0% { opacity: 0; transform: translateX(-50%) translateY(10px) scale(.84); }
   16% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.05); }
@@ -291,3 +291,13 @@ table.sb tr.me td:first-child { box-shadow: inset 2px 0 0 var(--sun); }
 @media (prefers-reduced-motion: reduce) {
   .kill-banner.pop, #deathCard.pop, #moneyDelta.pop, .hit-dmg { animation: none; }
 }
+
+/* pause menu: actions first, settings folded away */
+.pause-slab .pause-actions { justify-content: center; margin: 6px 0 10px; }
+.pause-settings > summary { cursor: pointer; list-style: none; padding: 8px 0; font-weight: 600; text-align: center; color: var(--sand, #e9d3ad); }
+.pause-settings > summary::-webkit-details-marker { display: none; }
+.pause-settings > summary::after { content: ' ▾'; }
+.pause-settings[open] > summary::after { content: ' ▴'; }
+.pause-settings .row { flex-wrap: wrap; justify-content: flex-start; gap: 6px 18px; }
+.pause-settings .row label { display: inline-flex; align-items: center; gap: 8px; }
+.pause-settings .row input[type=range] { width: min(34vw, 220px); }

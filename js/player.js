@@ -139,15 +139,33 @@
     }
     return assist.found;
   }
-  P.touchLook = function (a,dt,sens) {
-    const active=G.Touch.enabled && G.Touch.realTouch && G.settings.aimAssist && a.blindUntil<=G.time;
-    const slow=active && acquire(a) ? 0.6 : 1, inp=G.input;
-    a.yaw=G.wrapAngle(a.yaw-inp.dx*sens*slow);
-    a.pitch=G.clamp(a.pitch-inp.dy*sens*slow,-1.53,1.53);
-    if (active && (inp.dx || inp.dy || G.Touch.joystick.x || G.Touch.joystick.y) && acquire(a)) {
-      const scale=Math.min(1,dt*Math.PI/30/(Math.hypot(assist.yaw,assist.pitch)||1));
-      a.yaw=G.wrapAngle(a.yaw+assist.yaw*scale);
-      a.pitch=G.clamp(a.pitch+assist.pitch*scale,-1.53,1.53);
+  // Slow drags stay below 1:1 so the crosshair can be placed; a fast swipe rises past 1:1.
+  // Scoped aim uses a flatter curve. Applied once per frame to that frame's total delta — no lag.
+  function lookCurve(v, scoped) {
+    const a = Math.abs(v);
+    if (a < 0.0001) return 0;
+    const t = Math.min(a / (scoped ? 16 : 10), 2.2);
+    return Math.sign(v) * a * ((scoped ? 0.72 : 0.58) + (scoped ? 0.42 : 0.92) * t);
+  }
+  P.touchLook = function (a, dt, sens, scoped) {
+    const inp = G.input, ratio = (G.settings.vertRatio >= 0.4 && G.settings.vertRatio <= 1.8) ? G.settings.vertRatio : 1;
+    let dx = lookCurve(inp.dx, scoped), dy = lookCurve(inp.dy, scoped) * ratio;
+    const active = G.Touch.enabled && G.Touch.realTouch && G.settings.aimAssist && a.blindUntil <= G.time;
+    const moving = !!(inp.dx || inp.dy || G.Touch.joystick.x || G.Touch.joystick.y);
+    const onTarget = active && moving && acquire(a);
+    if (onTarget) {
+      const drag = Math.hypot(inp.dx, inp.dy);
+      const slow = drag > 14 ? 0.92 : 0.8;
+      dx *= slow; dy *= slow;
+    }
+    a.yaw = G.wrapAngle(a.yaw - dx * sens);
+    a.pitch = G.clamp(a.pitch - dy * sens, -1.53, 1.53);
+    // Mild pull only while the aim is already on a visible target and the finger is not flicking.
+    if (onTarget && Math.hypot(inp.dx, inp.dy) < 22 && acquire(a)) {
+      const err = Math.hypot(assist.yaw, assist.pitch) || 1;
+      const pull = Math.min(0.1, dt * 0.055 / err);
+      a.yaw = G.wrapAngle(a.yaw + assist.yaw * pull);
+      a.pitch = G.clamp(a.pitch + assist.pitch * pull, -1.53, 1.53);
     }
   };
   function autoTarget(a,it) {
@@ -174,16 +192,21 @@
     const it = G.Weapons.current(a);
     const zoom = it && it.def.scope ? it.zoom : 0;
     const zf = zoom === 2 ? 0.2 : zoom === 1 ? 0.45 : 1;
-    const sens = 0.0022 * (touch ? G.settings.touchSens : G.settings.sens) * zf;
+    let scopeMul = 1;
+    if (zoom > 0) {
+      const n = +(touch ? G.settings.touchScope : G.settings.scopeSens);
+      scopeMul = n >= 0.2 && n <= 2 ? n : 1;
+    }
+    const sens = 0.0022 * (touch ? G.settings.touchSens : G.settings.sens) * zf * scopeMul;
     let edge = 0;
     if (G.HUD.buyOpen) {
       if (inp.locked) G.HUD.moveCursor(inp.dx, inp.dy, inp.leftPressed);
     } else if (touch || inp.canAim()) {
-      if (touch) P.touchLook(a,realDt,sens);
+      if (touch) P.touchLook(a, realDt, sens, zoom > 0);
       else { a.yaw = G.wrapAngle(a.yaw - inp.dx * sens); a.pitch = G.clamp(a.pitch - inp.dy * sens, -1.53, 1.53); }
       if (!touch && inp.freeLook && inp.cursorIn) {
         edge = edgeTurn(inp.cursorX);
-        a.yaw = G.wrapAngle(a.yaw - edge * 2.6 * G.settings.sens * zf * Math.min(realDt, 0.05));
+        a.yaw = G.wrapAngle(a.yaw - edge * 2.6 * G.settings.sens * zf * scopeMul * Math.min(realDt, 0.05));
       }
     }
     G.HUD.edge(edge);

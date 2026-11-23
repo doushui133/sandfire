@@ -37,7 +37,7 @@ input[type=checkbox]{accent-color:var(--sun);width:16px;height:16px;margin:0}
 .num{font-family:var(--num);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:.02em}
 #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:var(--shadow)}
-#radar{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));top:calc(14px + env(safe-area-inset-top,0px));width:210px;height:210px;border-radius:6px;border:1px solid var(--line);background:rgba(10,9,7,.62);box-shadow:var(--shadow)}
+#radar{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));top:calc(14px + env(safe-area-inset-top,0px));width:calc(240px * var(--radar-scale,1));height:calc(240px * var(--radar-scale,1));border-radius:6px;border:1px solid var(--line);background:rgba(10,9,7,.72);box-shadow:var(--shadow);pointer-events:auto;touch-action:none}
 #score{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;align-items:stretch;gap:0;filter:drop-shadow(0 8px 16px rgba(0,0,0,.35))}
 #score>div{background:var(--panel);border:1px solid var(--line);padding:4px 14px 5px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:72px}
 #score>div+div{border-left:0}
@@ -71,9 +71,10 @@ input[type=checkbox]{accent-color:var(--sun);width:16px;height:16px;margin:0}
 #clip{font-size:42px;font-weight:700;line-height:1}
 #reserve{font-size:20px;color:var(--muted)}
 #clip.low{color:var(--danger)}
-#crosshair{position:absolute;left:50%;top:50%;width:0;height:0}
-#crosshair i{position:absolute;background:#7dff6a;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
+#crosshair{position:absolute;left:50%;top:50%;width:0;height:0;color:#7dff6a}
+#crosshair i{position:absolute;background:currentColor;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 #crosshair .h{height:2px;width:8px;top:-1px} #crosshair .v{width:2px;height:8px;left:-1px}
+#chL{left:-16px} #chR{left:8px} #chT{top:-16px} #chB{top:8px}
 #crosshair .d{width:2px;height:2px;left:-1px;top:-1px}
 #hitmarker{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;transition:opacity .15s}
 #hitmarker::before,#hitmarker::after{content:"";position:absolute;left:12px;top:-2px;width:2px;height:30px;background:#fff;transform:rotate(45deg);clip-path:polygon(0 0,100% 0,100% 32%,0 32%,0 68%,100% 68%,100% 100%,0 100%)}
@@ -137,7 +138,11 @@ table.sb tr.me td{background:rgba(255,174,66,.12)}
 table.sb tr.dead td{opacity:.45}
 table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-align:right}
 #endTitle{font-size:48px;font-family:var(--num);margin:0 0 6px;letter-spacing:.06em}
-@media (max-width:700px){#radar{width:130px;height:130px}.vit .v{font-size:28px}#clip{font-size:30px}#menu h1{font-size:44px}}
+@media (max-width:700px){.vit .v{font-size:28px}#clip{font-size:30px}#menu h1{font-size:44px}}
+#mapOverlay{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;background:rgba(8,7,5,.62);pointer-events:auto;touch-action:none}
+#mapOverlay[hidden]{display:none!important}
+#mapFull{width:min(78vmin,680px);height:min(78vmin,680px);border-radius:8px;border:1px solid var(--line);background:#100e0b;box-shadow:var(--shadow)}
+#mapClose{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%)}
 @media (prefers-reduced-motion:reduce){#hitmarker{transition:none}}
 </style>
 <link rel="stylesheet" href="touch.css">
@@ -149,7 +154,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 <div id="game"></div>
 
 <div id="hud" hidden>
-  <canvas id="radar" width="420" height="420"></canvas>
+  <canvas id="radar" width="420" height="420" aria-label="小地图"></canvas>
   <div id="score">
     <div class="atk"><span class="s num" id="scoreAtk">0</span><span class="lab">进攻方</span><div class="alive" id="aliveAtk"></div></div>
     <div class="mid"><span class="num" id="timer">1:55</span><span id="bombStat" class="bomb-stat" hidden></span></div>
@@ -199,16 +204,40 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   </div>
 </div>
 
+<div id="safeProbe"></div>
+<div id="unitProbe"></div>
 <div id="touchLayer" hidden>
   <div id="stick"><i></i></div>
-  <button data-action="leftFire">开火</button>
-  <div class="touch-tools"><button data-action="buy" hidden>购买</button><button data-action="scores">比分</button><button data-action="pause">暂停</button></div>
-  <div class="touch-actions">
-    <button data-action="scope" hidden>开镜</button><button data-action="heavy" hidden>重击</button>
-    <button data-action="grenade">投掷物</button>
-    <button data-action="use">使用</button><button data-action="fire">开火</button>
-    <button data-action="reload">换弹</button><button data-action="crouch" aria-pressed="false">蹲</button><button data-action="jump">跳</button>
+  <button type="button" data-action="leftFire" class="act" aria-label="左侧开火"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3.2v3.4M12 17.4V21M3.2 12h3.4M17.4 12H21"/></svg><small>开火</small></button>
+  <div class="touch-tools">
+    <button type="button" data-action="buy" class="tool" hidden aria-label="购买"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 8v8M9.4 10.1c.7-1 1.6-1.4 2.6-1.4 1.5 0 2.4.8 2.4 1.9S13.5 12.4 12 12.4 9.6 13.2 9.6 14.3 10.5 16.2 12 16.2c1 0 1.9-.4 2.5-1.2"/></svg></button>
+    <button type="button" data-action="scores" class="tool" aria-label="比分"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M5 7h14M5 12h14M5 17h9"/></svg></button>
+    <button type="button" data-action="pause" class="tool" aria-label="暂停"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 5h3.2v14H7zM13.8 5H17v14h-3.2z"/></svg></button>
   </div>
+  <div class="touch-actions">
+    <button type="button" data-action="scope" class="act" hidden aria-label="开镜"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 2.8v3M12 18.2V21M2.8 12h3M18.2 12H21"/></svg><small>开镜</small></button>
+    <button type="button" data-action="heavy" class="act" hidden aria-label="重击"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M14 5l5 2-8 9-3 1 1-3z"/></svg><small>重击</small></button>
+    <button type="button" data-action="grenade" class="act" aria-label="投掷物"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 9V6.2M9.8 6.2h4.4M15 5l2-2"/></svg><small>投掷</small></button>
+    <button type="button" data-action="use" class="act" aria-label="使用"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="2.2" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M10.2 12H20M16.2 9.4V12M18.5 10.5V12"/></svg><small>使用</small></button>
+    <button type="button" data-action="fire" class="act" aria-label="开火"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 2.6v3.6M12 17.8V21.4M2.6 12h3.6M17.8 12h3.6M5.6 5.6l2.6 2.6M15.8 15.8l2.6 2.6M18.4 5.6l-2.6 2.6M8.2 15.8l-2.6 2.6"/></svg><small>开火</small></button>
+    <button type="button" data-action="reload" class="act" aria-label="换弹"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19.2 12a7.2 7.2 0 1 1-2.1-5.1M19.2 4.2V9h-4.8"/></svg><small>换弹</small></button>
+    <button type="button" data-action="crouch" class="act" aria-label="蹲" aria-pressed="false"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 8h12M8 8c0 4 1.2 6 4 6s4-2 4-6M9 18h6"/></svg><small>蹲</small></button>
+    <button type="button" data-action="jump" class="act" aria-label="跳"><span class="face"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 19V7M7 12l5-6 5 6"/></svg><small>跳</small></button>
+  </div>
+</div>
+<div id="layoutEditor" hidden>
+  <div class="le-panel">
+    <h2>自定义键位</h2>
+    <div class="row"><label for="lePick">按键</label><select id="lePick"></select></div>
+    <div class="row"><label for="leSize">大小</label><input type="range" id="leSize" min="0.6" max="2" step="0.05" value="1"></div>
+    <div class="row"><label for="leOpacity">透明度</label><input type="range" id="leOpacity" min="0.35" max="1" step="0.05" value="0.7"></div>
+    <div class="row"><button type="button" id="leReset">恢复默认</button><button type="button" id="leSave">保存</button></div>
+    <p class="note">拖动按钮移动。双指捏合可缩放当前按键。</p>
+  </div>
+</div>
+<div id="mapOverlay" hidden>
+  <canvas id="mapFull" width="800" height="800" aria-label="大地图"></canvas>
+  <button type="button" id="mapClose">关闭地图</button>
 </div>
 <div id="rotateNotice" role="status">请将手机横屏游玩</div>
 
@@ -256,13 +285,18 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
         <button class="chip" data-mode="mouse">键鼠</button>
       </div>
       <div class="row mouse-only"><label for="sens">鼠标灵敏度</label><input type="range" id="sens" min="0.2" max="3" step="0.05" value="1"><span class="num" id="sensVal">1.00</span></div>
+      <div class="row mouse-only"><label>开镜灵敏度 <input data-setting="scopeSens" type="range" min="0.3" max="1.8" step="0.05" value="1"></label></div>
       <div class="row touch-only"><label for="touchSens">触屏灵敏度</label><input type="range" id="touchSens" min="0.5" max="3" step="0.05" value="1.5"><span class="num" id="touchSensVal">1.50</span></div>
+      <div class="row touch-only"><label>开镜灵敏度 <input data-setting="touchScope" type="range" min="0.3" max="1.8" step="0.05" value="1"></label><label>垂直/水平 <input data-setting="vertRatio" type="range" min="0.5" max="1.5" step="0.05" value="1"></label></div>
       <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
       <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
       <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+      <div class="row touch-only"><label>陀螺仪灵敏度 <input data-setting="gyroSens" type="range" min="0.2" max="2.5" step="0.05" value="1"></label><button type="button" id="btnLayout">自定义键位</button></div>
       <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
       <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
       <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
+      <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
+      <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
     </section>
     <section class="menu-sec">
       <h2>声音</h2>
@@ -276,8 +310,9 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
       <div><b>Q</b>切回上一把</div><div><b>E</b>按住安放 / 拆除炸弹</div>
       <div><b>B</b>购买（依次按分类和商品数字）</div><div><b>Tab</b>记分板</div>
       <div><b>G</b>丢弃武器</div><div><b>Esc</b>暂停</div>
+      <div><b>M</b>大地图</div>
     </div>
-    <div class="note touch-only">左侧拖动摇杆移动，轻推静步。右侧滑动瞄准，也可以按住「开火」拖动瞄准。点「蹲」切换姿势，点武器栏选枪，长按当前栏丢弃。点「投掷物」切换种类，按住开火预览，松手投出。在包点或炸弹旁按住「使用」安放或拆弹。</div>
+    <div class="note touch-only">左侧拖动摇杆移动，轻推静步。右侧滑动瞄准：慢拖更准，快甩更快。开火键在右下，跳、蹲、换弹和开镜围在旁边；投掷和使用在左侧，避免误触。点左上角地图可放大。暂停或这里的「自定义键位」可拖动按钮。</div>
     <div class="note">进攻方：把炸弹安放在 A 点或 B 点并守住它，或消灭所有防守方。防守方：阻止安放、拆除炸弹，或撑到时间结束。先赢 8 局的一方获胜。<span class="mouse-only">需要键盘和鼠标。</span></div>
     <div id="iosTip" class="note" hidden>在 Safari 点「分享 → 添加到主屏幕」，从主屏幕打开即可全屏游玩。</div>
   </div>
@@ -286,20 +321,25 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 <div id="pause" class="overlay" hidden>
   <div class="slab pause-slab">
     <h2 id="pauseTitle">已暂停</h2>
-    <section class="menu-sec">
-      <h2>操作</h2>
-      <div class="row mouse-only" style="justify-content:center"><label for="sens2">灵敏度</label><input type="range" id="sens2" min="0.2" max="3" step="0.05" value="1"></div>
-      <div class="row touch-only" style="justify-content:center"><label for="touchSens2">触屏灵敏度</label><input type="range" id="touchSens2" min="0.5" max="3" step="0.05" value="1.5"></div>
-      <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
-      <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
-      <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
-      <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
-      <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
-    </section>
     <div class="row pause-actions">
       <button class="big" id="btnResume">继续游戏</button>
       <button class="big" id="btnQuit">退出到菜单</button>
     </div>
+    <details class="menu-sec pause-settings">
+      <summary>设置</summary>
+      <div class="row mouse-only" style="justify-content:center"><label for="sens2">灵敏度</label><input type="range" id="sens2" min="0.2" max="3" step="0.05" value="1"></div>
+      <div class="row mouse-only"><label>开镜灵敏度 <input data-setting="scopeSens" type="range" min="0.3" max="1.8" step="0.05" value="1"></label></div>
+      <div class="row touch-only" style="justify-content:center"><label for="touchSens2">触屏灵敏度</label><input type="range" id="touchSens2" min="0.5" max="3" step="0.05" value="1.5"></div>
+      <div class="row touch-only"><label>开镜灵敏度 <input data-setting="touchScope" type="range" min="0.3" max="1.8" step="0.05" value="1"></label><label>垂直/水平 <input data-setting="vertRatio" type="range" min="0.5" max="1.5" step="0.05" value="1"></label></div>
+      <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
+      <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
+      <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+      <div class="row touch-only"><label>陀螺仪灵敏度 <input data-setting="gyroSens" type="range" min="0.2" max="2.5" step="0.05" value="1"></label><button type="button" id="btnLayout2">自定义键位</button></div>
+      <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
+      <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
+      <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
+      <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
+    </details>
     <button id="btnFallback" type="button" hidden>仍要用普通鼠标模式玩（光标可能移出窗口）</button>
     <div id="pauseHint" class="note" role="status"></div>
   </div>

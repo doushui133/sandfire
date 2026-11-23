@@ -1,5 +1,5 @@
 html,body { overscroll-behavior:none }
-#game,#touchLayer,#rotateNotice { touch-action:none }
+#game,#touchLayer,#rotateNotice,#mapOverlay { touch-action:none }
 .touch-only,#rotateNotice { display:none }
 .touch .mouse-only { display:none }
 .touch .row.touch-only { display:flex }
@@ -37,43 +37,58 @@ html,body { overscroll-behavior:none }
 }
 .rotate-needed #rotateNotice { display:flex }
 
+#safeProbe{
+  position:fixed; left:env(safe-area-inset-left,0px); top:env(safe-area-inset-top,0px);
+  right:env(safe-area-inset-right,0px); bottom:env(safe-area-inset-bottom,0px);
+  pointer-events:none; visibility:hidden;
+}
+#unitProbe{
+  position:fixed; left:0; top:0; height:0; width:var(--button-unit,56px);
+  pointer-events:none; visibility:hidden;
+}
+
 /* Leave the sight line clear between the moving thumb and the action buttons. */
-#touchLayer { position:fixed; inset:0; z-index:6; overflow:hidden; user-select:none; pointer-events:none }
+#touchLayer { position:fixed; inset:0; z-index:6; overflow:hidden; user-select:none; pointer-events:none; --touch-opacity:.7 }
+#touchLayer.editing { pointer-events:auto }
 #touchLayer button { pointer-events:auto }
-#touchLayer button,.touch #slots button {
-  box-sizing:border-box; min-width:52px; height:52px; padding:3px;
-  border:1px solid rgba(244,234,216,.38); color:var(--text); background:rgba(12,11,9,.62);
-  border-radius:50%; font-weight:600; text-shadow:0 1px 3px #000; touch-action:none;
+.touch-tools,.touch-actions { position:absolute; inset:0; pointer-events:none; display:block }
+.touch-tools button,.touch-actions button { pointer-events:auto }
+#touchLayer button.act {
+  position:absolute; box-sizing:border-box; margin:0; padding:0; min-width:0; border:0; background:transparent;
+  box-shadow:none; border-radius:50%; color:var(--text); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-shadow:0 1px 2px #000; touch-action:none;
+}
+#touchLayer button.act .face {
+  position:absolute; inset:16%; border-radius:50%;
+  background:rgba(12,11,9,var(--touch-opacity,.7));
+  border:1px solid rgba(244,234,216,.62);
   box-shadow:0 4px 12px rgba(0,0,0,.28);
 }
-#touchLayer button.held,#touchLayer button[aria-pressed=true],#touchLayer button:active,
-.touch #slots button:active { border-color:var(--sun); background:rgba(135,79,21,.85) }
-#touchLayer .available { border:2px solid var(--sun); color:#ffcf88 }
-.touch-tools,.touch-actions { position:absolute; right:var(--right); display:grid; gap:4px }
-.touch-tools { top:var(--top); grid-auto-flow:column }
-.touch-actions {
-  bottom:var(--bottom); grid-template-columns:52px 52px 76px; grid-template-rows:52px 76px 52px;
-  align-items:center; justify-items:center;
-  pointer-events:none;
+#touchLayer button.act svg,#touchLayer button.act small { position:relative; z-index:1; pointer-events:none }
+#touchLayer button.act svg { width:38%; height:38%; display:block }
+#touchLayer button.act small { font-size:10px; line-height:1.05; font-weight:700; letter-spacing:.02em; max-width:92%; overflow:hidden; white-space:nowrap }
+#touchLayer button.tool {
+  position:absolute; box-sizing:border-box; min-width:0; margin:0; padding:0; border-radius:8px;
+  color:var(--text); background:rgba(12,11,9,var(--touch-opacity,.7));
+  border:1px solid rgba(244,234,216,.45); box-shadow:0 2px 8px rgba(0,0,0,.28);
+  display:flex; align-items:center; justify-content:center; touch-action:none;
 }
-.touch-actions button { pointer-events:auto }
-[data-action=scope],[data-action=heavy] { grid-area:1/1 }
-[data-action=grenade] { grid-area:1/3 }
-[data-action=use] { grid-area:2/2 }
-#touchLayer [data-action=fire] { grid-area:2/3; width:76px; height:76px; font-size:19px }
-[data-action=reload] { grid-area:3/1 }
-[data-action=crouch] { grid-area:3/2 }
-[data-action=jump] { grid-area:3/3 }
-#touchLayer [data-action=leftFire] { position:absolute; left:calc(var(--left) + 42px); bottom:calc(var(--bottom) + 134px) }
-#touchLayer.spectator [data-action=leftFire] { display:none }
+#touchLayer button.tool svg { width:52%; height:52%; pointer-events:none }
+#touchLayer button.act.held .face,#touchLayer button.act[aria-pressed=true] .face,#touchLayer button.act:active .face,
+#touchLayer button.tool.held,#touchLayer button.tool:active {
+  background:rgba(135,79,21,.88); border-color:var(--sun);
+}
+#touchLayer button.act.available .face { border:2px solid var(--sun) }
+#touchLayer.editing button { cursor:grab }
+#touchLayer.editing button.picked { z-index:4; outline:2px solid var(--sun); outline-offset:2px }
+#touchLayer.spectator .touch-actions,#touchLayer.spectator #stick,#touchLayer.spectator [data-action=leftFire] { display:none }
+#touchLayer.editing .touch-actions,#touchLayer.editing [data-action] { display:flex !important }
+#touchLayer.editing #stick { display:none !important }
 .direct-address span { user-select:all; -webkit-user-select:all; cursor:text }
 #flashView,#gasView { position:absolute; inset:0; pointer-events:none; z-index:5; background:#fff }
 #gasView { background:#88857f; z-index:4 }
-.touch { --button-unit:min(calc(49px * var(--button-size,1)),8.4vw,16vh) }
-#touchLayer button { min-width:var(--button-unit); height:var(--button-unit) }
-.touch-actions { grid-template-columns:var(--button-unit) var(--button-unit) calc(var(--button-unit) * 1.45); grid-template-rows:var(--button-unit) calc(var(--button-unit) * 1.45) var(--button-unit) }
-#touchLayer [data-action=fire] { width:calc(var(--button-unit) * 1.45); height:calc(var(--button-unit) * 1.45) }
-#touchLayer .touch-tools button { min-width:42px; height:36px; border-radius:8px }
+.touch { --button-unit:min(calc(56px * var(--button-size,1)),9vw,16vh) }
+#touchLayer [data-action=fire]{width:calc(var(--button-unit) * 1.45)}
 #stick {
   position:absolute; left:calc(var(--left) + 72px); top:calc(100% - var(--bottom) - 68px);
   transform:translate(-50%,-50%); width:120px; height:120px; border-radius:50%;
@@ -85,9 +100,28 @@ html,body { overscroll-behavior:none }
 }
 #stick.held { border-color:var(--sand) }
 #stick.held i { background:rgba(233,211,173,.65) }
-#touchLayer.spectator .touch-actions,#touchLayer.spectator #stick { display:none }
 
-.touch #radar { left:var(--left); top:var(--top); width:70px; height:70px }
+#layoutEditor {
+  position:fixed; left:0; top:0; right:auto; z-index:12; pointer-events:none;
+  width:min(340px, 48vw); padding:6px;
+}
+#layoutEditor .le-panel {
+  pointer-events:auto; background:rgba(12,11,9,.9); border:1px solid rgba(244,234,216,.4);
+  border-radius:8px; padding:8px 10px; box-shadow:0 8px 22px rgba(0,0,0,.35); color:var(--text);
+}
+#layoutEditor h2 { margin:0 0 6px; font-size:15px }
+#layoutEditor .row { margin:4px 0 }
+#layoutEditor label { font-size:12px; color:var(--muted) }
+#layoutEditor select, #layoutEditor button { font:inherit; color:var(--text); background:rgba(255,255,255,.06); border:1px solid rgba(244,234,216,.35); border-radius:4px; padding:6px 8px }
+#layoutEditor input[type=range] { width:110px; height:32px; touch-action:none; accent-color:var(--sun) }
+#layoutEditor .note { margin:4px 0 0; font-size:11px }
+
+.touch #radar {
+  left:var(--left); top:var(--top);
+  width:calc(max(110px, 28vh) * var(--radar-scale, 1));
+  height:calc(max(110px, 28vh) * var(--radar-scale, 1));
+  z-index:2;
+}
 .touch #score { top:var(--top) }
 .touch #score>div { min-width:34px; padding:2px 5px }
 .touch #score .s,.touch #timer { min-width:0; font-size:20px }
@@ -95,7 +129,7 @@ html,body { overscroll-behavior:none }
 .touch .alive { margin:1px 0; gap:2px }
 .touch .alive i { width:4px; height:5px }
 .touch #vitals {
-  left:calc(var(--left) + 76px); top:var(--top); bottom:auto;
+  left:calc(var(--left) + max(110px, 28vh) * var(--radar-scale, 1) + 8px); top:var(--top); bottom:auto;
   display:grid; grid-template-columns:auto auto; gap:2px;
 }
 .touch .vit { gap:4px; padding:2px 4px }
@@ -103,15 +137,17 @@ html,body { overscroll-behavior:none }
 .touch .vit .v,.touch #money { font-size:16px }
 .touch .vit .ico,.touch #moneyDelta { font-size:11px }
 .touch #ammoBox { position:static }
-.touch #ammo { position:absolute; left:calc(var(--left) + 76px); top:calc(var(--top) + 46px); padding:1px 5px }
+.touch #ammo { position:absolute; left:calc(var(--left) + max(110px, 28vh) * var(--radar-scale, 1) + 8px); top:calc(var(--top) + 46px); padding:1px 5px }
 .touch #clip { font-size:21px }
 .touch #reserve { font-size:13px }
 .touch #slots {
   position:absolute; left:calc(var(--left) + 135px); right:calc(var(--right) + var(--button-unit) * 3.45 + 14px);
   bottom:var(--bottom); margin:0 auto; width:max-content;
   flex-direction:row; gap:3px;
+  max-width:min(40vw,calc(100% - var(--left) - var(--right) - 149px - var(--button-unit) * 3.45));
+  align-items:stretch;
 }
-.touch #slots button { width:min(8vw,50px); min-width:0; height:42px; font-size:11px; border-radius:5px }
+.touch #slots button { width:min(8vw,50px); min-width:0; height:42px; font-size:11px; border-radius:5px; touch-action:none }
 .nade-icon { display:inline-block; font-size:.86em; color:#c5b89e; margin-right:2px }
 .nade-icon::before { content:""; display:inline-block; width:7px; height:9px; border:1px solid currentColor; border-top:2px solid; border-radius:2px; margin-right:2px; vertical-align:middle }
 .icon-he::before { border-radius:50%; background:#657452 }
@@ -123,7 +159,6 @@ html,body { overscroll-behavior:none }
 .touch #slots [data-slot=grenade] { width:auto; max-width:76px }
 .touch #slots button.on { border-color:var(--sun); color:var(--sun) }
 .touch-playing #slots button { pointer-events:auto }
-.touch #slots { max-width:min(40vw,calc(100% - var(--left) - var(--right) - 149px - var(--button-unit) * 3.45)); align-items:stretch }
 .touch #slots button { overflow:hidden; line-height:1.1 }
 .touch #buyHint { pointer-events:none }
 .touch:not(.touch-playing) #slots { display:none }
@@ -139,9 +174,22 @@ html,body { overscroll-behavior:none }
 .touch #hint { top:66%; max-width:34vw; white-space:normal; text-align:center }
 .touch #radar,.touch #score,.touch #killfeed,.touch #buyHint { z-index:1 }
 .touch #buyHint {
-  top:calc(var(--top) + 94px); bottom:auto; left:calc(var(--left) + 56px);
-  transform:none; padding:3px 5px; font-size:11px;
+  top:calc(var(--top) + 58px); bottom:auto; left:50%;
+  transform:translateX(-50%); padding:3px 5px; font-size:11px;
 }
 .touch #buyHint .touch-only { display:inline }
 .touch:not(.touch-playing) #buyHint { display:none }
 .touch #death { bottom:24% }
+/* Later sheets also place these. Keep them under the score and off the thumb buttons. */
+body.touch #hud #buyHint {
+  top:calc(var(--top) + 58px); bottom:auto; left:50%; right:auto;
+  transform:translateX(-50%); max-width:34vw; text-align:center;
+}
+body.touch #hud #hint {
+  top:calc(var(--top) + 84px); bottom:auto; left:50%; right:auto;
+  transform:translateX(-50%); max-width:34vw; text-align:center;
+}
+body.touch #hud #progress {
+  top:calc(var(--top) + 112px); bottom:auto; left:50%; right:auto;
+  transform:translateX(-50%); width:28vw;
+}

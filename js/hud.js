@@ -4,7 +4,7 @@
   const W = G.Weapons, M = G.Map;
   const H = G.HUD = { buyOpen: false, scoresOpen: false };
   const $ = (id) => document.getElementById(id);
-  let el, rctx, msgTimer = 0, vign = 0, buyRefresh = 0, sbRefresh = 0, moneyT = 0, lastHint = '', buyRev = -1, iconTick = 29;
+  let el, rctx, fctx, msgTimer = 0, vign = 0, buyRefresh = 0, sbRefresh = 0, moneyT = 0, lastHint = '', buyRev = -1, iconTick = 29;
   const TEAM = { atk: '进攻方', def: '防守方' };
   const MULTI = ['', '击杀', '双杀', '三杀', '四杀', '全歼'];
   const STAT_NAME = { '伤': '伤害', '射': '射速', '精': '精度', '机': '机动' };
@@ -13,8 +13,16 @@
     el = {};
     ['hud', 'radar', 'scoreAtk', 'scoreDef', 'timer', 'aliveAtk', 'aliveDef', 'killfeed', 'hp', 'armor', 'armorIco', 'armorMark', 'hpBar', 'armorBar', 'vitHp', 'money', 'moneyDelta', 'clip', 'reserve', 'ammoIcon', 'slots',
       'crosshair', 'chL', 'chR', 'chT', 'chB', 'hitmarker', 'hitFx', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
-      'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner'].forEach((k) => (el[k] = $(k)));
+      'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner',
+      'mapOverlay', 'mapFull', 'mapClose'].forEach((k) => (el[k] = $(k)));
     rctx = el.radar.getContext('2d');
+    fctx = el.mapFull ? el.mapFull.getContext('2d') : null;
+    if (el.radar) el.radar.addEventListener('pointerup', (e) => {
+      if (e.button && e.button !== 0) return;
+      if (G.Touch && G.Touch.editing) return;
+      H.toggleMap();
+    });
+    if (el.mapOverlay) el.mapOverlay.addEventListener('pointerup', () => { if (H.mapOpen) H.toggleMap(false); });
     let pips = '';
     for (let i = 0; i < 5; i++) pips += '<i></i>';
     el.aliveAtk.innerHTML = pips; el.aliveDef.innerHTML = pips;
@@ -228,7 +236,7 @@
     const fast = killQ.length > 0;
     paintKill(info, fast);
     killHold = true;
-    killTimer = setTimeout(() => { killTimer = 0; playKill(); }, fast ? 700 : 1150);
+    killTimer = setTimeout(() => { killTimer = 0; playKill(); }, fast ? 950 : 1900);
   }
   H.killFx = function (info) {
     if (!info || !el || !el.killBanner) return;
@@ -439,30 +447,222 @@
   }
 
   // ---------- radar ----------
-  function drawRadar() {
-    const p = G.Player.agent, view = p.alive ? p : G.Player.spectateTarget() || p;
-    const c = rctx, S = 420, scale = 1.25, [px, pz] = M.toRadar(view.pos.x, view.pos.z);
+  const eyeV = new G.THREE.Vector3(), seeP = new G.THREE.Vector3();
+  const seenEnemy = {};
+  let radarBase = null, spawnMark = null;
+  const MAP_FONT = '"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif';
+  H.mapOpen = false;
+  H.toggleMap = function (force) {
+    if (!el || !el.mapOverlay) return;
+    if (G.paused || H.buyOpen || H.scoresOpen || (G.Touch && G.Touch.editing)) force = false;
+    const next = typeof force === 'boolean' ? force : !H.mapOpen;
+    H.mapOpen = next;
+    el.mapOverlay.hidden = !next;
+    if (next) paintMap(el.mapFull, fctx, true);
+  };
+  function paintMap(canvas, ctx, full) {
+    if (!canvas || !ctx) return;
+    const css = canvas.clientWidth || canvas.width;
+    if (css < 32) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const buf = Math.max(64, Math.round(css * dpr));
+    if (canvas.width !== buf || canvas.height !== buf) { canvas.width = buf; canvas.height = buf; }
+    drawMap(ctx, buf, full, css);
+  }
+  function seesEnemy(view, enemy) {
+    if (!view || !enemy.alive || !G.Nades || !G.Nades.visible || view.blindUntil > G.time) return false;
+    G.eyePos(view, eyeV);
+    const head = enemy.pos.y + 1.62 - 0.48 * enemy.crouch;
+    const body = enemy.pos.y + 1.05 - 0.28 * enemy.crouch;
+    return G.Nades.visible(eyeV, seeP.set(enemy.pos.x, head, enemy.pos.z))
+      || G.Nades.visible(eyeV, seeP.set(enemy.pos.x, body, enemy.pos.z));
+  }
+  function buildRadarBase() {
+    if (!M || !M.W || !M.walkable || !M.ch) return M && M.radar;
+    const px = 5, c = document.createElement('canvas');
+    c.width = M.W * px; c.height = M.H * px;
+    const x = c.getContext('2d');
+    if (!x) return M.radar;
+    x.fillStyle = '#14110e';
+    x.fillRect(0, 0, c.width, c.height);
+    for (let r = 0; r < M.H; r++) for (let col = 0; col < M.W; col++) {
+      if (!M.walkable(col, r)) continue;
+      const ch = M.ch(col, r);
+      if (ch === 'A' || ch === 'B') x.fillStyle = '#f4e7c8';
+      else if (ch === 'T') x.fillStyle = '#e7b184';
+      else if (ch === 'D') x.fillStyle = '#b7d0ea';
+      else x.fillStyle = '#d8c6a2';
+      x.fillRect(col * px, r * px, px, px);
+    }
+    x.strokeStyle = '#ffb14a';
+    x.lineWidth = 2;
+    const sites = M.sites || {};
+    for (const k in sites) {
+      const s = sites[k];
+      x.strokeRect(s.c0 * px + 1.5, s.r0 * px + 1.5, (s.c1 - s.c0 + 1) * px - 3, (s.r1 - s.r0 + 1) * px - 3);
+    }
+    return c;
+  }
+  function radarImage() {
+    if (!radarBase) radarBase = buildRadarBase();
+    return radarBase;
+  }
+  function spawnMarks() {
+    if (spawnMark || !M.spawns) return spawnMark;
+    const cen = (list) => {
+      let x = 0, z = 0;
+      for (let i = 0; i < list.length; i++) { x += list[i].x; z += list[i].z; }
+      return { x: x / list.length, z: z / list.length };
+    };
+    spawnMark = {
+      atk: M.spawns.atk && M.spawns.atk.length ? cen(M.spawns.atk) : null,
+      def: M.spawns.def && M.spawns.def.length ? cen(M.spawns.def) : null,
+    };
+    return spawnMark;
+  }
+  function drawMap(c, S, full, css) {
+    const p = G.Player.agent;
+    if (!p || !c || !M.toRadar) return;
+    const view = p.alive ? p : (G.Player.spectateTarget() || p);
+    const base = radarImage();
+    if (!base) return;
+    const mapW = base.width || 250, mapH = base.height || 250;
+    const rp = M.toRadar(view.pos.x, view.pos.z);
+    const follow = G.settings.radarRot !== false;
+    const rot = follow ? view.yaw : 0;
+    const fit = full && follow ? Math.SQRT2 : 1;
+    const scale = full ? (S - 28) / (Math.max(mapW, mapH) * fit) : 1.25;
+    const ox = full ? mapW / 2 : rp[0], oy = full ? mapH / 2 : rp[1];
+    c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, S, S);
+    c.fillStyle = '#100e0b';
+    c.fillRect(0, 0, S, S);
     c.save();
-    c.beginPath(); c.rect(0, 0, S, S); c.clip();
-    c.fillStyle = 'rgba(10,9,7,.6)'; c.fillRect(0, 0, S, S);
-    c.translate(S / 2, S / 2); c.rotate(view.yaw); c.scale(scale, scale); c.translate(-px, -pz);
-    c.drawImage(M.radar, 0, 0);
-    const b = G.Game.bomb;
-    const dot = (x, z, color, r) => { const [rx, rz] = M.toRadar(x, z); c.fillStyle = color; c.beginPath(); c.arc(rx, rz, r, 0, 7); c.fill(); };
-    for (const a of G.Game.agents) {
+    c.beginPath(); c.rect(3, 3, S - 6, S - 6); c.clip();
+    c.translate(S / 2, S / 2);
+    if (rot) c.rotate(rot);
+    c.scale(scale, scale);
+    c.translate(-ox, -oy);
+    c.imageSmoothingEnabled = false;
+    c.drawImage(base, 0, 0);
+    c.restore();
+    const project = (wx, wz) => {
+      const pt = M.toRadar(wx, wz);
+      const x = (pt[0] - ox) * scale, y = (pt[1] - oy) * scale;
+      const co = Math.cos(rot), si = Math.sin(rot);
+      return [S / 2 + x * co - y * si, S / 2 + x * si + y * co];
+    };
+    const k = css > 32 ? S / css : 1;
+    const inside = (x, y) => x >= 8 && y >= 8 && x <= S - 8 && y <= S - 8;
+    const label = (text, x, y, fill, size) => {
+      c.font = '700 ' + size + 'px ' + MAP_FONT;
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.lineWidth = Math.max(3, size / 6);
+      c.strokeStyle = 'rgba(0,0,0,.82)';
+      c.strokeText(text, x, y);
+      c.fillStyle = fill;
+      c.fillText(text, x, y);
+    };
+    const sites = M.sites || {};
+    for (const name in sites) {
+      const spot = project(sites[name].center.x, sites[name].center.z);
+      if (inside(spot[0], spot[1])) label(name, spot[0], spot[1], '#ffb14a', Math.round((full ? 26 : 15) * k));
+    }
+    const marks = spawnMarks();
+    if (marks) {
+      if (marks.atk) {
+        const s = project(marks.atk.x, marks.atk.z);
+        if (inside(s[0], s[1])) label('攻', s[0], s[1], '#ff8a3d', Math.round((full ? 18 : 12) * k));
+      }
+      if (marks.def) {
+        const s = project(marks.def.x, marks.def.z);
+        if (inside(s[0], s[1])) label('守', s[0], s[1], '#8ec5ff', Math.round((full ? 18 : 12) * k));
+      }
+    }
+    const origin = project(view.pos.x, view.pos.z);
+    const north = project(view.pos.x, view.pos.z - 6);
+    const nx = north[0] - origin[0], ny = north[1] - origin[1], nlen = Math.hypot(nx, ny) || 1;
+    label('北', S / 2 + nx / nlen * (S / 2 - 12 * k), S / 2 + ny / nlen * (S / 2 - 12 * k), 'rgba(244,234,216,.9)', Math.round((full ? 16 : 11) * k));
+    const agents = G.Game.agents || [];
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
       if (a === view) continue;
       const friend = a.team === p.team;
-      if (!a.alive) { if (friend) { const [rx, rz] = M.toRadar(a.pos.x, a.pos.z); c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(rx - 3, rz - 3); c.lineTo(rx + 3, rz + 3); c.moveTo(rx + 3, rz - 3); c.lineTo(rx - 3, rz + 3); c.stroke(); } continue; }
-      if (friend) dot(a.pos.x, a.pos.z, a.team === 'atk' ? '#ffa26b' : '#7cc0ff', 4.2);
-      else if (a.spottedUntil > G.time) dot(a.pos.x, a.pos.z, '#ff3b30', 4.6);
+      if (!a.alive) {
+        if (friend) {
+          const s = project(a.pos.x, a.pos.z);
+          if (!inside(s[0], s[1])) continue;
+          c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 2;
+          c.beginPath();
+          c.moveTo(s[0] - 4, s[1] - 4); c.lineTo(s[0] + 4, s[1] + 4);
+          c.moveTo(s[0] + 4, s[1] - 4); c.lineTo(s[0] - 4, s[1] + 4);
+          c.stroke();
+        }
+        delete seenEnemy[a.id];
+        continue;
+      }
+      if (friend) {
+        const ahead = project(a.pos.x - Math.sin(a.yaw) * 1.2, a.pos.z - Math.cos(a.yaw) * 1.2);
+        const at = project(a.pos.x, a.pos.z);
+        if (!inside(at[0], at[1])) continue;
+        drawArrow(c, at[0], at[1], Math.atan2(ahead[1] - at[1], ahead[0] - at[0]), (full ? 13 : 10) * k, a.team === 'atk' ? '#ff8a3d' : '#7cc4ff');
+      } else {
+        const fresh = a.spottedUntil > G.time + 0.85 || seesEnemy(view, a);
+        if (fresh) seenEnemy[a.id] = { x: a.pos.x, z: a.pos.z, at: G.time };
+        const rec = seenEnemy[a.id];
+        if (!rec) continue;
+        const age = G.time - rec.at;
+        if (!(age >= 0 && age < 3)) { delete seenEnemy[a.id]; continue; }
+        const s = project(rec.x, rec.z);
+        if (!inside(s[0], s[1])) continue;
+        const alpha = fresh ? 1 : 1 - age / 3;
+        c.fillStyle = 'rgba(255,59,48,' + alpha.toFixed(3) + ')';
+        c.beginPath(); c.arc(s[0], s[1], (full ? 6.5 : 4.5) * k, 0, 7); c.fill();
+      }
     }
-    if (b.state === 'planted' || (b.state === 'dropped' && p.team === 'atk')) dot(b.pos.x, b.pos.z, b.state === 'planted' ? '#ff3b30' : '#ffd23f', 3.6);
-    else if (b.state === 'carried' && b.carrier && b.carrier.team === p.team && b.carrier.alive) { const [rx, rz] = M.toRadar(b.carrier.pos.x, b.carrier.pos.z); c.strokeStyle = '#ffd23f'; c.lineWidth = 1.5; c.beginPath(); c.arc(rx, rz, 6.5, 0, 7); c.stroke(); }
+    const self = project(view.pos.x, view.pos.z);
+    const selfAhead = project(view.pos.x - Math.sin(view.yaw) * 1.2, view.pos.z - Math.cos(view.yaw) * 1.2);
+    if (inside(self[0], self[1])) drawArrow(c, self[0], self[1], Math.atan2(selfAhead[1] - self[1], selfAhead[0] - self[0]), (full ? 16 : 12) * k, '#fff');
+    drawBomb(c, p, view, project, inside, full, k);
+  }
+  function drawArrow(c, x, y, ang, len, fill) {
+    c.save();
+    c.translate(x, y); c.rotate(ang);
+    c.fillStyle = fill; c.strokeStyle = 'rgba(0,0,0,.85)'; c.lineWidth = 2; c.lineJoin = 'round';
+    c.beginPath();
+    c.moveTo(len, 0);
+    c.lineTo(-len * 0.72, len * 0.55);
+    c.lineTo(-len * 0.32, 0);
+    c.lineTo(-len * 0.72, -len * 0.55);
+    c.closePath();
+    c.stroke(); c.fill();
     c.restore();
-    // self arrow (always points up)
-    c.fillStyle = '#fff';
-    c.beginPath(); c.moveTo(S / 2, S / 2 - 11); c.lineTo(S / 2 + 7, S / 2 + 8); c.lineTo(S / 2, S / 2 + 4); c.lineTo(S / 2 - 7, S / 2 + 8); c.closePath(); c.fill();
+  }
+  function drawBomb(c, p, view, project, inside, full, k) {
+    const b = G.Game.bomb;
+    if (!b || !b.state || b.state === 'none' || b.state === 'exploded' || b.state === 'defused') return;
+    let x = 0, z = 0, show = false, planted = false;
+    if (b.state === 'planted') { x = b.pos.x; z = b.pos.z; show = true; planted = true; }
+    else if (b.state === 'dropped' && p.team === 'atk') { x = b.pos.x; z = b.pos.z; show = true; }
+    else if (b.state === 'carried' && b.carrier && b.carrier.alive) {
+      const mate = b.carrier.team === p.team;
+      if (mate || b.carrier === view) { x = b.carrier.pos.x; z = b.carrier.pos.z; show = true; }
+      else {
+        const rec = seenEnemy[b.carrier.id];
+        const age = rec ? G.time - rec.at : 9;
+        if (rec && age >= 0 && age < 3) { x = rec.x; z = rec.z; show = true; }
+      }
+    }
+    if (!show) return;
+    const s = project(x, z);
+    if (!inside(s[0], s[1])) return;
+    const pulse = 1 + 0.28 * Math.sin(G.time * 7);
+    const rad = (full ? 11 : 8) * k * pulse;
+    c.strokeStyle = planted ? '#ff3b30' : '#ffd23f';
+    c.lineWidth = Math.max(1.5, 1.6 * k);
+    c.beginPath(); c.arc(s[0], s[1], rad, 0, 7); c.stroke();
+    c.fillStyle = planted ? '#ff3b30' : '#ffd23f';
+    c.beginPath(); c.arc(s[0], s[1], (full ? 4 : 3) * k, 0, 7); c.fill();
   }
 
   // ---------- per-frame ----------
@@ -570,7 +770,7 @@
     // crosshair & scope
     const scoped = it && it.def.scope && it.zoom > 0 && p.alive;
     hid(el.scope, !scoped);
-    const showCh = p.alive && !(it && it.def.scope);
+    const showCh = p.alive && !scoped;
     hid(el.crosshair, !showCh);
     if (showCh) {
       let gap = 4;
@@ -578,7 +778,15 @@
         const sp = W.spread(p, it), half = Math.tan(G.camera.fov * Math.PI / 360);
         gap = G.clamp(Math.tan(sp) / half * (innerHeight / 2), 3, 90);
       }
-      const L = 8, g = Math.round(gap);
+      const sMul = G.clamp(+G.settings.chSize || 1, 0.5, 2);
+      const gMul = G.clamp(+G.settings.chGap || 1, 0.4, 2.2);
+      const L = Math.max(4, Math.round(8 * sMul)), t = sMul >= 1.35 ? 3 : 2;
+      const g = Math.round(Math.max(2, gap * gMul));
+      sty(el.crosshair, 'color', G.settings.chColor || '#7dff6a');
+      sty(el.chL, 'width', L + 'px'); sty(el.chL, 'height', t + 'px'); sty(el.chL, 'top', (-t / 2) + 'px');
+      sty(el.chR, 'width', L + 'px'); sty(el.chR, 'height', t + 'px'); sty(el.chR, 'top', (-t / 2) + 'px');
+      sty(el.chT, 'height', L + 'px'); sty(el.chT, 'width', t + 'px'); sty(el.chT, 'left', (-t / 2) + 'px');
+      sty(el.chB, 'height', L + 'px'); sty(el.chB, 'width', t + 'px'); sty(el.chB, 'left', (-t / 2) + 'px');
       sty(el.chL, 'left', (-g - L) + 'px'); sty(el.chR, 'left', g + 'px');
       sty(el.chT, 'top', (-g - L) + 'px'); sty(el.chB, 'top', g + 'px');
     }
@@ -610,9 +818,13 @@
       }
     }
     if (G.Touch.enabled) G.Touch.sync();
+    if (H.mapOpen && (G.paused || H.buyOpen || H.scoresOpen)) H.toggleMap(false);
     if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) el.centerMsg.hidden = true; }
     vign = Math.max(0, vign - dt * 1.2);
     sty(el.vignette, 'opacity', Math.max(vign, p.alive && p.hp <= 25 ? 0.35 : 0).toFixed(2));
-    if ((radarTick = (radarTick + 1) % 2) === 0) drawRadar();   // 30 times a second is plenty
+    if ((radarTick = (radarTick + 1) % 2) === 0) {
+      paintMap(el.radar, rctx, false);
+      if (H.mapOpen) paintMap(el.mapFull, fctx, true);
+    }
   };
 })(window.G);

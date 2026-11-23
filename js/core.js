@@ -62,7 +62,9 @@ window.G = window.G || {};
 
   // ---------- settings (per-viewer convenience only) ----------
   G.settings = { sens: 1, vol: 0.7, diff: 1, raw: true, fullscreen: true,
-    buttonSize: 1, leftFire: true, aimAssist: true, autoFire: false, gyro: false };
+    buttonSize: 1, leftFire: true, aimAssist: true, autoFire: false, gyro: false,
+    touchSens: 1.5, touchScope: 1, scopeSens: 1, vertRatio: 1, gyroSens: 1,
+    chSize: 1, chGap: 1, chColor: '#7dff6a', radarRot: true, radarScale: 1, touchLayout: null };
   try {
     const saved = JSON.parse(localStorage.getItem('sandfire.settings') || 'null');
     if (saved) Object.assign(G.settings, saved);
@@ -76,6 +78,19 @@ window.G = window.G || {};
       history.replaceState(state, '');
     }
   } catch (e) { }
+  (function saneSettings() {
+    const s = G.settings;
+    const num = (v, a, b, d) => { v = +v; return v >= a && v <= b ? v : d; };
+    s.touchScope = num(s.touchScope, 0.25, 2, 1);
+    s.scopeSens = num(s.scopeSens, 0.25, 2, 1);
+    s.vertRatio = num(s.vertRatio, 0.4, 1.8, 1);
+    s.gyroSens = num(s.gyroSens, 0.2, 3, 1);
+    s.chSize = num(s.chSize, 0.5, 2, 1);
+    s.chGap = num(s.chGap, 0.4, 2.2, 1);
+    s.radarScale = num(s.radarScale, 0.75, 1.45, 1);
+    if (typeof s.chColor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(s.chColor)) s.chColor = '#7dff6a';
+    if (typeof s.radarRot !== 'boolean') s.radarRot = true;
+  })();
   G.saveSettings = function () {
     try { localStorage.setItem('sandfire.settings', JSON.stringify(G.settings)); return true; } catch (e) { return false; }
   };
@@ -116,12 +131,13 @@ window.G = window.G || {};
   };
 
   G.embedded = window.top !== window;
-  const blockKeys = /^(Tab|Space|Arrow(Up|Down|Left|Right)|Digit[0-9]|Key[WASDCQRBEG]|Shift(Left|Right)|Control(Left|Right)|Escape)$/;
+  const blockKeys = /^(Tab|Space|Arrow(Up|Down|Left|Right)|Digit[0-9]|Key[WASDCQRBEGM]|Shift(Left|Right)|Control(Left|Right)|Escape)$/;
   const touchMode = () => G.Touch && G.Touch.enabled;
   window.addEventListener('keydown', (e) => {
     if (!input.active || touchMode() || G.paused) return;
     if (blockKeys.test(e.code)) e.preventDefault();
     if (e.code === 'Escape') { if (!e.repeat && G.onEscape) G.onEscape(); return; }
+    if (e.code === 'KeyM' && !e.repeat && G.HUD && G.HUD.toggleMap) G.HUD.toggleMap();
     if (!e.repeat) input.pressed[e.code] = true;
     input.keys[e.code] = true;
   });
@@ -152,6 +168,7 @@ window.G = window.G || {};
 
   window.addEventListener('mousedown', (e) => {
     if (!input.active || G.paused || touchMode() || !input.canAim()) return;   // a click that only captures the mouse never fires
+    if (e.target && e.target.closest && e.target.closest('#radar,#mapOverlay,#layoutEditor')) return;
     if (e.button === 0) { input.left = true; input.leftPressed = true; }
     if (e.button === 2) { input.right = true; input.rightPressed = true; }
   });

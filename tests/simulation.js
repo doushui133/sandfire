@@ -14,7 +14,13 @@ class Element {
   emit(type,event={}) { for (const fn of this.listeners[type]||[]) fn(Object.assign({type,preventDefault:noop},event)); }
   querySelectorAll(selector) { return selector==='[data-action]' ? actions : []; }
   setAttribute(key,value) { this[key]=value; }
-  closest(selector) { return this.dataset.action || this.dataset.slot ? this : null; }
+  closest(selector) {   // enough of Element.closest for the selectors the game uses
+    const parts=selector.split(',').map((s)=>s.trim());
+    for (let el=this; el; el=el.parent) for (const s of parts) {
+      if ((s==='[data-action]' && el.dataset.action) || (s==='[data-slot]' && el.dataset.slot) || (s[0]==='#' && el.id===s.slice(1))) return el;
+    }
+    return null;
+  }
   appendChild(el) { this.children.push(el); el.parent=this; }
   get firstChild() { return this.children[0]; }
   remove() { if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this),1); }
