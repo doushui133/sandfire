@@ -4,9 +4,9 @@
   const THREE = G.THREE, M = G.Map, W = G.Weapons;
   const B = G.Bots = { plan: null };
   const DIFF = [
-    { react: [0.90, 1.30], err: 0.10, track: 1.8, turn: 5, comp: 0.22, fov: 1.5, hs: 0.035, noise: 0.037 },
-    { react: [0.55, 0.80], err: 0.065, track: 2.8, turn: 6.5, comp: 0.40, fov: 1.75, hs: 0.075, noise: 0.018 },
-    { react: [0.30, 0.48], err: 0.045, track: 7, turn: 8, comp: 0.55, fov: 1.85, hs: 0.25, noise: 0.003 },
+    { react: [0.90, 1.30], err: 0.10, track: 1.8, turn: 5, comp: 0.22, fov: 1.5, hs: 0.035, noise: 0.039, bloom: 0 },
+    { react: [0.55, 0.80], err: 0.065, track: 2.8, turn: 6.1, comp: 0.34, fov: 1.75, hs: 0.075, noise: 0.021, bloom: 0.45 },
+    { react: [0.30, 0.48], err: 0.045, track: 7, turn: 7.7, comp: 0.07, fov: 1.85, hs: 0.27, noise: 0.020, bloom: 0 },
   ];
   let level = 1, D = DIFF[1];
   const eye = new THREE.Vector3(), tv = new THREE.Vector3();
@@ -220,10 +220,10 @@
   function combat(a, cmd, dt) {
     const ai = a.ai, e = ai.target, h = W.hitboxes(e), it = W.current(a);
     G.eyePos(a, eye);
-    const torso = (h.legTop + h.bodyTop) / 2 + (level < 2 ? -0.12 : 0.1);
+    const torso = (h.legTop + h.bodyTop) / 2 + (level < 2 ? -0.12 : 0.14);
     const ay = ai.aimHead ? h.headY - 0.03 : torso;
     const dx = e.pos.x - eye.x, dz = e.pos.z - eye.z, dist = Math.hypot(dx, dz), dy = ay - eye.y;
-    a.aimNoise = D.noise * (1 + (level === 0 ? G.clamp((dist - 12) / 20, 0, 0.75) : 0));
+    a.aimNoise = (D.noise + D.bloom * a.inacc) * (1 + (level === 0 ? G.clamp((dist - 12) / 20, 0, 0.75) : 0));
     // Lower tiers favour a low hold. Leave room for the weapon's full spread
     // below shoulder height, even as automatic fire climbs.
     ai.bodyCeiling = level < 2 && !ai.aimHead ? Math.atan2(h.bodyTop - 0.08 - eye.y, dist + 0.25) : null;
@@ -245,7 +245,12 @@
       if (d.scope && it.zoom === 0 && !it.rezoom && dist > 5 && G.time >= it.nextFire) cmd.altPressed = true;
       if (ready) {
         if (d.auto) {
-          if (ai.burstLeft <= 0) { ai.burstLeft = dist > 28 ? G.randi(1, 2) : dist > 12 ? G.randi(3, 6) : G.randi(6, 10); ai.burstShots = 0; }
+          if (ai.burstLeft <= 0) {
+            // Elite bots keep medium-range bursts ahead of the steep part of the spray.
+            const mediumBurst = level === 2 ? 3 : 6;
+            ai.burstLeft = dist > 28 ? G.randi(1, 2) : dist > 12 ? G.randi(3, mediumBurst) : G.randi(6, 10);
+            ai.burstShots = 0;
+          }
           cmd.fire = true;
           if (ai.burstShots >= ai.burstLeft) { ai.pauseUntil = G.time + (dist > 28 ? 0.38 : 0.25); ai.burstLeft = 0; cmd.fire = false; }
         } else if (G.time >= it.nextFire && (!d.scope || it.zoom > 0 || dist < 5)) {

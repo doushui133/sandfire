@@ -62,10 +62,9 @@
     a.pos.y = ny; a.crouch = nc;
   };
 
-  function friction(a, dt) {
-    const sp = Math.hypot(a.vel.x, a.vel.z);
-    if (sp < 0.02) { a.vel.x = a.vel.z = 0; return; }
-    const k = Math.max(0, sp - Math.max(sp, 1.9) * 5.2 * dt) / sp;
+  function friction(a, speed, drop) {
+    const left = speed - drop;
+    const k = left > 1e-6 ? left / speed : 0;
     a.vel.x *= k; a.vel.z *= k;
   }
   function accelerate(a, wx, wz, wishSpeed, cap, accel, dt) {
@@ -75,12 +74,18 @@
     a.vel.x += acc * wx; a.vel.z += acc * wz;
   }
 
-  // full movement step. wx,wz: unit wish direction (or 0), wishSpeed m/s
-  Ph.step = function (a, wx, wz, wishSpeed, jump, dt) {
+  // brake requests a stop without an opposing input.
+  Ph.step = function (a, wx, wz, wishSpeed, jump, dt, brake = false) {
     Ph.crouch(a, dt);
     if (a.onGround) {
-      friction(a, dt);
-      accelerate(a, wx, wz, wishSpeed, wishSpeed, 5.5, dt);
+      const speed = Math.hypot(a.vel.x, a.vel.z);
+      const maxSpeed = G.Weapons.maxSpeed(a);
+      const opposed = wishSpeed > 0 && a.vel.x * wx + a.vel.z * wz < -0.3 * speed * Math.hypot(wx, wz);
+      if (brake || opposed) friction(a, speed, maxSpeed * 10 * dt);
+      else if (wishSpeed > 0) {
+        friction(a, speed, Math.max(speed, wishSpeed * 0.34) * 3.6 * dt);
+        accelerate(a, wx, wz, wishSpeed, wishSpeed, 5.2, dt);
+      } else friction(a, speed, Math.max(speed, maxSpeed * 0.41) * 6.3 * dt);
       if (jump && a.crouch < 0.5) { a.vel.y = JUMP_V; a.onGround = false; a.jumped = true; }
     } else accelerate(a, wx, wz, wishSpeed, 0.76, 12, dt);
     const h = G.bodyHeight(a.crouch) - 0.01;
@@ -221,11 +226,13 @@
       if (inp.down('KeyW')) fz -= 1; if (inp.down('KeyS')) fz += 1;
       if (inp.down('KeyA')) fx -= 1; if (inp.down('KeyD')) fx += 1;
     }
-    const len = Math.hypot(fx, fz);
+    const deflection = Math.hypot(fx, fz);
+    const touchBrake = touch && G.settings.touchBrake;
+    const len = touchBrake && deflection < 0.02 ? 0 : deflection;
+    const s = Math.sin(a.yaw), c = Math.cos(a.yaw);
     let wx = 0, wz = 0;
     if (len > 0) {
       fx /= len; fz /= len;
-      const s = Math.sin(a.yaw), c = Math.cos(a.yaw);
       wx = fx * c + fz * s; wz = -fx * s + fz * c;
     }
     a.walking = touch ? len > 0 && len <= 0.33 : inp.down('ShiftLeft') || inp.down('ShiftRight');
@@ -234,7 +241,16 @@
     const pace = touch ? (len <= 0.33 ? 0.52 * Math.max(0, len - 0.05) / 0.28 : 0.52 + Math.min(1, (len - 0.33) / 0.27) * 0.48) : a.walking ? 0.52 : 1;
     let speed = G.Weapons.maxSpeed(a) * pace * G.lerp(1, 0.34, a.crouch);
     if (G.time < a.slowUntil) speed *= 0.55;
-    Ph.step(a, wx, wz, len > 0 ? speed : 0, !frozen && inp.hit('Space'), dt);
+    if (!touchBrake || frozen) a.touchMoving = false;
+    else if (len > 0) a.touchMoving = true;
+    const brake = a.touchMoving && len === 0;
+    const vx = a.vel.x, vz = a.vel.z, grounded = a.onGround;
+    Ph.step(a, wx, wz, len > 0 ? speed : 0, !frozen && inp.hit('Space'), dt, brake);
+    if (brake && a.vel.x === 0 && a.vel.z === 0) a.touchMoving = false;
+    const ax = grounded && dt > 0 ? (a.vel.x - vx) / dt : 0;
+    const az = grounded && dt > 0 ? (a.vel.z - vz) / dt : 0;
+    a.moveAccelX = ax * c - az * s;
+    a.moveAccelZ = ax * s + az * c;
     if (a.landed) { G.Audio.land(a.pos, true); G.VM.onLand(a.landed); a.landed = 0; }
 
     // footsteps (silent when walking or crouched)
@@ -275,7 +291,10 @@
     if (!blockFire) W.tryPickup(a);
     const stopFire = blockFire || frozen || a.planting || a.defusing;
     const automatic = touch && !stopFire && autoTarget(a,W.current(a));
-    a.viewPunch = (a.viewPunch || 0) * Math.exp(-dt * 14);
+    const punchDecay = a.viewPunch ? Math.exp(-dt * 21) : 0;
+    a.viewPunch = (a.viewPunch || 0) * punchDecay;
+    a.viewRoll = (a.viewRoll || 0) * punchDecay;
+    a.viewFov = (a.viewFov || 0) * punchDecay;
     weaponControls.fire = (inp.left || automatic) && !stopFire;
     weaponControls.firePressed = (inp.leftPressed || automatic) && !stopFire;
     weaponControls.alt = inp.right && !stopFire;
@@ -290,10 +309,14 @@
     if (a.stepUp) { P.camY -= 0; a.stepUp = 0; }
     P.camY = Math.abs(P.camY - targetY) > 1.2 ? targetY : G.lerp(P.camY, targetY, 1 - Math.exp(-dt * 18));
     cam.position.set(a.pos.x, P.camY, a.pos.z);
-    const sh = G.FX.shake * 0.02 + (G.time < a.punchUntil ? 0.012 : 0);
-    cam.rotation.set(a.pitch + a.recoilP * 0.5 + a.viewPunch + (Math.random() - 0.5) * sh, a.yaw + a.recoilY * 0.5 + (Math.random() - 0.5) * sh, 0, 'YXZ');
+    const lean = -G.clamp(a.moveAccelX / 48, -1, 1) * Math.PI / 300;
+    a.moveRoll = G.lerp(a.moveRoll || 0, lean, 1 - Math.exp(-dt * 16));
+    const shotFov = a.viewFov >= 0.01 ? a.viewFov : 0;
+    const sh = G.FX.shake * 0.02 + shotFov * 0.008 + (G.time < a.punchUntil ? 0.012 : 0);
+    const pitch = a.pitch + a.recoilP * 0.5 + a.viewPunch + (Math.random() - 0.5) * sh;
+    cam.rotation.set(G.clamp(pitch, -1.56, 1.56), a.yaw + a.recoilY * 0.5 + (Math.random() - 0.5) * sh, a.moveRoll + a.viewRoll, 'YXZ');
     const baseFov = zoom === 2 ? 12 : zoom === 1 ? 32 : 74;
-    setFov(cam, baseFov * (1 - 0.06 * G.clamp((P.slowUntil - P.clock) / 0.4, 0, 1)));
+    setFov(cam, baseFov * (1 + shotFov / 74 - 0.06 * G.clamp((P.slowUntil - P.clock) / 0.4, 0, 1)));
 
     // is the player standing in shade? (dims the viewmodel)
     P.shadeT -= dt;

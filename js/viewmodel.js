@@ -8,7 +8,7 @@
   let scene, cam, holder, gunMesh, magMesh, armsMesh, flash, flash2, gunMat, armMats = {};
   const guns = {};
   let curId = null, curTeam = null;
-  const st = { bob: 0, swayX: 0, swayY: 0, kick: 0, kickRot: 0, kickSide: 0, reloadT: -1, reloadDur: 1, drawT: 1, swingT: -1, heavy: false, flashT: 0, land: 0, amb: new THREE.Color(0.5, 0.5, 0.5) };
+  const st = { bob: 0, swayX: 0, swayY: 0, lagX: 0, lagZ: 0, kick: 0, kickRot: 0, kickSide: 0, reloadT: -1, reloadDur: 1, drawT: 1, swingT: -1, heavy: false, flashT: 0, land: 0, amb: new THREE.Color(0.5, 0.5, 0.5) };
   // where the gun sits in view (x right, y up, z forward is negative)
   const BASE = {
     ar7: [0.14, -0.19, -0.41], tr4: [0.14, -0.19, -0.4], v9: [0.135, -0.172, -0.37], r90: [0.15, -0.2, -0.4],
@@ -357,15 +357,15 @@
 
   VM.onShoot = function (d) {
     const m = d.model;
-    const heavy = d.scope || d.shell || m === 'box';
-    st.kick += heavy ? 0.078 : m === 'heavy' ? 0.055 : d.slot === 'pistol' ? 0.034 : 0.029;
-    st.kickRot += heavy ? 0.18 : m === 'heavy' ? 0.20 : d.slot === 'pistol' ? 0.11 : 0.057;
-    st.kickSide = (Math.random() - 0.5) * (heavy ? 0.045 : 0.029);
-    st.flashT = 0.05;
+    const heavy = d.scope || d.shell || m === 'box' || m === 'heavy';
+    st.kick = Math.min(0.15, st.kick + (heavy ? 0.112 : m === 'smg' ? 0.044 : 0.06));
+    st.kickRot = Math.min(0.3, st.kickRot + (heavy ? 0.235 : d.slot === 'pistol' ? 0.145 : 0.105));
+    st.kickSide = G.rand(-1, 1) * (heavy ? 0.034 : 0.021);
+    st.flashT = heavy ? 0.062 : 0.042;
     flash.material.rotation = Math.random() * 6.28;
-    const big = m === 'ar' || m === 'sniper' || m === 'heavy';
-    flash.scale.setScalar((big ? 0.13 : 0.09) * (0.85 + Math.random() * 0.3));
-    flash2.scale.set(big ? 0.2 : 0.13, big ? 0.07 : 0.05, 1);
+    const big = heavy || m === 'ar' || m === 'tr';
+    flash.scale.setScalar((big ? 0.16 : 0.105) * G.rand(0.85, 1.15));
+    flash2.scale.set(big ? 0.24 : 0.15, big ? 0.08 : 0.05, 1);
     flash2.rotation.set(0, Math.PI / 2, Math.random() * 0.4 - 0.2);
     G.FX.shell(VM.ejectWorld(), d.model);
   };
@@ -398,20 +398,25 @@
     G.Gfx.probeAt(p.pos.x, p.pos.z, tmpC);
     st.amb.lerp(tmpC, 1 - Math.exp(-dt * 5));
     gunMat.uniforms.uAmbient.value.copy(st.amb);
+    st.kick *= Math.exp(-dt * 17); st.kickRot *= Math.exp(-dt * 15); st.kickSide *= Math.exp(-dt * 17);
+    st.land *= Math.exp(-dt * 9);
+    const muzzleFlash = st.flashT > 0;
+    st.flashT = Math.max(0, st.flashT - dt);
     if (!holder.visible) return;
     const base = BASE[id] || grenadeBase;
-    // bob + sway
-    const sp = Math.hypot(p.vel.x, p.vel.z), f = p.onGround ? G.clamp(sp / 6, 0, 1) : 0;
-    st.bob += dt * (3.6 + sp * 1.5);
+    // Bob follows ground speed. The holder trails changes in velocity.
+    const sp = Math.hypot(p.vel.x, p.vel.z), f = p.onGround ? G.clamp(sp / G.Weapons.maxSpeed(p), 0, 1) : 0;
+    st.bob += dt * sp * 2.2;
+    const lagBlend = 1 - Math.exp(-dt * 14);
+    st.lagX = G.lerp(st.lagX, G.clamp(-(p.moveAccelX || 0) * 0.00055, -0.023, 0.023), lagBlend);
+    st.lagZ = G.lerp(st.lagZ, G.clamp(-(p.moveAccelZ || 0) * 0.0007, -0.028, 0.028), lagBlend);
     const ldx = G.HUD.buyOpen ? 0 : G.input.dx, ldy = G.HUD.buyOpen ? 0 : G.input.dy;
     st.swayX = G.clamp(st.swayX - ldx * 0.00016, -0.035, 0.035) * Math.exp(-dt * 10);
     st.swayY = G.clamp(st.swayY + ldy * 0.00016, -0.035, 0.035) * Math.exp(-dt * 10);
-    st.kick *= Math.exp(-dt * 18); st.kickRot *= Math.exp(-dt * 15); st.kickSide *= Math.exp(-dt * 15);
-    st.land *= Math.exp(-dt * 9);
-    let x = base[0] + Math.sin(st.bob) * 0.009 * f + st.swayX;
+    let x = base[0] + Math.sin(st.bob) * 0.009 * f + st.swayX + st.lagX;
     let y = base[1] - Math.abs(Math.cos(st.bob)) * 0.01 * f + st.swayY - p.crouch * 0.008 - st.land - (p.onGround ? 0 : 0.012);
-    let z = base[2] + st.kick;
-    let rx = restPitch(id) + st.kickRot, ry = restYaw(id) + st.swayX * 1.5 + st.kickSide, rz = st.swayX * 2 + st.kickSide * 0.8 + Math.sin(st.bob) * 0.012 * f;
+    let z = base[2] + st.kick + st.lagZ;
+    let rx = restPitch(id) + st.kickRot, ry = restYaw(id) + st.swayX * 1.5 + st.kickSide, rz = st.swayX * 2 + st.kickSide * 0.8 + Math.sin(st.bob) * 0.012 * f - st.lagX;
     if (st.drawT < 1) {
       st.drawT = Math.min(1, st.drawT + dt / 0.45);
       const e = 1 - Math.pow(1 - st.drawT, 3);
@@ -467,8 +472,7 @@
     if (p.planting || p.defusing) { y -= 0.06; rx -= 0.5; }
     holder.position.set(x, y, z); holder.rotation.set(rx, ry, rz);
     // muzzle flash
-    st.flashT -= dt;
-    flash.visible = flash2.visible = st.flashT > 0 && id !== 'knife' && id !== 'bomb';
+    flash.visible = flash2.visible = muzzleFlash && id !== 'knife' && id !== 'bomb';
   };
   const grenadeBase = [.105,-.15,-.34];
   const rotatedPivot = new THREE.Vector3();

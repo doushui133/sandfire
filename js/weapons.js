@@ -4,36 +4,36 @@
   const THREE = G.THREE;
   const W = G.Weapons = {};
 
-  // inacc values are cone radii in radians; rc = recoil kick per shot (radians)
+  // Inaccuracy values are cone radii in radians.
   W.defs = {
     knife: { name: '战术匕首', slot: 'knife', melee: true, dmg: 34, dmg2: 62, rate: 0.42, rate2: 1.0, range: 1.8, speed: 6.2, kill: 1000 },
     p10: { name: 'P10 手枪', slot: 'pistol', price: 200, dmg: 34, rpm: 380, auto: false, clip: 15, reserve: 45, reload: 2.2, pen: 0.62, fall: 0.93,
-      inacc: { stand: 0.005, crouch: 0.004, move: 0.03, air: 0.15, shot: 0.032, rec: 5 }, rc: { up: 0.026, side: 0.006, decay: 0, sideStart: 99 }, speed: 6.0, kill: 300, snd: 'pistol', model: 'pistol' },
+      inacc: { stand: 0.005, crouch: 0.004, move: 0.03, air: 0.15, shot: 0.028, rec: 6 }, speed: 6.0, kill: 300, snd: 'pistol', model: 'pistol' },
     h50: { name: 'H50 重型手枪', slot: 'pistol', price: 650, dmg: 60, rpm: 230, auto: false, clip: 7, reserve: 35, reload: 2.2, pen: 0.93, fall: 0.86,
-      inacc: { stand: 0.004, crouch: 0.003, move: 0.08, air: 0.2, shot: 0.06, rec: 3 }, rc: { up: 0.06, side: 0.012, decay: 0, sideStart: 99 }, speed: 5.75, kill: 300, snd: 'heavy', model: 'heavy' },
+      inacc: { stand: 0.004, crouch: 0.003, move: 0.08, air: 0.2, shot: 0.05, rec: 5 }, speed: 5.75, kill: 300, snd: 'heavy', model: 'heavy' },
     v9: { name: 'V9 冲锋枪', slot: 'primary', price: 1250, dmg: 28, rpm: 800, auto: true, clip: 30, reserve: 120, reload: 2.4, pen: 0.6, fall: 0.82,
-      inacc: { stand: 0.008, crouch: 0.006, move: 0.028, air: 0.15, shot: 0.005, rec: 6 }, rc: { up: 0.011, side: 0.006, decay: 0.07, sideStart: 6, period: 4 }, speed: 5.9, kill: 600, snd: 'smg', model: 'smg' },
+      inacc: { stand: 0.008, crouch: 0.006, move: 0.034, air: 0.15, shot: 0.004, rec: 6 }, speed: 5.9, kill: 600, snd: 'smg', model: 'smg' },
     ar7: { name: 'AR-7 突击步枪', slot: 'primary', team: 'atk', price: 2700, dmg: 36, rpm: 600, auto: true, clip: 30, reserve: 90, reload: 2.5, pen: 0.775, fall: 0.98,
-      inacc: { stand: 0.0032, crouch: 0.0024, move: 0.11, air: 0.22, shot: 0.0075, rec: 4 }, rc: { up: 0.0175, side: 0.0095, decay: 0.075, sideStart: 8, period: 5 }, speed: 5.4, kill: 300, snd: 'rifle', model: 'ar' },
+      inacc: { stand: 0.0032, crouch: 0.0024, move: 0.115, air: 0.22, shot: 0.0026, rec: 5 }, speed: 5.4, kill: 300, snd: 'rifle', model: 'ar' },
     tr4: { name: 'TR-4 战术步枪', slot: 'primary', team: 'def', price: 2900, dmg: 34, rpm: 666, auto: true, clip: 30, reserve: 90, reload: 3.0, pen: 0.7, fall: 0.98,
-      inacc: { stand: 0.0028, crouch: 0.002, move: 0.1, air: 0.22, shot: 0.0065, rec: 4.5 }, rc: { up: 0.0145, side: 0.008, decay: 0.07, sideStart: 9, period: 5 }, speed: 5.55, kill: 300, snd: 'rifle2', model: 'tr' },
+      inacc: { stand: 0.0028, crouch: 0.002, move: 0.103, air: 0.22, shot: 0.0023, rec: 5.5 }, speed: 5.55, kill: 300, snd: 'rifle2', model: 'tr' },
     r90: { name: 'R-90 狙击步枪', slot: 'primary', price: 4450, dmg: 125, rpm: 48, auto: false, clip: 5, reserve: 30, reload: 3.6, pen: 0.97, fall: 0.996,
-      inacc: { stand: 0.0007, crouch: 0.0005, move: 0.2, air: 0.3, shot: 0, rec: 2, unscoped: 0.085 }, rc: { up: 0.05, side: 0.005, decay: 0, sideStart: 99 }, speed: 5.0, scopeSpeed: 3.6, kill: 150, snd: 'sniper', model: 'sniper', scope: true },
+      inacc: { stand: 0.0007, crouch: 0.0005, move: 0.2, air: 0.3, shot: 0, rec: 2, unscoped: 0.085 }, speed: 5.0, scopeSpeed: 3.6, kill: 150, snd: 'sniper', model: 'sniper', scope: true },
   };
-  function gun(base, stats, accuracy, recoil) {
+  function gun(base, stats, accuracy) {
     const d = W.defs[base];
     return Object.assign({}, d, { team: null }, stats, {
-      inacc: Object.assign({}, d.inacc, accuracy), rc: Object.assign({}, d.rc, recoil),
+      inacc: Object.assign({}, d.inacc, accuracy),
     });
   }
   Object.assign(W.defs, {
-    m18: gun('p10', { name:'M18 自动手枪', price:500, dmg:23, rpm:810, auto:true, clip:22, reserve:88, reload:1.9, snd:'m18' }, { move:0.055, shot:0.012 }, { up:0.016 }),
-    k5: gun('v9', { name:'K5 紧凑冲锋枪', price:1050, dmg:22, rpm:970, clip:32, speed:6.18, reload:2.05, snd:'k5' }, { move:0.024 }, { up:0.01 }),
-    u45: gun('v9', { name:'U45 冲锋枪', price:1200, dmg:39, rpm:525, clip:24, reserve:96, speed:5.75, snd:'u45' }, { shot:0.008 }, { up:0.025, side:0.011 }),
-    s8: gun('v9', { name:'S8 泵动霰弹枪', price:1150, dmg:24, rpm:68, auto:false, pellets:8, shell:true, clip:7, reserve:35, reload:0.6, pen:0.68, fall:0.25, speed:5.65, kill:900, snd:'s8', model:'pump' }, { stand:0.045, crouch:0.038, move:0.035 }, { up:0.065 }),
-    fa2: gun('ar7', { name:'FA-2 轻型步枪', price:2150, dmg:34, rpm:630, pen:0.72, speed:5.65, snd:'fa2' }, { stand:0.006, crouch:0.0045, shot:0.011 }, { side:0.011 }),
-    s40: gun('r90', { name:'S40 轻型狙击步枪', price:3200, dmg:112, fall:0.997, rpm:36, clip:4, reserve:32, speed:5.85, scopeSpeed:4.45, reload:2.7, snd:'s40' }, { stand:0.0018, move:0.14 }, { up:0.038 }),
-    l60: gun('ar7', { name:'L60 轻机枪', price:4200, dmg:41, rpm:705, clip:100, reserve:200, reload:5.6, speed:4.4, snd:'l60', model:'box' }, { move:0.18, shot:0.012 }, { up:0.029, side:0.018, decay:0.035 }),
+    m18: gun('p10', { name:'M18 自动手枪', price:500, dmg:23, rpm:810, auto:true, clip:22, reserve:88, reload:1.9, snd:'m18' }, { move:0.055, shot:0.005 }),
+    k5: gun('v9', { name:'K5 紧凑冲锋枪', price:1050, dmg:22, rpm:970, clip:32, speed:6.18, reload:2.05, snd:'k5' }, { move:0.027 }),
+    u45: gun('v9', { name:'U45 冲锋枪', price:1200, dmg:39, rpm:525, clip:24, reserve:96, speed:5.75, snd:'u45' }, { move:0.04, shot:0.005 }),
+    s8: gun('v9', { name:'S8 泵动霰弹枪', price:1150, dmg:24, rpm:68, auto:false, pellets:8, shell:true, clip:7, reserve:35, reload:0.6, pen:0.68, fall:0.25, speed:5.65, kill:900, snd:'s8', model:'pump' }, { stand:0.045, crouch:0.038, move:0.035 }),
+    fa2: gun('ar7', { name:'FA-2 轻型步枪', price:2150, dmg:34, rpm:630, pen:0.72, speed:5.65, snd:'fa2' }, { stand:0.006, crouch:0.0045, shot:0.0038 }),
+    s40: gun('r90', { name:'S40 轻型狙击步枪', price:3200, dmg:112, fall:0.997, rpm:36, clip:4, reserve:32, speed:5.85, scopeSpeed:4.45, reload:2.7, snd:'s40' }, { stand:0.0018, move:0.14 }),
+    l60: gun('ar7', { name:'L60 轻机枪', price:4200, dmg:41, rpm:705, clip:100, reserve:200, reload:5.6, speed:4.4, snd:'l60', model:'box' }, { move:0.18, shot:0.0045 }),
   });
   W.grenades = ['he','flash','smoke','molotov','incendiary'];
   [['he','高爆手雷',300,'爆'], ['flash','闪光弹',200,'闪'], ['smoke','烟雾弹',300,'烟'],
@@ -106,23 +106,83 @@
   W.makeGunMesh = (id) => G.GunModels.mesh(id);
 
   // ---------- spread & recoil ----------
+  // Absolute pitch and yaw in milliradians after each shot.
+  const SPRAY = {
+    ar7: [
+      [5,0], [10,-1], [15,-2], [21,-3], [27,-4], [35,-5], [47,-6], [60,-7], [75,-6], [89,-3],
+      [96,3], [100,12], [102,24], [101,36], [98,45], [94,48], [93,43], [95,32], [98,16], [101,-3],
+      [103,-21], [104,-37], [102,-47], [99,-48], [96,-41], [94,-27], [95,-9], [98,10], [102,26], [106,36],
+    ],
+    tr4: [
+      [4,1], [8,2], [13,2], [19,3], [26,4], [33,6], [43,8], [54,10], [66,11], [78,9],
+      [86,4], [89,-3], [90,-13], [87,-24], [85,-32], [85,-35], [88,-31], [91,-21], [93,-8], [93,6],
+      [90,19], [87,29], [86,36], [88,37], [91,31], [94,22], [95,9], [93,-4], [89,-15], [88,-23],
+    ],
+    fa2: [
+      [6,-1], [11,0], [17,2], [23,5], [29,7], [37,9], [48,9], [61,6], [73,1], [84,-8],
+      [92,-19], [96,-33], [94,-43], [91,-50], [88,-48], [90,-40], [96,-26], [101,-9], [102,9], [99,27],
+      [94,41], [92,50], [95,51], [99,45], [103,32], [105,16], [102,-3], [97,-22], [94,-37], [93,-45],
+    ],
+    v9: [
+      [4,-1], [8,2], [12,-4], [16,-1], [21,4], [24,0], [28,-6], [31,-11], [35,-5], [37,-13],
+      [40,-16], [43,-10], [41,-3], [45,2], [43,-2], [46,10], [49,18], [45,15], [47,23], [49,18],
+      [52,9], [47,14], [50,3], [48,-3], [45,-12], [47,-9], [50,-18], [49,-12], [51,-21], [52,-13],
+    ],
+    k5: [
+      [3,2], [7,-1], [11,3], [14,8], [16,3], [18,9], [22,12], [25,5], [27,11], [30,2], [29,-6],
+      [33,-1], [35,-12], [32,-18], [36,-11], [38,-22], [37,-14], [40,-5], [38,-9], [42,2], [40,10], [43,6],
+      [45,17], [42,22], [46,14], [44,21], [43,12], [47,4], [45,9], [48,-1], [46,-10], [49,-5],
+    ],
+    u45: [
+      [6,-3], [11,1], [16,-6], [21,-2], [27,-9], [32,-13], [37,-7], [43,-17],
+      [48,-25], [51,-19], [54,-12], [57,-3], [54,-9], [58,5], [62,15], [57,11],
+      [63,24], [60,30], [63,24], [58,29], [62,17], [64,8], [60,12], [65,-3],
+    ],
+    l60: [
+      [9,1], [17,-1], [26,-4], [36,-7], [47,-7], [59,-5], [73,-1], [89,6], [106,16], [123,27],
+      [137,42], [146,56], [149,67], [146,74], [143,72], [140,62], [142,47], [149,28], [155,7], [158,-16],
+      [157,-36], [151,-54], [146,-67], [143,-74], [144,-71], [148,-62], [153,-46], [157,-25], [162,-4], [165,21],
+      [163,41], [157,57], [151,70], [148,78], [151,74], [156,65], [162,50], [168,29], [170,6], [168,-18],
+      [162,-42], [157,-60], [152,-76], [150,-83], [154,-79], [159,-68], [166,-50], [172,-29], [175,-5], [172,20],
+      [167,43], [160,62], [156,76], [155,84], [158,80], [163,69], [169,52], [175,30], [177,6], [174,-21],
+      [168,-45], [162,-65], [157,-81], [156,-87], [160,-84], [166,-73], [172,-53], [178,-31], [181,-6], [179,19],
+      [172,44], [165,64], [160,80], [158,88], [161,85], [166,74], [173,56], [179,34], [182,9], [181,-17],
+      [175,-42], [167,-64], [162,-81], [161,-90], [164,-88], [170,-77], [177,-59], [182,-35], [185,-8], [183,18],
+      [176,45], [169,67], [164,85], [163,94], [166,91], [171,80], [178,61], [184,38], [186,11], [184,-15],
+    ],
+    m18: [
+      [6,1], [12,-3], [17,2], [24,6], [28,2], [33,9], [38,15], [43,10], [46,18], [48,12], [52,5],
+      [54,-3], [52,2], [56,-10], [59,-17], [55,-13], [58,-23], [61,-17], [57,-21], [61,-11], [62,-4], [64,3],
+    ],
+    p10: [
+      [31,2], [33,-1], [32,3], [34,1], [33,-2], [32,-1], [34,2], [33,4],
+      [32,2], [34,-2], [33,-3], [32,0], [34,3], [33,2], [32,-1],
+    ],
+    h50: [[64,-5], [68,-8], [67,4], [70,7], [66,2], [68,-6], [67,-3]],
+    s8: [[82,4], [85,-3], [83,-5], [87,4], [84,1], [86,-4], [84,3]],
+    r90: [[76,-3], [80,-1], [78,2], [81,3], [77,-2]],
+    s40: [[62,2], [64,4], [63,-2], [65,-3]],
+  };
+
   W.spread = function (a, it) {
     const d = it.def, ia = d.inacc;
     let s = G.lerp(ia.stand, ia.crouch, a.crouch);
-    const sp = Math.hypot(a.vel.x, a.vel.z), frac = G.clamp((sp / d.speed - 0.34) / 0.66, 0, 1);
-    s += ia.move * frac;
+    const maxSpeed = d.scope && it.zoom > 0 ? d.scopeSpeed : d.speed;
+    const speed = Math.hypot(a.vel.x, a.vel.z);
+    const f = G.clamp((speed / maxSpeed - 0.3) / 0.7, 0, 1);
+    s += ia.move * f * f * (3 - 2 * f);
     if (!a.onGround) s += ia.air;
     if (d.scope && it.zoom === 0) s += ia.unscoped;
     return s + a.inacc;
   };
-  function kick(a, d) {
-    const rc = d.rc, i = a.shots;
-    const up = rc.up * Math.max(0.12, 1 - i * rc.decay);
-    let side;
-    if (i < rc.sideStart) side = rc.side * 0.35 * (Math.random() - 0.5);
-    else side = rc.side * Math.sign(Math.sin(((i - rc.sideStart) / rc.period) * Math.PI) || 1) * (0.7 + 0.3 * Math.random());
-    a.recoilP += up; a.recoilY += side;
-    return up;
+  function kick(a, it, recovery) {
+    const d = it.def, pattern = SPRAY[d.id];
+    const index = Math.min(pattern.length - 1, Math.floor(a.shots * recovery));
+    const step = pattern[index], jitter = d.model === 'smg' ? 2.5 : 1;
+    a.recoilP = a.recoilFromP = (step[0] + G.rand(-jitter, jitter)) * 0.001;
+    a.recoilY = a.recoilFromY = (step[1] + G.rand(-jitter, jitter)) * 0.001;
+    a.recoilItem = it;
+    a.shots = index + 1;
   }
 
   // ---------- hitscan ----------
@@ -215,17 +275,18 @@
     next.t += start; next.wallbang = true;
     return next;
   }
-  function shoot(a, it) {
+  function shoot(a, it, recovery) {
     const d = it.def;
     it.clip--; it.nextFire = G.time + 60 / d.rpm;
     G.eyePos(a, eye);
     const spread = W.spread(a, it) + (a.aimNoise || 0);
-    let aimP = a.pitch + a.recoilP * (a.recoilComp !== undefined ? 1 - a.recoilComp : 1);
+    const remaining = 1 - (a.recoilComp || 0);
+    let aimP = a.pitch + a.recoilP * remaining;
     if (a.ai && Number.isFinite(a.ai.bodyCeiling)) {
       // A centre-mass burst from an inexperienced bot tends to pull low.
-      aimP = Math.min(a.pitch - a.recoilP * (1 - a.recoilComp), a.ai.bodyCeiling - spread);
+      aimP = Math.min(a.pitch - a.recoilP * remaining, a.ai.bodyCeiling - spread);
     }
-    const aimY = a.yaw + a.recoilY * (a.recoilComp !== undefined ? 1 - a.recoilComp : 1);
+    const aimY = a.yaw + a.recoilY * remaining;
     W.muzzlePos(a, muz);
     G.forward(aimY, aimP, barrel);
     right.set(Math.cos(aimY), 0, -Math.sin(aimY)); upv.crossVectors(right, barrel).normalize();
@@ -266,16 +327,15 @@
     G.FX.muzzle(muz, barrel, d.slot === 'primary' && d.model !== 'smg', a.isPlayer);
     G.Audio.shot(d.snd, eye, a.isPlayer);
     if (G.Bots) G.Bots.hearShot(a);
-    const ballisticKick = kick(a, d);
+    kick(a, it, recovery);
     if (a.isPlayer) {
-      // Half the ballistic climb already appears in the camera. Add the
-      // difference as a fast-recovering impulse, independent of bullet aim.
-      const punch = d.slot === 'pistol' ? (d.model === 'heavy' ? 0.031 : 0.018) :
-        d.model === 'smg' ? 0.032 : d.scope || d.shell || d.model === 'box' ? 0.045 : 0.036;
-      a.viewPunch = Math.min(0.068, (a.viewPunch || 0) + punch - ballisticKick * 0.5);
-      G.FX.shake = Math.max(G.FX.shake, 0.11 + punch * 4);
+      const heavy = d.scope || d.shell || d.model === 'heavy' || d.model === 'box';
+      const punch = heavy ? 0.062 : d.slot === 'pistol' || d.model === 'smg' ? 0.027 : 0.037;
+      a.viewPunch = Math.min(0.09, (a.viewPunch || 0) + punch);
+      a.viewRoll = G.rand(-1, 1) * (heavy ? 0.009 : 0.005);
+      if (heavy) a.viewFov = d.scope || d.shell ? 1.8 : 1.15;
     }
-    a.shots++; a.lastShot = G.time;
+    a.lastShot = G.time;
     a.inacc += d.inacc.shot;
     if (d.scope) { it.rezoom = it.zoom; it.zoom = 0; G.Audio.click('bolt'); }
     if (a.isPlayer && G.VM) G.VM.onShoot(d);
@@ -302,13 +362,23 @@
 
   // per-frame weapon logic shared by player and bots. ctl: {fire, firePressed, alt, reload}
   W.update = function (a, dt, ctl) {
-    a.inacc *= Math.exp(-dt * (W.current(a) ? W.current(a).def.inacc ? W.current(a).def.inacc.rec : 5 : 5));
-    if (G.time - a.lastShot > 0.12 + (W.current(a) && W.current(a).def.rpm ? 60 / W.current(a).def.rpm : 0)) {
-      const k = Math.exp(-dt * 7);
-      a.recoilP *= k; a.recoilY *= k;
-      if (G.time - a.lastShot > 0.4) a.shots = 0;
-    }
     const it = W.current(a);
+    const ia = it && it.def.inacc;
+    a.inacc *= Math.exp(-dt * (ia ? ia.rec : 5));
+    let recoil = 0;
+    if (ia && a.shots && a.recoilItem === it) {
+      const d = it.def, interval = 60 / d.rpm;
+      const hold = d.auto ? interval + 0.05 : 0.025;
+      const end = d.auto || d.slot !== 'pistol' ? 0.46 : interval;
+      const remain = G.clamp((end - (G.time - a.lastShot)) / (end - hold), 0, 1);
+      recoil = remain * remain * (3 - 2 * remain);
+      a.recoilP = a.recoilFromP * recoil;
+      a.recoilY = a.recoilFromY * recoil;
+    } else a.recoilP = a.recoilY = 0;
+    if (recoil === 0) {
+      a.shots = 0;
+      a.recoilItem = null;
+    }
     if (!it) return;
     const d = it.def;
     if (d.slot === 'grenade') { G.Nades.control(a, ctl); return; }
@@ -330,7 +400,7 @@
     if (ctl.reload && !it.reloading && it.clip < d.clip && it.reserve > 0) W.startReload(a, it);
     const wants = d.auto ? ctl.fire : ctl.firePressed;
     if (wants && !it.reloading && G.time >= it.nextFire) {
-      if (it.clip > 0) shoot(a, it);
+      if (it.clip > 0) shoot(a, it, recoil);
       else {
         it.nextFire = G.time + 0.25;
         if (a.isPlayer) G.Audio.click('empty');

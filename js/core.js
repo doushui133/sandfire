@@ -62,9 +62,9 @@ window.G = window.G || {};
 
   // ---------- settings (per-viewer convenience only) ----------
   G.settings = { sens: 1, vol: 0.7, diff: 1, raw: true, fullscreen: true,
-    buttonSize: 1, leftFire: true, aimAssist: true, autoFire: false, gyro: false,
+    buttonSize: 1, leftFire: true, aimAssist: true, autoFire: false, gyro: false, touchBrake: true,
     touchSens: 1.5, touchScope: 1, scopeSens: 1, vertRatio: 1, gyroSens: 1,
-    chSize: 1, chGap: 1, chColor: '#7dff6a', radarRot: true, radarScale: 1, touchLayout: null };
+    chSize: 1, chGap: 1, chColor: '#7dff6a', chStatic: false, chDot: true, radarRot: true, radarScale: 1, touchLayout: null };
   try {
     const saved = JSON.parse(localStorage.getItem('sandfire.settings') || 'null');
     if (saved) Object.assign(G.settings, saved);
@@ -87,6 +87,9 @@ window.G = window.G || {};
     s.gyroSens = num(s.gyroSens, 0.2, 3, 1);
     s.chSize = num(s.chSize, 0.5, 2, 1);
     s.chGap = num(s.chGap, 0.4, 2.2, 1);
+    if (typeof s.chStatic !== 'boolean') s.chStatic = false;
+    if (typeof s.chDot !== 'boolean') s.chDot = true;
+    if (typeof s.touchBrake !== 'boolean') s.touchBrake = true;
     s.radarScale = num(s.radarScale, 0.75, 1.45, 1);
     if (typeof s.chColor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(s.chColor)) s.chColor = '#7dff6a';
     if (typeof s.radarRot !== 'boolean') s.radarRot = true;
