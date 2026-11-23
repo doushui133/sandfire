@@ -277,6 +277,44 @@ table.sb tr.me td:first-child { box-shadow: inset 2px 0 0 var(--sun); }
 .touch #scoreboard .slab { padding: 8px 10px; }
 .touch #scoreboard button { min-height: 40px; }
 
+#touchSurface { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
+#touchLayer, #layoutEditor { -webkit-user-select: none; user-select: none; }
+#touchLayer .face { pointer-events: none; }
+#touchLayer #stick {
+  display: none; left: 0; top: 0; box-sizing: border-box;
+  width: calc(var(--stick-radius) * 2); height: calc(var(--stick-radius) * 2);
+}
+#touchLayer #stick.held { display: block; }
+#touchLayer #stick i {
+  margin: calc(var(--stick-radius) * -0.31);
+  width: calc(var(--stick-radius) * 0.62); height: calc(var(--stick-radius) * 0.62);
+}
+#touchLayer button.tool, #touchLayer button.tool.held, #touchLayer button.tool:active {
+  border: 0; background: none; box-shadow: none;
+}
+#touchLayer button.tool::before {
+  content: ''; position: absolute; inset: 7%; border-radius: inherit;
+  background: rgba(12,11,9,var(--touch-opacity)); border: 1px solid rgba(244,234,216,.45);
+  box-shadow: 0 2px 8px rgba(0,0,0,.28);
+}
+#touchLayer button.tool svg { position: relative; }
+#touchLayer button.tool.held::before, #touchLayer button.tool:active::before {
+  background: rgba(135,79,21,.88); border-color: var(--sun);
+}
+#touchLayer button.act small { font-size: clamp(10px, calc(var(--button-unit) * .19), 16px); text-overflow: ellipsis; }
+#touchLayer button.act.available .face { background: rgba(100,62,23,.87); }
+#touchLayer button.act.has-icon svg { display: none; }
+#touchUseIcon { position: relative; width: 55%; height: 32%; object-fit: contain; pointer-events: none; }
+#grenadeFan { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.grenade-choice {
+  position: absolute; box-sizing: border-box; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; border: 1px solid var(--sand); border-radius: 50%;
+  background: rgba(12,11,9,.92); color: var(--text); box-shadow: 0 3px 10px #0008;
+}
+.grenade-choice img { width: 75%; height: 55%; object-fit: contain; }
+.grenade-choice small { font-size: clamp(10px, calc(var(--button-unit) * .2), 15px); white-space: nowrap; }
+.grenade-choice.picked { background: #87551d; border: 2px solid var(--sun); }
+
 @media (max-height: 420px) {
   .overlay { padding: 8px; }
   .slab { padding: 10px 12px; }

@@ -139,31 +139,30 @@
     }
     return assist.found;
   }
-  // Slow drags stay below 1:1 so the crosshair can be placed; a fast swipe rises past 1:1.
-  // Scoped aim uses a flatter curve. Applied once per frame to that frame's total delta — no lag.
-  function lookCurve(v, scoped) {
-    const a = Math.abs(v);
-    if (a < 0.0001) return 0;
-    const t = Math.min(a / (scoped ? 16 : 10), 2.2);
-    return Math.sign(v) * a * ((scoped ? 0.72 : 0.58) + (scoped ? 0.42 : 0.92) * t);
+  // Gain from finger speed (px/s), so 60 Hz and 120 Hz screens turn the same: about 1:1 for slow
+  // aiming drags, rising to ~2.1x for a fast swipe (300 px in 0.3 s turns ~113 deg at the default 1.5).
+  function lookCurve(speed, scoped) {
+    const t = Math.min(speed / 1100, 1);
+    return scoped ? 0.9 + 0.32 * t : 0.95 + 1.15 * t;
   }
   P.touchLook = function (a, dt, sens, scoped) {
     const inp = G.input, ratio = (G.settings.vertRatio >= 0.4 && G.settings.vertRatio <= 1.8) ? G.settings.vertRatio : 1;
-    let dx = lookCurve(inp.dx, scoped), dy = lookCurve(inp.dy, scoped) * ratio;
+    // Touch samples can arrive less often than animation frames.
+    const speed = Math.hypot(inp.dx, inp.dy) / (G.Touch.lookTime || dt || 1 / 60);
+    G.Touch.lookTime = 0;
+    let gain = lookCurve(speed, scoped);
     const active = G.Touch.enabled && G.Touch.realTouch && G.settings.aimAssist && a.blindUntil <= G.time;
     const moving = !!(inp.dx || inp.dy || G.Touch.joystick.x || G.Touch.joystick.y);
     const onTarget = active && moving && acquire(a);
-    if (onTarget) {
-      const drag = Math.hypot(inp.dx, inp.dy);
-      const slow = drag > 14 ? 0.92 : 0.8;
-      dx *= slow; dy *= slow;
-    }
+    if (onTarget) gain = Math.max(0.85, gain * G.lerp(0.92, 1, Math.min(speed / 850, 1)));
+    const dx = inp.dx * gain, dy = inp.dy * gain * ratio;
     a.yaw = G.wrapAngle(a.yaw - dx * sens);
     a.pitch = G.clamp(a.pitch - dy * sens, -1.53, 1.53);
     // Mild pull only while the aim is already on a visible target and the finger is not flicking.
-    if (onTarget && Math.hypot(inp.dx, inp.dy) < 22 && acquire(a)) {
+    if (onTarget && speed < 1300 && acquire(a)) {
       const err = Math.hypot(assist.yaw, assist.pitch) || 1;
-      const pull = Math.min(0.1, dt * 0.055 / err);
+      const dragLimit = speed ? Math.hypot(dx, dy) * sens * 0.25 : Infinity;
+      const pull = Math.min(0.1, Math.min(dt * 0.055, dragLimit) / err);
       a.yaw = G.wrapAngle(a.yaw + assist.yaw * pull);
       a.pitch = G.clamp(a.pitch + assist.pitch * pull, -1.53, 1.53);
     }
@@ -227,10 +226,10 @@
       const s = Math.sin(a.yaw), c = Math.cos(a.yaw);
       wx = fx * c + fz * s; wz = -fx * s + fz * c;
     }
-    a.walking = touch ? len > 0 && len <= 0.6 : inp.down('ShiftLeft') || inp.down('ShiftRight');
+    a.walking = touch ? len > 0 && len <= 0.33 : inp.down('ShiftLeft') || inp.down('ShiftRight');
     a.crouchWant = !frozen && (inp.down('KeyC') || (inp.keyboardLocked && document.fullscreenElement && (inp.down('ControlLeft') || inp.down('ControlRight'))));
-    // stick: up to 60 % push is a silent walk that tops out at the keyboard walk speed
-    const pace = touch ? (len <= 0.6 ? 0.52 * len / 0.6 : 0.52 + (len - 0.6) / 0.4 * 0.48) : a.walking ? 0.52 : 1;
+    // Stick travel reaches walk speed at 33% and run speed at 60%.
+    const pace = touch ? (len <= 0.33 ? 0.52 * Math.max(0, len - 0.05) / 0.28 : 0.52 + Math.min(1, (len - 0.33) / 0.27) * 0.48) : a.walking ? 0.52 : 1;
     let speed = G.Weapons.maxSpeed(a) * pace * G.lerp(1, 0.34, a.crouch);
     if (G.time < a.slowUntil) speed *= 0.55;
     Ph.step(a, wx, wz, len > 0 ? speed : 0, !frozen && inp.hit('Space'), dt);
