@@ -4,21 +4,23 @@
   const W = G.Weapons, M = G.Map;
   const H = G.HUD = { buyOpen: false, scoresOpen: false };
   const $ = (id) => document.getElementById(id);
-  let el, rctx, msgTimer = 0, vign = 0, buyRefresh = 0, sbRefresh = 0, moneyT = 0, lastHint = '';
+  let el, rctx, msgTimer = 0, vign = 0, buyRefresh = 0, sbRefresh = 0, moneyT = 0, lastHint = '', buyRev = -1, iconTick = 29;
   const TEAM = { atk: '进攻方', def: '防守方' };
+  const MULTI = ['', '击杀', '双杀', '三杀', '四杀', '全歼'];
+  const STAT_NAME = { '伤': '伤害', '射': '射速', '精': '精度', '机': '机动' };
 
   H.init = function () {
     el = {};
-    ['hud', 'radar', 'scoreAtk', 'scoreDef', 'timer', 'aliveAtk', 'aliveDef', 'killfeed', 'hp', 'armor', 'armorIco', 'money', 'moneyDelta', 'clip', 'reserve', 'slots',
-      'crosshair', 'chL', 'chR', 'chT', 'chB', 'hitmarker', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
-      'dmgdir', 'death', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR'].forEach((k) => (el[k] = $(k)));
+    ['hud', 'radar', 'scoreAtk', 'scoreDef', 'timer', 'aliveAtk', 'aliveDef', 'killfeed', 'hp', 'armor', 'armorIco', 'armorMark', 'hpBar', 'armorBar', 'vitHp', 'money', 'moneyDelta', 'clip', 'reserve', 'ammoIcon', 'slots',
+      'crosshair', 'chL', 'chR', 'chT', 'chB', 'hitmarker', 'hitFx', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
+      'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner'].forEach((k) => (el[k] = $(k)));
     rctx = el.radar.getContext('2d');
     let pips = '';
     for (let i = 0; i < 5; i++) pips += '<i></i>';
     el.aliveAtk.innerHTML = pips; el.aliveDef.innerHTML = pips;
     el.buymenu.addEventListener('click', (e) => {
-      const cat=e.target.closest('[data-category]');
-      if (cat) { category=Number(cat.dataset.category); renderBuy(); return; }
+      const cat = e.target.closest('[data-category]');
+      if (cat) { category = Number(cat.dataset.category); renderBuy(); return; }
       const b = e.target.closest('[data-buy]');
       if (b) buy(b.dataset.buy);
       if (e.target.closest('[data-close]')) H.toggleBuy(false);
@@ -29,14 +31,53 @@
     window.addEventListener('keydown', (e) => {
       if (!H.buyOpen || G.Touch.enabled || e.repeat) return;
       const n = parseInt(e.key, 10);
-      if (n===0) { category=-1; renderBuy(); return; }
-      if (n>=1 && n<=9) {
+      if (n === 0) { category = -1; renderBuy(); return; }
+      if (n >= 1 && n <= 9) {
         e.preventDefault(); delete G.input.pressed[e.code];
-        if (category<0) { if (n<=categories.length) { category=n-1; renderBuy(); } }
-        else { const id=buyList()[n-1]; if (id) buy(id); }
+        if (category < 0) { if (n <= categories.length) { category = n - 1; renderBuy(); } }
+        else { const id = buyList()[n - 1]; if (id) buy(id); }
       }
     });
   };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function agentName(a) {
+    if (!a) return '';
+    return typeof a === 'string' ? a : (a.name || '');
+  }
+  function weaponId(weapon) {
+    if (weapon == null || weapon === '') return '';
+    if (typeof weapon !== 'string') {
+      if (weapon.id) return weaponId(weapon.id);
+      if (weapon.name) return weaponId(weapon.name);
+      return '';
+    }
+    if (weapon === '爆炸' || weapon === '炸弹') return 'bomb';
+    if (W.defs[weapon] || (G.GunModels && G.GunModels.IDS.indexOf(weapon) >= 0)) return weapon;
+    for (const id in W.defs) if (W.defs[id].name === weapon) return id;
+    return '';
+  }
+  function weaponLabel(weapon) {
+    const id = weaponId(weapon);
+    if (id && W.defs[id]) return W.defs[id].name;
+    if (id === 'bomb') return '炸弹';
+    return typeof weapon === 'string' ? weapon : '';
+  }
+  function ico(id, cls) {
+    if (!id) return '';
+    const url = G.Icons && G.Icons.get ? G.Icons.get(id) : '';
+    const extra = cls ? ' ' + cls : '';
+    if (!url) return '<i class="wico wico-ph' + extra + '"></i>';
+    return '<img class="wico' + extra + '" alt="" draggable="false" src="' + url + '">';
+  }
+  function glyph(id) {
+    if (id === 'vesthelm') return '<i class="glyph glyph-helm"></i>';
+    if (id === 'kit') return '<i class="glyph glyph-kit"></i>';
+    return '<i class="glyph glyph-vest"></i>';
+  }
 
   // ---------- messages ----------
   H.message = function (title, sub, dur) {
@@ -45,12 +86,21 @@
     msgTimer = dur || 0;
     el.msgTitle.style.color = '';
   };
+  function clearKills() {
+    killQ = [];
+    killHold = false;
+    killArm = false;
+    if (killTimer) { clearTimeout(killTimer); killTimer = 0; }
+    if (el.killBanner) el.killBanner.hidden = true;
+  }
   H.roundStart = function (round, hasBomb) {
     if (G.Touch.enabled) G.Touch.reset();
     const p = G.Player.agent;
     const sub = hasBomb ? '你携带炸弹 · 前往 A 点或 B 点安放' : p.team === 'atk' ? '进攻：掩护队友安放炸弹' : '防守：守住 A、B 两个包点';
     H.message('第 ' + round + ' 回合', sub, G.Game.CFG.freeze);
     el.death.hidden = true;
+    if (el.deathCard) el.deathCard.hidden = true;
+    clearKills();
   };
   H.roundEnd = function (winner, reason) {
     const mine = G.Player.agent.team === winner, loser = winner === 'atk' ? 'def' : 'atk';
@@ -58,6 +108,7 @@
     H.message((mine ? '我方获胜 · ' : '敌方获胜 · ') + TEAM[winner], why, G.Game.CFG.endDelay);
     el.msgTitle.style.color = winner === 'atk' ? 'var(--atk)' : 'var(--def)';
     H.toggleBuy(false);
+    clearKills();
   };
   H.matchOver = function (winner) {
     const p = G.Player.agent, s = G.Game.score;
@@ -68,12 +119,38 @@
     G.input.active = false;
     if (G.Touch.enabled) { H.showScores(false); G.Touch.sync(); }
     G.releaseLock();
+    clearKills();
   };
-  H.moneyDelta = function (v) { el.moneyDelta.textContent = '+$' + v; moneyT = 3; };
-  H.hitmarker = function (head) {
+  H.moneyDelta = function (v) {
+    const node = el.moneyDelta;
+    node.textContent = '+$' + v;
+    moneyT = 3;
+    node.classList.remove('pop');
+    void node.offsetWidth;
+    node.classList.add('pop');
+  };
+  H.hitmarker = function (head, killed) {
     el.hitmarker.classList.toggle('hs', !!head);
+    el.hitmarker.classList.toggle('kill', !!killed);
     el.hitmarker.style.transition = 'none'; el.hitmarker.style.opacity = 1;
     requestAnimationFrame(() => { el.hitmarker.style.transition = ''; el.hitmarker.style.opacity = 0; });
+  };
+  H.hitFx = function (info) {
+    if (!el || !el.hitmarker) return;
+    info = info || {};
+    const head = !!(info.head || info.headshot);
+    H.hitmarker(head, !!info.kill);
+    if (!el.hitFx || info.dmg == null) return;
+    const n = document.createElement('b');
+    n.className = 'hit-dmg' + (head ? ' hs' : '') + (info.kill ? ' kill' : '');
+    n.textContent = String(Math.round(info.dmg));
+    el.hitFx.appendChild(n);
+    el.hitFx.hidden = false;
+    while (el.hitFx.children.length > 4) el.hitFx.firstChild.remove();
+    setTimeout(() => {
+      n.remove();
+      if (el.hitFx && !el.hitFx.children.length) el.hitFx.hidden = true;
+    }, 450);
   };
   H.hurt = function (from, dmg) {
     vign = Math.min(0.95, vign + 0.25 + dmg / 70);
@@ -86,19 +163,118 @@
     requestAnimationFrame(() => requestAnimationFrame(() => (i.style.opacity = 0)));
     setTimeout(() => i.remove(), 1300);
   };
-  H.killfeed = function (k, v, wname, head) {
+  H.killfeed = function (k, v, wname, head, wall) {
+    let hs = false, wb = false, weapon = wname;
+    if (head && typeof head === 'object') {
+      hs = !!(head.head || head.headshot);
+      wb = !!(head.wallbang || head.wall);
+      if (head.weapon) weapon = head.weapon;
+    } else { hs = !!head; wb = !!wall; }
     const p = G.Player.agent, d = document.createElement('div');
-    d.className = 'kf' + (k === p || v === p ? ' me' : '');
-    const nm = (a) => '<span class="t-' + a.team + '">' + a.name + '</span>';
-    d.innerHTML = (k && k !== v ? nm(k) : '') + '<span class="w">' + wname + '</span>' + (head ? '<span class="hs">爆头</span>' : '') + nm(v);
+    const mine = k === p, fell = v === p && !mine;
+    d.className = 'kf' + (mine ? ' me' : '') + (fell ? ' died' : '');
+    const nm = (a) => a ? '<span class="t-' + (a.team || 'atk') + '">' + esc(a.name || '') + '</span>' : '';
+    d.innerHTML = (k && k !== v ? nm(k) : '') + ico(weaponId(weapon), 'wico-sm') +
+      (hs ? '<span class="mark hs">爆头</span>' : '') + (wb ? '<span class="mark wb">穿墙</span>' : '') + nm(v);
     el.killfeed.appendChild(d);
     while (el.killfeed.children.length > 5) el.killfeed.firstChild.remove();
     setTimeout(() => d.remove(), 7000);
   };
+
+  // ---------- kill / death moments ----------
+  let killQ = [], killHold = false, killTimer = 0, killArm = false;
+  function badgeSVG(tier) {
+    const n = tier, gap = n > 3 ? 6 : 8, start = 36 - (n - 1) * gap * 0.5;
+    let chev = '';
+    for (let i = 0; i < n; i++) {
+      const y = start + i * gap;
+      chev += '<path d="M22 ' + y.toFixed(1) + ' L32 ' + (y + 5).toFixed(1) + ' L42 ' + y.toFixed(1) + '" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
+    }
+    return '<svg viewBox="0 0 64 72" aria-hidden="true"><path d="M32 4 L56 15 V38 C56 52 32 67 32 67 C32 67 8 52 8 38 V15 Z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2"/>' + chev + '</svg>';
+  }
+  function paintKill(info, fast) {
+    let tier = info.multi | 0;
+    if (info.ace) tier = 5;
+    if (tier < 1) tier = 1;
+    if (tier > 5) tier = 5;
+    const title = (info.ace || tier === 5) ? '全歼' : MULTI[tier];
+    const tags = [];
+    if (info.headshot) tags.push('爆头');
+    if (info.knife) tags.push('刀杀');
+    if (info.grenade) tags.push('雷杀');
+    if (info.wallbang) tags.push('穿墙');
+    if (info.first) tags.push('首杀');
+    if (info.last) tags.push('终结');
+    if ((info.streak | 0) > 1) tags.push('连击 ' + (info.streak | 0));
+    const victim = agentName(info.victim);
+    const wid = weaponId(info.weapon);
+    const wlabel = weaponLabel(info.weapon);
+    let tagsHtml = '';
+    for (let i = 0; i < tags.length; i++) tagsHtml += '<span class="mark">' + tags[i] + '</span>';
+    el.killBanner.innerHTML =
+      '<div class="kb-badge">' + badgeSVG(tier) + '</div>' +
+      '<div class="kb-title">' + title + '</div>' +
+      '<div class="kb-sub">' + ico(wid, 'wico-sm') + '<span>' + esc(victim) + '</span>' +
+      (wlabel ? '<span class="kb-w">' + esc(wlabel) + '</span>' : '') + '</div>' +
+      (tagsHtml ? '<div class="kb-tags">' + tagsHtml + '</div>' : '');
+    el.killBanner.hidden = false;
+    el.killBanner.className = 'kill-banner t' + tier + (fast ? ' fast' : '');
+    void el.killBanner.offsetWidth;
+    el.killBanner.classList.add('pop');
+  }
+  function playKill() {
+    if (!el.killBanner || !killQ.length) { killHold = false; if (el.killBanner) el.killBanner.hidden = true; return; }
+    const info = killQ.shift();
+    const fast = killQ.length > 0;
+    paintKill(info, fast);
+    killHold = true;
+    killTimer = setTimeout(() => { killTimer = 0; playKill(); }, fast ? 700 : 1150);
+  }
+  H.killFx = function (info) {
+    if (!info || !el || !el.killBanner) return;
+    while (killQ.length > 5) killQ.shift();
+    killQ.push(info);
+    if (killHold) return;
+    if (killArm) return;
+    killArm = true;
+    const kick = () => { killArm = false; if (!killHold) playKill(); };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(kick);
+    else kick();
+  };
+  function fillDeath(info) {
+    if (!el.deathCard) return;
+    const killer = info.killer;
+    const name = agentName(killer);
+    const team = killer && killer.team ? killer.team : '';
+    const wid = weaponId(info.weapon);
+    const label = weaponLabel(info.weapon);
+    const hp = info.killerHp != null ? info.killerHp : (killer && typeof killer.hp === 'number' ? killer.hp : null);
+    let html = '<div class="dc-title">你已阵亡</div>';
+    if (name || wid || label) {
+      html += '<div class="dc-card' + (team ? ' team-' + team : '') + '"><div class="dc-row">' + ico(wid, 'wico-lg') +
+        '<div><b class="' + (team ? 't-' + team : '') + '">' + esc(name || '未知') + '</b><div class="dc-w">' + esc(label) +
+        (info.headshot ? ' <span class="mark hs">爆头</span>' : '') + '</div></div></div>';
+      if (hp != null) {
+        const n = Math.max(0, Math.round(hp));
+        html += '<div class="dc-hp"><span>剩余</span><b class="num">' + n + '</b><s><i style="width:' + Math.max(0, Math.min(100, n)) + '%"></i></s></div>';
+      }
+      html += '</div>';
+    }
+    el.deathCard.innerHTML = html;
+    el.deathCard.hidden = false;
+    el.deathCard.classList.remove('pop');
+    void el.deathCard.offsetWidth;
+    el.deathCard.classList.add('pop');
+  }
+  H.deathFx = function (info) {
+    if (!el || !el.deathCard) return;
+    info = info || {};
+    fillDeath({ killer: info.killer, weapon: info.weapon, headshot: !!info.headshot, killerHp: info.killerHp });
+  };
   H.died = function (k, wname, head) {
     if (G.Touch.enabled) G.Touch.reset();
-    el.death.innerHTML = (k ? '你被 <b class="t-' + k.team + '">' + k.name + '</b> 用 ' + wname + ' 击杀' + (head ? '（爆头）' : '') : '你阵亡了') +
-      '<small id="specName">' + (G.Touch.enabled ? '轻点右侧切换观察队友' : '左键切换观察队友') + '</small>';
+    fillDeath({ killer: k, weapon: wname, headshot: !!head, killerHp: k && typeof k.hp === 'number' ? k.hp : null });
+    el.death.innerHTML = '<small id="specName">' + (G.Touch.enabled ? '轻点右侧切换观察队友' : '左键切换观察队友') + '</small>';
     el.death.hidden = false;
     H.toggleBuy(false);
   };
@@ -115,39 +291,86 @@
 
   // ---------- buy menu ----------
   const categories = [
-    ['手枪','p10','m18','h50'], ['冲锋枪','k5','u45','v9'], ['霰弹枪','s8'], ['机枪','l60'],
-    ['步枪','fa2','ar7','tr4'], ['狙击步枪','s40','r90'], ['投掷物'].concat(W.grenades), ['装备','vest','vesthelm','kit'],
+    ['手枪', 'p10', 'm18', 'h50'], ['冲锋枪', 'k5', 'u45', 'v9'], ['霰弹枪', 's8'], ['机枪', 'l60'],
+    ['步枪', 'fa2', 'ar7', 'tr4'], ['狙击步枪', 's40', 'r90'], ['投掷物'].concat(W.grenades), ['装备', 'vest', 'vesthelm', 'kit'],
   ];
-  let category=-1;
+  let category = -1;
+  function allowed(id, team) {
+    const d = W.defs[id] || W.equipment[id];
+    return d && (!d.team || d.team === team);
+  }
   function buyList() {
-    return categories[category].slice(1).filter((id) => {
-      const d=W.defs[id] || W.equipment[id]; return !d.team || d.team===G.Player.agent.team;
-    });
+    return categories[category].slice(1).filter((id) => allowed(id, G.Player.agent.team));
   }
   function buy(id) {
-    if (!G.Game.buy(G.Player.agent,id)) G.Audio.click('deny');
+    if (!G.Game.buy(G.Player.agent, id)) G.Audio.click('deny');
     renderBuy();
   }
+  function gunStats(d) {
+    if (!d || !d.dmg || d.slot === 'grenade') return null;
+    const raw = d.pellets ? d.dmg * d.pellets : d.dmg;
+    return [
+      ['伤', clamp01(raw / 160)],
+      ['射', d.rpm ? clamp01(d.rpm / 1000) : clamp01(d.rate ? 0.5 / d.rate : 0.4)],
+      ['精', d.inacc && d.inacc.stand != null ? clamp01(1 - d.inacc.stand / 0.05) : 0.5],
+      ['机', d.speed ? clamp01((d.speed - 4.15) / 2.15) : 0.5]
+    ];
+  }
+  function bars(rows) {
+    let h = '<span class="stats">';
+    for (let i = 0; i < rows.length; i++) {
+      h += '<span class="stat" title="' + STAT_NAME[rows[i][0]] + '"><b>' + rows[i][0] + '</b><s><i style="width:' + Math.round(rows[i][1] * 100) + '%"></i></s></span>';
+    }
+    return h + '</span>';
+  }
+  function blurb(id) {
+    if (id === 'vest') return '护甲 100';
+    if (id === 'vesthelm') return '护甲 100 · 头盔';
+    if (id === 'kit') return '拆除缩短为 5 秒';
+    if (id === 'he') return '范围爆炸';
+    if (id === 'flash') return '遮蔽视野';
+    if (id === 'smoke') return '烟雾遮挡';
+    if (id === 'molotov' || id === 'incendiary') return '地面火焰';
+    return '';
+  }
   function renderBuy() {
-    const p=G.Player.agent, title=category<0 ? '购买装备' : categories[category][0];
-    let html='<div class="slab"><div class="bm-head"><h2>'+title+'</h2><span class="num">$'+p.money+
-      '</span><button data-close>关闭</button></div><div class="bm-grid">';
-    if (category<0) categories.forEach((c,i) => {
-      html+='<button data-category="'+i+'">'+(i+1)+' · '+c[0]+'</button>';
+    const p = G.Player.agent, title = category < 0 ? '购买装备' : categories[category][0];
+    buyRev = G.Icons ? G.Icons.rev : 0;
+    let html = '<div class="slab bm-slab"><div class="bm-head"><div><h2>' + esc(title) + '</h2><span class="bm-help mouse-only">数字键选择 · 0 返回 · B / Esc 关闭</span></div><span class="num bm-money">$' + p.money + '</span><button type="button" data-close>关闭</button></div>';
+    if (category >= 0) {
+      html += '<div class="bm-tabs">';
+      categories.forEach((c, i) => {
+        if (!c.slice(1).some((id) => allowed(id, p.team))) return;
+        html += '<button type="button" data-category="' + i + '" class="' + (i === category ? 'on' : '') + '">' + esc(c[0]) + '</button>';
+      });
+      html += '</div>';
+    }
+    html += '<div class="bm-grid' + (category >= 0 ? ' bm-cards' : '') + '">';
+    if (category < 0) {
+      categories.forEach((c, i) => {
+        const n = c.slice(1).filter((id) => allowed(id, p.team)).length;
+        if (!n) return;
+        html += '<button type="button" data-category="' + i + '"><span><span class="k">' + (i + 1) + '</span>' + esc(c[0]) + '</span><small>' + n + '</small></button>';
+      });
+    } else buyList().forEach((id, i) => {
+      const d = W.defs[id] || W.equipment[id], price = G.Game.priceOf(p, id), own = G.Game.owns(p, id);
+      const full = d.slot === 'grenade' && !W.canCarry(p, id);
+      const poor = p.money < price;
+      const team = !!(d.team && d.team === p.team);
+      let state = own ? '已拥有' : full ? '携带已满' : poor ? '余额不足' : '';
+      const count = d.slot === 'grenade' && p.nades[id] ? ' ×' + p.nades[id] : '';
+      const st = gunStats(d);
+      html += '<button type="button" class="bm-card' + (own ? ' own' : state ? ' no' : '') + (team ? ' team' : '') + '" data-buy="' + id + '"' + (state ? ' disabled' : '') + '>' +
+        '<span class="bm-ico">' + (W.defs[id] ? ico(id) : glyph(id)) + '</span>' +
+        '<span class="bm-copy"><span class="bm-name"><span class="k">' + (i + 1) + '</span>' + esc(d.name) + esc(count) + '</span>' +
+        '<span class="bm-meta"><span class="p">$' + price + '</span>' + (state ? '<span class="st">' + state + '</span>' : '') + (team ? '<span class="tag">本方专属</span>' : '') + '</span></span>' +
+        (st ? bars(st) : '<span class="bm-blurb">' + esc(blurb(id)) + '</span>') + '</button>';
     });
-    else buyList().forEach((id,i) => {
-      const d=W.defs[id] || W.equipment[id], price=G.Game.priceOf(p,id), own=G.Game.owns(p,id);
-      const full=d.slot==='grenade' && !W.canCarry(p,id);
-      const state=own ? '已拥有' : full ? '携带已满' : p.money<price ? '余额不足' : '';
-      const count=d.slot==='grenade' && p.nades[id] ? ' ×'+p.nades[id] : '';
-      html+='<button class="bm-item '+(own ? 'own' : state ? 'no' : '')+'" data-buy="'+id+'"'+(state ? ' disabled' : '')+
-        '><span>'+(i+1)+' · '+d.name+count+'</span><span class="p">'+state+' $'+price+'</span></button>';
-    });
-    const left=Math.max(0,Math.ceil(G.Game.buyUntil-G.time));
-    html+='</div><div class="row">'+(category>=0 ? '<button data-category="-1">'+(G.Touch.enabled ? '' : '0 · ')+'返回分类</button>' : '')+
-      '<span>购买时间剩余 <b id="buySeconds">'+left+'</b> 秒</span></div></div>';
-    el.buymenu.innerHTML=html;
-    if (vc.on) { vc.hover=null; H.moveCursor(0,0,false); }
+    const left = Math.max(0, Math.ceil(G.Game.buyUntil - G.time));
+    html += '</div><div class="bm-foot">' + (category >= 0 ? '<button type="button" data-category="-1">' + (G.Touch.enabled ? '' : '0 · ') + '返回分类</button>' : '<span></span>') +
+      '<span>购买时间剩余 <b class="num" id="buySeconds">' + left + '</b> 秒</span></div></div>';
+    el.buymenu.innerHTML = html;
+    if (vc.on) { vc.hover = null; H.moveCursor(0, 0, false); }
   }
   // The mouse stays captured while buying: an in-game cursor follows it. Releasing and
   // re-capturing the mouse around the menu is what used to make the view jump afterwards.
@@ -178,7 +401,7 @@
     vc.on = want && !G.Touch.enabled && G.input.locked;
     el.vcursor.hidden = !vc.on;
     if (want) {
-      G.Nades.cancel(p); category=-1;
+      G.Nades.cancel(p); category = -1;
       vc.x = window.innerWidth / 2; vc.y = window.innerHeight / 2;
       renderBuy();
     } else setHover(null);
@@ -190,7 +413,7 @@
     if (on === H.scoresOpen) { if (on && (sbRefresh -= 1 / 60) <= 0) renderScores(); return; }
     H.scoresOpen = on; el.scoreboard.hidden = !on;
     if (G.Touch.enabled) {
-      if (on) el.scoreboard.innerHTML = '<div class="slab"><button data-close-scores>关闭比分</button><div id="scoreContent"></div></div>';
+      if (on) el.scoreboard.innerHTML = '<div class="slab sb-slab"><button type="button" data-close-scores>关闭比分</button><div id="scoreContent"></div></div>';
       G.Touch.sync();
     }
     if (on) renderScores();
@@ -198,20 +421,21 @@
   function renderScores() {
     sbRefresh = 0.25;
     const p = G.Player.agent;
-    let html = '<div class="bm-head"><h2>记分板 · 第 ' + G.Game.round + ' 回合</h2><span class="num" style="font-size:20px"><span class="t-atk">' +
-      G.Game.score.atk + '</span> : <span class="t-def">' + G.Game.score.def + '</span></span></div>';
+    let html = '<div class="sb-head"><h2>记分板</h2><span class="sb-round">第 ' + G.Game.round + ' 回合</span><span class="num sb-score"><span class="t-atk">' +
+      G.Game.score.atk + '</span><span class="sb-colon">:</span><span class="t-def">' + G.Game.score.def + '</span></span></div>';
     ['atk', 'def'].forEach((t) => {
-      html += '<table class="sb"><tr><th class="t-' + t + '">' + TEAM[t] + '</th><th style="text-align:right">击杀</th><th style="text-align:right">死亡</th><th style="text-align:right">金钱</th></tr>';
+      html += '<section class="sb-team is-' + t + '"><h3 class="t-' + t + '">' + TEAM[t] + '</h3><table class="sb"><thead><tr><th>干员</th><th>击杀</th><th>死亡</th><th>金钱</th></tr></thead><tbody>';
       G.Game.agents.filter((a) => a.team === t).sort((a, b) => b.kills - a.kills).forEach((a) => {
-        html += '<tr class="' + (a === p ? 'me ' : '') + (a.alive ? '' : 'dead') + '"><td>' + a.name + (a.inv.bomb && t === p.team ? ' · 炸弹' : '') + (a.kit && t === p.team ? ' · 拆弹器' : '') +
+        const tags = (a.inv.bomb && t === p.team ? '<span class="tag">炸弹</span>' : '') + (a.kit && t === p.team ? '<span class="tag">拆弹器</span>' : '');
+        html += '<tr class="' + (a === p ? 'me ' : '') + (a.alive ? '' : 'dead') + '"><td><i class="pip' + (a.alive ? ' on' : '') + '"></i>' + esc(a.name) + tags +
           '</td><td class="n">' + a.kills + '</td><td class="n">' + a.deaths + '</td><td class="n">' + (a.team === p.team ? '$' + a.money : '—') + '</td></tr>';
       });
-      html += '</table>';
+      html += '</tbody></table></section>';
     });
     if (G.Touch.enabled) {
       const content = $('scoreContent');
-      if (content._t !== html) { content.innerHTML = html; content._t = html; }
-    } else el.scoreboard.innerHTML = '<div class="slab">' + html + '</div>';
+      if (content && content._t !== html) { content.innerHTML = html; content._t = html; }
+    } else el.scoreboard.innerHTML = '<div class="slab sb-slab">' + html + '</div>';
   }
 
   // ---------- radar ----------
@@ -248,32 +472,70 @@
   function sty(e, prop, v) { const k = '_s' + prop; if (e[k] !== v) { e[k] = v; e.style[prop] = v; } }
   function hid(e, h) { if (e._h !== h) { e._h = h; e.hidden = h; } }
   const slotCache = {};
-  function updateSlots(view,p) {
-    let counts=0;
-    for (const id of W.grenades) counts=counts*3+(view.nades[id] || 0);
-    const c=slotCache, inv=view.inv;
-    if (c.primary===inv.primary && c.pistol===inv.pistol && c.grenade===inv.grenade && c.bomb===inv.bomb &&
-        c.counts===counts && c.cur===view.cur && c.alive===p.alive && c.touch===G.Touch.enabled) return;
-    c.primary=inv.primary; c.pistol=inv.pistol; c.grenade=inv.grenade; c.bomb=inv.bomb;
-    c.counts=counts; c.cur=view.cur; c.alive=p.alive; c.touch=G.Touch.enabled;
+  function updateSlots(view, p) {
+    let counts = 0;
+    for (const id of W.grenades) counts = counts * 3 + (view.nades[id] || 0);
+    const rev = G.Icons ? G.Icons.rev : 0;
+    const c = slotCache, inv = view.inv;
+    if (c.primary === inv.primary && c.pistol === inv.pistol && c.grenade === inv.grenade && c.bomb === inv.bomb &&
+        c.counts === counts && c.cur === view.cur && c.alive === p.alive && c.touch === G.Touch.enabled && c.rev === rev) return;
+    const touch = G.Touch.enabled;
     const slotTxt = ['primary', 'pistol', 'knife', 'grenade', 'bomb'].map((s, i) => {
       const has = s === 'bomb' ? view.inv.bomb : view.inv[s];
       if (!has) return '';
-      const name = s === 'grenade' ? W.grenades.filter((id) => view.nades[id]).map((id) =>
-        '<span class="nade-icon icon-'+id+(id===has.id ? ' selected' : '')+'" title="'+W.defs[id].name+'">'+W.defs[id].icon+'×'+view.nades[id]+'</span>').join('') :
-        s === 'bomb' ? '炸弹' : G.Touch.enabled ? (s==='knife' ? '匕首' : has.def.name.split(' ')[0]) : has.def.name;
-      if (G.Touch.enabled) return '<button data-slot="' + s + '" class="' + (view.cur === s ? 'on' : '') + '"' + (p.alive ? '' : ' disabled') + '>' + name + '</button>';
-      return '<div class="' + (view.cur === s ? 'on' : '') + '">' + (i + 1) + ' · ' + name + '</div>';
+      let body;
+      if (s === 'grenade') {
+        body = W.grenades.filter((id) => view.nades[id]).map((id) =>
+          '<span class="nade-chip' + (id === has.id ? ' selected' : '') + '">' + ico(id, 'wico-sm') + '<b>×' + view.nades[id] + '</b></span>').join('');
+      } else if (s === 'bomb') body = ico('bomb', 'wico-sm') + '<em class="slot-name">炸弹</em>';
+      else {
+        const full = has.def.name, short = full.split(' ')[0];
+        body = ico(has.id, 'wico-sm') + '<em class="slot-name">' + esc(touch ? (s === 'knife' ? '匕首' : short) : full) + '</em>';
+      }
+      const key = '<i class="slot-key">' + (i + 1) + '</i>';
+      if (touch) return '<button type="button" data-slot="' + s + '" class="' + (view.cur === s ? 'on' : '') + '"' + (p.alive ? '' : ' disabled') + '>' + key + body + '</button>';
+      return '<div class="' + (view.cur === s ? 'on' : '') + '">' + key + body + '</div>';
     }).join('');
+    c.primary = inv.primary; c.pistol = inv.pistol; c.grenade = inv.grenade; c.bomb = inv.bomb;
+    c.counts = counts; c.cur = view.cur; c.alive = p.alive; c.touch = touch; c.rev = G.Icons ? G.Icons.rev : 0;
     if (el.slots._t !== slotTxt) { el.slots.innerHTML = slotTxt; el.slots._t = slotTxt; }
+  }
+  function syncAmmoIcon(it, view) {
+    if (!el.ammoIcon) return;
+    let id = '';
+    if (view.cur === 'bomb') id = 'bomb';
+    else if (it && it.id) id = it.id;
+    else if (view.inv.knife && view.cur === 'knife') id = view.inv.knife.id;
+    const rev = G.Icons ? G.Icons.rev : 0;
+    if (el.ammoIcon._id === id && el.ammoIcon._rev === rev) return;
+    const url = id && G.Icons && G.Icons.get ? G.Icons.get(id) : '';
+    el.ammoIcon._id = id; el.ammoIcon._rev = G.Icons ? G.Icons.rev : 0;
+    if (url) { el.ammoIcon.src = url; el.ammoIcon.hidden = false; }
+    else el.ammoIcon.hidden = true;
+  }
+  function bombLabel(b, p) {
+    if (!b || !b.state || b.state === 'none' || b.state === 'exploded' || b.state === 'defused') return '';
+    const touch = G.Touch.enabled;
+    if (b.state === 'planted') return (p.defusing || b.defuser) ? '拆除中' : (b.site ? b.site + ' 点' : '已安放');
+    if (!p || p.team !== 'atk') return '';
+    if (b.state === 'carried') return b.carrier === p ? (touch ? '携带' : '你携带炸弹') : (touch ? '队友' : '队友携带');
+    if (b.state === 'dropped') return touch ? '掉落' : '炸弹掉落';
+    return '';
   }
   let radarTick = 0;
   H.update = function (dt) {
     const p = G.Player.agent;
     if (!p || !el) return;
+    if (G.Icons && (iconTick = (iconTick + 1) % 30) === 0) G.Icons.ensure();
     const Gm = G.Game, view = p.alive ? p : G.Player.spectateTarget() || p;
-    txt(el.hp, Math.max(0, view.hp)); cls(el.hp, 'low', view.hp <= 25);
-    txt(el.armor, view.armor); txt(el.armorIco, view.helmet ? '护甲+盔' : '护甲');
+    const hp = Math.max(0, view.hp);
+    txt(el.hp, hp); cls(el.hp, 'low', view.hp <= 25);
+    if (el.vitHp) cls(el.vitHp, 'low', view.hp <= 25);
+    if (el.hpBar) sty(el.hpBar, 'width', Math.min(100, hp) + '%');
+    txt(el.armor, view.armor);
+    txt(el.armorIco, view.helmet ? '护甲+盔' : '护甲');
+    if (el.armorMark) cls(el.armorMark, 'helm', !!view.helmet);
+    if (el.armorBar) sty(el.armorBar, 'width', Math.max(0, Math.min(100, view.armor)) + '%');
     txt(el.money, '$' + p.money);
     if (moneyT > 0) { moneyT -= dt; if (moneyT <= 0) el.moneyDelta.textContent = ''; }
     const it = W.current(view);
@@ -281,15 +543,23 @@
       txt(el.clip, it.reloading ? '…' : it.clip); txt(el.reserve, '/ ' + it.reserve);
       cls(el.clip, 'low', it.clip <= Math.ceil(it.def.clip * 0.2));
     } else { txt(el.clip, view.cur === 'bomb' ? '炸弹' : '—'); txt(el.reserve, ''); cls(el.clip, 'low', false); }
-    updateSlots(view,p);
+    if (el.ammo) cls(el.ammo, 'reloading', !!(it && it.reloading));
+    syncAmmoIcon(it, view);
+    updateSlots(view, p);
+    if (p.alive && el.deathCard && !el.deathCard.hidden) el.deathCard.hidden = true;
 
-    // timer & score
     const b = Gm.bomb;
-    if (b.state === 'planted') { txt(el.timer, '炸弹'); cls(el.timer, 'bomb', true); sty(el.timer, 'color', ''); }
+    if (b.state === 'planted') { txt(el.timer, G.fmtTime(b.timer || 0)); cls(el.timer, 'bomb', true); sty(el.timer, 'color', ''); }
     else {
       cls(el.timer, 'bomb', false);
       txt(el.timer, Gm.phase === 'freeze' ? G.fmtTime(Gm.phaseT) : G.fmtTime(Gm.timeLeft));
       sty(el.timer, 'color', Gm.phase === 'freeze' ? 'var(--sun)' : '');
+    }
+    if (el.bombStat) {
+      const label = bombLabel(b, p);
+      hid(el.bombStat, !label);
+      if (label) txt(el.bombStat, label);
+      cls(el.bombStat, 'hot', b.state === 'planted');
     }
     txt(el.scoreAtk, Gm.score.atk); txt(el.scoreDef, Gm.score.def);
     ['atk', 'def'].forEach((t) => {
@@ -332,9 +602,11 @@
     hid(el.buyHint, !(Gm.canBuy(p) && !H.buyOpen));
     if (H.buyOpen) {
       if (!Gm.canBuy(p)) H.toggleBuy(false);
+      else if ((G.Icons ? G.Icons.rev : 0) !== buyRev) renderBuy();
       else if ((buyRefresh -= dt) <= 0) {
         buyRefresh = 0.5;
-        txt($('buySeconds'), Math.max(0, Math.ceil(Gm.buyUntil - G.time)));
+        const sec = $('buySeconds');
+        if (sec) txt(sec, Math.max(0, Math.ceil(Gm.buyUntil - G.time)));
       }
     }
     if (G.Touch.enabled) G.Touch.sync();

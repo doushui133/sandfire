@@ -10,16 +10,16 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 <title>烈沙行动</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&display=swap">
 <style>
 /* Layout: full-bleed 3D canvas, HUD pinned to the four screen corners, menus as centred slabs */
 :root{
-  --bg:#0f0d0a; --panel:rgba(16,13,9,.74); --line:rgba(233,211,173,.18);
-  --text:#f4ead8; --muted:#b9a98d; --sand:#e9d3ad; --sun:#ffae42;
-  --atk:#ff8a4c; --def:#6cb6ff; --danger:#ff4d3d; --ok:#8fdc6a;
-  --num:"Saira Condensed","Bahnschrift","Arial Narrow",sans-serif;
-  --ui:"Microsoft YaHei","PingFang SC","Noto Sans SC","Segoe UI",sans-serif;
+  --bg:#0c0b09; --panel:rgba(12,11,9,.78); --panel-strong:rgba(16,14,11,.92);
+  --line:rgba(244,234,216,.32); --line-soft:rgba(244,234,216,.14);
+  --text:#f7f1e6; --muted:#cbbfa8; --sand:#f0e0c4; --sun:#ffb14a;
+  --atk:#ff8a3d; --def:#6eb6ff; --danger:#ff5144; --ok:#9be37a;
+  --shadow:0 8px 22px rgba(0,0,0,.35);
+  --num:"Segoe UI","Bahnschrift","PingFang SC","Microsoft YaHei",sans-serif;
+  --ui:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
   color-scheme:dark;
 }
 [hidden]{display:none!important}
@@ -34,39 +34,40 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-famil
 #buymenu button.vhover{background:rgba(255,255,255,.14);border-color:var(--sun)}
 input[type=checkbox]{accent-color:var(--sun);width:16px;height:16px;margin:0}
 .inline-note{font-size:12px;color:var(--muted);flex:1 1 240px;min-width:0}
-.num{font-family:var(--num);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:.02em}
 #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:4px}
-#radar{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));top:calc(14px + env(safe-area-inset-top,0px));width:210px;height:210px;border-radius:6px;border:1px solid var(--line);background:rgba(10,9,7,.55)}
-#score{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;align-items:stretch;gap:2px}
-#score>div{background:var(--panel);padding:4px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:64px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:var(--shadow)}
+#radar{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));top:calc(14px + env(safe-area-inset-top,0px));width:210px;height:210px;border-radius:6px;border:1px solid var(--line);background:rgba(10,9,7,.62);box-shadow:var(--shadow)}
+#score{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;align-items:stretch;gap:0;filter:drop-shadow(0 8px 16px rgba(0,0,0,.35))}
+#score>div{background:var(--panel);border:1px solid var(--line);padding:4px 14px 5px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:72px}
+#score>div+div{border-left:0}
+#score>.atk{border-radius:5px 0 0 5px} #score>.def{border-radius:0 5px 5px 0}
 #score .s{font-size:30px;font-weight:700;line-height:1}
-#score .lab{font-size:11px;color:var(--muted);letter-spacing:.12em}
+#score .lab{font-size:11px;color:var(--muted);letter-spacing:.14em}
 #score .atk .s{color:var(--atk)} #score .def .s{color:var(--def)}
 #timer{font-size:30px;font-weight:600;min-width:84px}
 #timer.bomb{color:var(--danger)}
 .alive{display:flex;gap:3px;margin-top:3px}
-.alive i{width:7px;height:12px;border-radius:2px;background:currentColor;opacity:.9}
-.alive i.dead{opacity:.18}
+.alive i{width:8px;height:8px;border-radius:2px;background:currentColor;opacity:.95}
+.alive i.dead{opacity:.2}
 #score .atk .alive{color:var(--atk)} #score .def .alive{color:var(--def)}
 #killfeed{position:absolute;right:calc(14px + env(safe-area-inset-right,0px));top:calc(14px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:4px;align-items:flex-end}
-.kf{background:var(--panel);padding:4px 10px;font-size:14px;border-radius:3px;display:flex;gap:8px;align-items:center;white-space:nowrap}
-.kf.me{border:1px solid var(--danger)}
-.kf .w{color:var(--muted);font-size:12px}
-.kf .hs{color:var(--sun);font-size:11px;border:1px solid var(--sun);padding:0 3px;border-radius:2px}
+.kf{background:var(--panel);border:1px solid var(--line);box-shadow:0 4px 12px rgba(0,0,0,.28);padding:3px 8px;font-size:14px;border-radius:3px;display:flex;gap:6px;align-items:center;white-space:nowrap}
+.kf.me{border-color:var(--sun);background:rgba(48,32,12,.84)}
+.kf.died{border-color:var(--danger)}
+.kf .hs{color:var(--sun)} .kf .wb{color:var(--sand)}
 .t-atk{color:var(--atk)} .t-def{color:var(--def)}
-#vitals{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:flex-end}
-.vit{background:var(--panel);padding:6px 14px 4px;display:flex;align-items:baseline;gap:8px;border-radius:4px}
-.vit .ico{font-size:14px;color:var(--muted);font-weight:700}
-.vit .v{font-size:40px;font-weight:700;line-height:1}
+#vitals{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;align-items:flex-end}
+.vit{background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);padding:6px 10px 6px 8px;display:flex;align-items:center;gap:8px;border-radius:4px}
+.vit .v{font-size:34px;font-weight:700;line-height:1}
 #hp.low{color:var(--danger)}
-#money{font-size:24px;color:var(--ok);font-weight:600}
-#moneyDelta{font-size:16px;color:var(--ok);margin-left:6px}
+#money{font-size:22px;color:var(--ok);font-weight:600}
+#moneyDelta{font-size:15px;color:var(--ok);margin-left:6px}
 #ammoBox{position:absolute;right:calc(14px + env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-#slots{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:13px}
-#slots div{padding:2px 8px;color:var(--muted);background:rgba(16,13,9,.45);border-radius:2px}
-#slots div.on{color:var(--text);background:var(--panel);border-left:2px solid var(--sun)}
-#ammo{background:var(--panel);padding:6px 14px 4px;border-radius:4px;display:flex;align-items:baseline;gap:6px}
+#slots{display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-size:13px}
+#slots div,#slots button{display:flex;align-items:center;gap:6px;padding:3px 8px;color:var(--muted);background:rgba(12,11,9,.55);border:1px solid transparent;border-radius:3px}
+#slots div.on,#slots button.on{color:var(--text);background:var(--panel);border-color:var(--line);box-shadow:inset 2px 0 0 var(--sun)}
+#ammo{background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);padding:6px 12px;border-radius:4px;display:flex;align-items:center;gap:8px}
 #clip{font-size:42px;font-weight:700;line-height:1}
 #reserve{font-size:20px;color:var(--muted)}
 #clip.low{color:var(--danger)}
@@ -78,6 +79,7 @@ input[type=checkbox]{accent-color:var(--sun);width:16px;height:16px;margin:0}
 #hitmarker::before,#hitmarker::after{content:"";position:absolute;left:12px;top:-2px;width:2px;height:30px;background:#fff;transform:rotate(45deg);clip-path:polygon(0 0,100% 0,100% 32%,0 32%,0 68%,100% 68%,100% 100%,0 100%)}
 #hitmarker::after{transform:rotate(-45deg)}
 #hitmarker.hs::before,#hitmarker.hs::after{background:var(--danger)}
+#hitmarker.kill{filter:drop-shadow(0 0 4px #fff)}
 #scope{position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,transparent 0,transparent 33vmin,#000 33.3vmin)}
 #scope::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:#000}
 #scope::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:#000}
@@ -85,21 +87,21 @@ input[type=checkbox]{accent-color:var(--sun);width:16px;height:16px;margin:0}
 #progressLabel{font-size:14px;margin-bottom:6px;text-shadow:0 1px 2px #000}
 #progressTrack{height:8px;background:rgba(0,0,0,.55);border:1px solid var(--line);border-radius:4px;overflow:hidden}
 #progressBar{height:100%;width:0;background:var(--sun)}
-#hint{position:absolute;left:50%;top:70%;transform:translateX(-50%);font-size:15px;background:var(--panel);padding:6px 14px;border-radius:3px;white-space:nowrap}
-#centerMsg{position:absolute;left:50%;top:22%;transform:translateX(-50%);text-align:center;width:max-content;max-width:min(620px,calc(100vw - 32px))}
-#msgTitle{font-size:44px;font-weight:700;letter-spacing:.06em;text-shadow:0 2px 8px rgba(0,0,0,.8)}
+#hint{position:absolute;left:50%;top:68%;transform:translateX(-50%);font-size:14px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);padding:6px 12px;border-radius:4px;white-space:nowrap}
+#centerMsg{position:absolute;left:50%;top:18%;transform:translateX(-50%);text-align:center;width:max-content;max-width:min(520px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:4px;padding:8px 16px 10px}
+#msgTitle{font-size:32px;font-weight:700;letter-spacing:.08em;text-shadow:0 2px 8px rgba(0,0,0,.8)}
 #msgTitle:empty{display:none}
-#msgSub{display:inline-block;font-size:17px;line-height:1.5;color:var(--sand);margin-top:8px;padding:6px 14px;border-radius:4px;background:var(--panel)}
+#msgSub{display:block;font-size:15px;line-height:1.45;color:var(--sand);margin-top:4px}
 #msgSub:empty{display:none}
 #vignette{position:absolute;inset:0;opacity:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(200,0,0,.55) 100%)}
 #dmgdir{position:absolute;left:50%;top:50%;width:0;height:0}
 #dmgdir i{position:absolute;left:-40px;top:-130px;width:80px;height:16px;border-radius:50%/100% 100% 0 0;border-top:5px solid rgba(255,60,40,.9);transform-origin:40px 130px}
 #flash{position:absolute;inset:0;background:#fff;opacity:0}
-#death{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);text-align:center;background:var(--panel);padding:10px 18px;border-radius:4px;font-size:16px}
-#death small{display:block;color:var(--muted);font-size:13px;margin-top:4px}
-#buyHint{position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);font-size:13px;color:var(--sand);background:var(--panel);padding:4px 12px;border-radius:3px}
+#death{position:absolute;left:50%;bottom:18%;transform:translateX(-50%);text-align:center;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);padding:6px 12px;border-radius:4px;font-size:13px;color:var(--muted)}
+#death small{display:block;color:var(--muted);font-size:13px;margin:0}
+#buyHint{position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);font-size:13px;color:var(--sand);background:var(--panel);border:1px solid var(--line);padding:4px 12px;border-radius:4px}
 .overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(8,7,5,.55);padding:16px;box-sizing:border-box}
-.slab{background:rgba(18,15,11,.94);border:1px solid var(--line);border-radius:6px;padding:22px 26px;max-width:min(920px,100%);max-height:100%;overflow:auto;box-sizing:border-box}
+.slab{background:var(--panel-strong);border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);padding:22px 26px;max-width:min(920px,100%);max-height:100%;overflow:auto;box-sizing:border-box}
 #menu{background:radial-gradient(ellipse at 70% 20%,rgba(255,174,66,.16),transparent 60%),linear-gradient(180deg,rgba(15,13,10,.6),rgba(15,13,10,.92))}
 #menu h1{font-family:var(--num);font-size:64px;margin:0;letter-spacing:.08em;color:var(--sand);line-height:1}
 #menu h1 span{color:var(--sun)}
@@ -140,6 +142,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 </style>
 <link rel="stylesheet" href="touch.css">
 <link rel="stylesheet" href="video.css">
+<link rel="stylesheet" href="ui.css">
 </head>
 <body>
 
@@ -149,7 +152,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   <canvas id="radar" width="420" height="420"></canvas>
   <div id="score">
     <div class="atk"><span class="s num" id="scoreAtk">0</span><span class="lab">进攻方</span><div class="alive" id="aliveAtk"></div></div>
-    <div><span class="num" id="timer">1:55</span></div>
+    <div class="mid"><span class="num" id="timer">1:55</span><span id="bombStat" class="bomb-stat" hidden></span></div>
     <div class="def"><span class="s num" id="scoreDef">0</span><span class="lab">防守方</span><div class="alive" id="aliveDef"></div></div>
   </div>
   <div id="killfeed"></div>
@@ -161,19 +164,38 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   <div id="scope" hidden></div>
   <div id="crosshair"><i class="h" id="chL"></i><i class="h" id="chR"></i><i class="v" id="chT"></i><i class="v" id="chB"></i><i class="d"></i></div>
   <div id="hitmarker"></div>
+  <div id="hitFx" hidden></div>
+  <div id="killBanner" class="kill-banner" hidden></div>
   <div id="centerMsg" hidden><div id="msgTitle"></div><div id="msgSub"></div></div>
   <div id="progress" hidden><div id="progressLabel"></div><div id="progressTrack"><div id="progressBar"></div></div></div>
   <div id="hint" hidden></div>
+  <div id="deathCard" hidden></div>
   <div id="death" hidden></div>
   <div id="buyHint" hidden><span class="mouse-only">按 <b>B</b> 打开购买菜单</span><span class="touch-only">点「购买」选购装备</span></div>
   <div id="vitals">
-    <div class="vit"><span class="ico">HP</span><span class="v num" id="hp">100</span></div>
-    <div class="vit"><span class="ico" id="armorIco">护甲</span><span class="v num" id="armor">0</span></div>
-    <div class="vit"><span class="num" id="money">$800</span><span class="num" id="moneyDelta"></span></div>
+    <div class="vit vit-hp" id="vitHp">
+      <span class="ico ico-hp" aria-hidden="true"></span>
+      <div class="vit-col">
+        <span class="vit-row"><span class="ico-label">生命</span><span class="v num" id="hp">100</span></span>
+        <span class="bar"><i id="hpBar"></i></span>
+      </div>
+    </div>
+    <div class="vit vit-ar">
+      <span class="ico ico-armor" id="armorMark" aria-hidden="true"></span>
+      <div class="vit-col">
+        <span class="vit-row"><span class="ico-label" id="armorIco">护甲</span><span class="v num" id="armor">0</span></span>
+        <span class="bar"><i id="armorBar"></i></span>
+      </div>
+    </div>
+    <div class="vit vit-money">
+      <span class="ico ico-cash" aria-hidden="true"></span>
+      <span class="num" id="money">$800</span>
+      <span class="num" id="moneyDelta"></span>
+    </div>
   </div>
   <div id="ammoBox">
     <div id="slots"></div>
-    <div id="ammo"><span class="num" id="clip">12</span><span class="num" id="reserve">/ 24</span></div>
+    <div id="ammo"><img id="ammoIcon" class="wico" alt="" hidden><span class="num" id="clip">12</span><span class="num" id="reserve">/ 24</span></div>
   </div>
 </div>
 
@@ -192,43 +214,60 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 
 <output id="videoStats" hidden></output>
 <div id="menu" class="overlay">
-  <div class="slab">
-    <h1>烈沙<span>行动</span></h1>
-    <div class="sub">5v5 爆破模式 · 原创沙漠小镇「烈沙镇」· 单人对战机器人</div>
-    <div class="row"><label>难度</label>
-      <button class="chip" data-diff="0" id="d0">新兵 · 轻松</button>
-      <button class="chip on" data-diff="1" id="d1">老兵 · 标准</button>
-      <button class="chip" data-diff="2" id="d2">精英 · 挑战</button>
-    </div>
-    <div id="gpuWarning" role="status" hidden>当前浏览器没有使用显卡（可能在虚拟机或远程桌面中，或浏览器关闭了硬件加速），画面和帧率会很低，鼠标也可能锁不住。请在有显卡的电脑上用 Chrome 或 Edge 打开，并在浏览器「设置 → 系统」里开启「使用图形加速」。</div>
-    <div class="row video-row"><label for="videoQuality">画质</label>
-      <select id="videoQuality"><option value="auto">自动</option><option value="low">流畅</option><option value="medium">均衡</option><option value="high">高</option><option value="ultra">极致</option></select>
-      <span class="inline-note" id="qNote"></span>
-    </div>
-    <div class="row video-row"><label for="videoScale">渲染分辨率</label>
-      <select id="videoScale"><option value="1">100%</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.5">50%</option></select>
-      <label><input type="checkbox" id="videoDynamic"> 动态分辨率</label>
-      <label><input type="checkbox" id="videoFPS"> 显示帧率</label>
-    </div>
-    <div class="row"><label>操作</label>
-      <button class="chip" data-mode="auto">自动</button>
-      <button class="chip" data-mode="touch">触屏</button>
-      <button class="chip" data-mode="mouse">键鼠</button>
-    </div>
-    <div class="row mouse-only"><label for="sens">鼠标灵敏度</label><input type="range" id="sens" min="0.2" max="3" step="0.05" value="1"><span class="num" id="sensVal">1.00</span></div>
-    <div class="row touch-only"><label for="touchSens">触屏灵敏度</label><input type="range" id="touchSens" min="0.5" max="3" step="0.05" value="1.5"><span class="num" id="touchSensVal">1.50</span></div>
-    <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
-    <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
-    <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
-    <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
-    <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
-    <div class="row"><label for="vol">音量</label><input type="range" id="vol" min="0" max="1" step="0.05" value="0.7"></div>
-    <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
-    <div class="row" style="margin-top:18px">
-      <button class="big btn-atk" id="btnAtk" disabled>加入进攻方</button>
-      <button class="big btn-def" id="btnDef" disabled>加入防守方</button>
-    </div>
-    <div id="status">正在加载 3D 引擎…</div>
+  <div class="slab menu-slab">
+    <header class="menu-hero">
+      <h1>烈沙<span>行动</span></h1>
+      <div class="sub">5v5 爆破模式 · 原创沙漠小镇「烈沙镇」· 单人对战机器人</div>
+    </header>
+    <section class="menu-sec">
+      <h2>选择阵营</h2>
+      <div class="row team-row">
+        <button class="big btn-atk" id="btnAtk" disabled>加入进攻方</button>
+        <button class="big btn-def" id="btnDef" disabled>加入防守方</button>
+      </div>
+      <div id="status">正在加载 3D 引擎…</div>
+    </section>
+    <section class="menu-sec">
+      <h2>对局</h2>
+      <div class="row"><label>难度</label>
+        <button class="chip" data-diff="0" id="d0">新兵 · 轻松</button>
+        <button class="chip on" data-diff="1" id="d1">老兵 · 标准</button>
+        <button class="chip" data-diff="2" id="d2">精英 · 挑战</button>
+      </div>
+    </section>
+    <section class="menu-sec">
+      <h2>画面</h2>
+      <div id="gpuWarning" role="status" hidden>当前浏览器没有使用显卡（可能在虚拟机或远程桌面中，或浏览器关闭了硬件加速），画面和帧率会很低，鼠标也可能锁不住。请在有显卡的电脑上用 Chrome 或 Edge 打开，并在浏览器「设置 → 系统」里开启「使用图形加速」。</div>
+      <div class="row video-row"><label for="videoQuality">画质</label>
+        <select id="videoQuality"><option value="auto">自动</option><option value="low">流畅</option><option value="medium">均衡</option><option value="high">高</option><option value="ultra">极致</option></select>
+        <span class="inline-note" id="qNote"></span>
+      </div>
+      <div class="row video-row"><label for="videoScale">渲染分辨率</label>
+        <select id="videoScale"><option value="1">100%</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.5">50%</option></select>
+        <label><input type="checkbox" id="videoDynamic"> 动态分辨率</label>
+        <label><input type="checkbox" id="videoFPS"> 显示帧率</label>
+      </div>
+    </section>
+    <section class="menu-sec">
+      <h2>操作</h2>
+      <div class="row"><label>方式</label>
+        <button class="chip" data-mode="auto">自动</button>
+        <button class="chip" data-mode="touch">触屏</button>
+        <button class="chip" data-mode="mouse">键鼠</button>
+      </div>
+      <div class="row mouse-only"><label for="sens">鼠标灵敏度</label><input type="range" id="sens" min="0.2" max="3" step="0.05" value="1"><span class="num" id="sensVal">1.00</span></div>
+      <div class="row touch-only"><label for="touchSens">触屏灵敏度</label><input type="range" id="touchSens" min="0.5" max="3" step="0.05" value="1.5"><span class="num" id="touchSensVal">1.50</span></div>
+      <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
+      <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
+      <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+      <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
+      <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
+      <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
+    </section>
+    <section class="menu-sec">
+      <h2>声音</h2>
+      <div class="row"><label for="vol">音量</label><input type="range" id="vol" min="0" max="1" step="0.05" value="0.7"></div>
+    </section>
     <div class="keys mouse-only">
       <div><b>W A S D</b>移动</div><div><b>鼠标</b>瞄准 / 左键射击</div>
       <div><b>右键</b>狙击开镜 / 匕首重击 / 近抛</div><div><b>空格</b>跳跃</div>
@@ -245,32 +284,35 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
 </div>
 
 <div id="pause" class="overlay" hidden>
-  <div class="slab" style="text-align:center;width:min(520px,100%)">
-    <h2 id="pauseTitle" style="margin-top:0">已暂停</h2>
-    <div class="row mouse-only" style="justify-content:center"><label for="sens2">灵敏度</label><input type="range" id="sens2" min="0.2" max="3" step="0.05" value="1"></div>
-    <div class="row touch-only" style="justify-content:center"><label for="touchSens2">触屏灵敏度</label><input type="range" id="touchSens2" min="0.5" max="3" step="0.05" value="1.5"></div>
-    <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
-    <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
-    <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
-    <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
-    <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
-    <div class="row" style="justify-content:center">
+  <div class="slab pause-slab">
+    <h2 id="pauseTitle">已暂停</h2>
+    <section class="menu-sec">
+      <h2>操作</h2>
+      <div class="row mouse-only" style="justify-content:center"><label for="sens2">灵敏度</label><input type="range" id="sens2" min="0.2" max="3" step="0.05" value="1"></div>
+      <div class="row touch-only" style="justify-content:center"><label for="touchSens2">触屏灵敏度</label><input type="range" id="touchSens2" min="0.5" max="3" step="0.05" value="1.5"></div>
+      <div class="row touch-only"><label>按钮大小 <input data-setting="buttonSize" type="range" min="0.8" max="1.4" step="0.05"></label></div>
+      <div class="row touch-only"><label><input data-setting="leftFire" type="checkbox"> 左侧开火键</label><label><input data-setting="aimAssist" type="checkbox"> 辅助瞄准</label></div>
+      <div class="row touch-only"><label><input data-setting="autoFire" type="checkbox"> 自动开火</label><label><input data-setting="gyro" type="checkbox"> 陀螺仪瞄准</label></div>
+      <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
+      <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>
+    </section>
+    <div class="row pause-actions">
       <button class="big" id="btnResume">继续游戏</button>
       <button class="big" id="btnQuit">退出到菜单</button>
     </div>
-    <button id="btnFallback" type="button" hidden style="margin:12px auto 0;font-size:13px;line-height:1.45;color:var(--sand);background:transparent;border:1px dashed var(--line);border-radius:4px;padding:8px 14px;max-width:100%">仍要用普通鼠标模式玩（光标可能移出窗口）</button>
+    <button id="btnFallback" type="button" hidden>仍要用普通鼠标模式玩（光标可能移出窗口）</button>
     <div id="pauseHint" class="note" role="status"></div>
   </div>
 </div>
 
 <div id="buymenu" class="overlay" hidden></div>
 <div id="vcursor" hidden><svg width="18" height="24" viewBox="0 0 18 24" aria-hidden="true"><path d="M1.5 1.5 L1.5 19 L6 14.8 L9.4 22 L12.4 20.6 L9.1 13.6 L15.5 13.6 Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
-<div id="scoreboard" class="overlay" hidden style="background:rgba(8,7,5,.35)"></div>
+<div id="scoreboard" class="overlay" hidden></div>
 
 <div id="endScreen" class="overlay" hidden>
-  <div class="slab" style="text-align:center">
+  <div class="slab end-slab">
     <h2 id="endTitle"></h2>
-    <div id="endSub" style="color:var(--muted);margin-bottom:16px"></div>
+    <div id="endSub"></div>
     <button class="big" id="btnRestart">再来一场</button>
   </div>
 </div>
@@ -281,7 +323,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
             'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
             'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
             'https://unpkg.com/three@0.128.0/build/three.min.js'];
-  var mods=['look','core','audio','touch','textures','map','mapgeo','gfx','video','geom','gunmodels','mapmesh','fx','weapons','nades','viewmodel','player','ragdoll','soldier','bots','game','hud','main'];
+  var mods=['look','core','audio','touch','textures','map','mapgeo','gfx','video','geom','gunmodels','icons','mapmesh','fx','weapons','nades','viewmodel','player','ragdoll','soldier','bots','game','hud','main'];
   var status=document.getElementById('status');
   function load(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
   (async function(){
