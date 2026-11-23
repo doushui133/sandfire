@@ -563,7 +563,7 @@ field(); me.nades={}; me.inv.grenade=null; W.addGrenade(me,'flash'); W.addGrenad
 assert(W.selectGrenade(me,'flash'));
 W.update(me,.01,{fire:true,firePressed:true}); G.time=me.switchEnd+.001;
 W.update(me,.01,{fire:true}); assert(Math.abs(me.throwPower-.45)<1e-8);
-const chargeStart=G.time, dots=G.scene.children.find(obj=>obj.isPoints && obj.material.size===.085);
+const chargeStart=G.time, dots=G.scene.children.find(obj=>obj.isPoints && obj.material.color && obj.material.color.getHex()===0xffdf92);
 assert(dots.visible); G.HUD.update(.01); assert(!elem('nadeCharge').hidden);
 G.time=chargeStart+.325; W.update(me,.01,{fire:true});
 assert(Math.abs(me.throwPower-.8625)<1e-8);

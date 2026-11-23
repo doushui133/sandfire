@@ -81,7 +81,7 @@
     if (!dots) {
       const geo = new T.BufferGeometry();
       geo.setAttribute('position', new T.Float32BufferAttribute(new Float32Array(76*3),3));
-      dots = new T.Points(geo,new T.PointsMaterial({ color:0xffdf92, size:0.085 }));
+      dots = new T.Points(geo,new T.PointsMaterial({ color:0xffdf92, size:0.06 }));
       dots.frustumCulled = false; G.scene.add(dots);
       dots.visible = false;
       landing = new T.Mesh(new T.SphereGeometry(0.085,8,6), new T.MeshBasicMaterial({ color:0xffdf92 }));
@@ -91,10 +91,13 @@
     previewAt = G.time + 1/24;
     aim(a,speed,trial); trial.id = a.inv.grenade.id;
     const attr = dots.geometry.attributes.position;
+    const sx = trial.pos.x, sy = trial.pos.y, sz = trial.pos.z;
     let n = 0;
     for (let i=0; i<225; i++) {
       N.step(trial); trial.age += STEP;
-      if (i%3 === 0 || bursts(trial)) attr.setXYZ(n++,trial.pos.x,trial.pos.y,trial.pos.z);
+      // dots are size-attenuated squares: the first ones, right at the eye, would cover the screen
+      const near = (trial.pos.x-sx)**2 + (trial.pos.y-sy)**2 + (trial.pos.z-sz)**2 < 4;
+      if ((i%3 === 0 && !near) || bursts(trial)) attr.setXYZ(n++,trial.pos.x,trial.pos.y,trial.pos.z);
       if (bursts(trial)) break;
     }
     attr.needsUpdate = true; dots.geometry.setDrawRange(0,n); dots.visible = true;
