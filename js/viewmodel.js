@@ -132,6 +132,20 @@
   // Rocketbox mesh in bind space, with the fingers already articulated. Both hands
   // share one draw call. Only positions and normals vary between equipped items.
   const realArms = {};
+  const geomBase = 'assets/chars/';
+  let texBase = geomBase;
+  let loadProgress = null;
+  VM.setAssetBase = function (path) { texBase = path; };
+  VM.invalidateGuns = function () {
+    for (const k of Object.keys(guns)) {
+      const g = guns[k];
+      if (g.arms) g.arms.geometry.dispose();
+      delete guns[k];
+    }
+    curId = null;
+    curTeam = null;
+    VM.cur = null;
+  };
   function readSide(buf, meta) {
     const n = meta.vertexCount, o = meta.offset, count = meta.indexCount;
     if (!n || !count || count % 3 || o + 26*n + 2*count > buf.byteLength) throw new Error('Invalid arm geometry');
@@ -164,18 +178,28 @@
   }
   async function loadTeamArms(team) {
     if (realArms[team]) return;
-    const base = 'assets/chars/', loader = new THREE.TextureLoader();
+    const loader = new THREE.TextureLoader();
     async function file(name) {
-      const r = await fetch(base + name);
+      const url = geomBase + name;
+      const r = await fetch(url);
       if (!r.ok) throw new Error(name + ' HTTP ' + r.status);
-      return r;
+      const buf = await r.arrayBuffer();
+      if (loadProgress) loadProgress(url, buf.byteLength);
+      return buf;
     }
     const name = 'fparms_' + team;
-    const [meta, buf] = await Promise.all([file(name+'.json').then(r => r.json()), file(name+'.bin').then(r => r.arrayBuffer())]);
+    const [meta, buf] = await Promise.all([file(name + '.json').then((b) => JSON.parse(new TextDecoder().decode(b))), file(name + '.bin')]);
     const R = readSide(buf, meta.sides.R), L = readSide(buf, meta.sides.L);
     const opts = { viewmodel: true };
     await Promise.all(['map','normalMap','roughnessMap'].map(async key => {
-      const t = await loader.loadAsync(base + meta.material[key]);
+      const url = texBase + meta.material[key];
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(url);
+      const texBuf = await r.arrayBuffer();
+      if (loadProgress) loadProgress(url, texBuf.byteLength);
+      const objectUrl = URL.createObjectURL(new Blob([texBuf]));
+      const t = await loader.loadAsync(objectUrl);
+      URL.revokeObjectURL(objectUrl);
       t.anisotropy = G.Tex.aniso || 1;
       opts[key] = t;
     }));
@@ -184,15 +208,16 @@
     realArms[team] = { R, L, mat, both: topology([R,L]), right: topology([R]) };
   }
   let loadingArms;
-  VM.loadArms = async function () {
+  VM.loadArms = async function (opts) {
     if (G.Gfx.preset.key === 'low') return;
     if (loadingArms) return loadingArms;
+    loadProgress = opts && opts.onBytes || null;
     // Finish both teams before shader warm-up, even if one needs the fallback.
     loadingArms = Promise.all(['atk','def'].map(team => loadTeamArms(team).catch(e => e))).then(results => {
       const failure = results.find(Boolean);
       if (failure) throw failure;
     });
-    try { await loadingArms; } finally { loadingArms = null; }
+    try { await loadingArms; } finally { loadingArms = null; loadProgress = null; }
   };
 
   // An orthonormal frame from a longitudinal direction and a reference across it.

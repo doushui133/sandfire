@@ -622,7 +622,7 @@
   }
   T.buildWorldData = async function (p,progress,yieldStep) {
     let scans;
-    if (p.normals) {
+    if (p.normals && !p.deferScans) {
       progress(0,ORDER.length);
       try { scans=await loadScans(Math.min(p.surfaceSize,1024)); }
       catch (e) { /* Use procedural layers if the canvas cannot read the scans. */ }
@@ -643,14 +643,132 @@
           worker=new Worker('js/surfaces-worker.js');
           worker.onerror=reject;
           worker.onmessage=e=>{if(e.data.error) reject(Error(e.data.error)); else if(e.data.bank) resolve(e.data.bank); else progress(e.data.step,e.data.total);};
-          worker.postMessage({surfaceSize:p.surfaceSize,normals:p.normals});
+          worker.postMessage({surfaceSize:p.surfaceSize,normals:p.normals,deferScans:!!G.deferScans});
         });
         return T.worldArrays(data,p.aniso);
       } catch(e) { /* Restricted workers and missing worker canvas support use the yielding builder. */ }
       finally { if(worker) worker.terminate(); }
     }
-    const data=await T.buildWorldData(p,progress,()=>new Promise(resolve=>setTimeout(resolve,0)));
+    const data=await T.buildWorldData({surfaceSize:p.surfaceSize,normals:p.normals,aniso:p.aniso,deferScans:!!G.deferScans},progress,()=>new Promise(resolve=>setTimeout(resolve,0)));
     return T.worldArrays(data,p.aniso);
+  };
+
+  function patchScanMeshes(geo, tex) {
+    if (!tex.scanLayers || !G.MapMesh || !G.MapMesh.root) return;
+    const buckets = new Map();
+    for (const q of geo.quads) {
+      const cx = q.o[0] + (q.u[0] + q.v[0]) / 2, cz = q.o[2] + (q.u[2] + q.v[2]) / 2;
+      const key = q.decal ? 'decal' : Math.min(3, Math.max(0, Math.floor((cx + 50) / 25))) + ',' + Math.min(3, Math.max(0, Math.floor((cz + 50) / 25)));
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(q);
+    }
+    const townMeshes = G.MapMesh.root.children.filter((c) => c.isMesh && c.geometry.attributes.position);
+    for (const [key, list] of buckets) {
+      if (key === 'decal') continue;
+      const mesh = townMeshes.find((m) => m.geometry.attributes.position.count === list.length * 4);
+      if (!mesh) continue;
+      const g = mesh.geometry;
+      let scan = g.attributes.scan;
+      if (!scan) {
+        scan = new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 4), 4);
+        g.setAttribute('scan', scan);
+      }
+      list.forEach((q, k) => {
+        const lu = Math.hypot(q.u[0], q.u[1], q.u[2]), lv = Math.hypot(q.v[0], q.v[1], q.v[2]);
+        const uh = [q.u[0] / lu, q.u[1] / lu, q.u[2] / lu], vh = [q.v[0] / lv, q.v[1] / lv, q.v[2] / lv];
+        let nx = q.u[1] * q.v[2] - q.u[2] * q.v[1], ny = q.u[2] * q.v[0] - q.u[0] * q.v[2], nz = q.u[0] * q.v[1] - q.u[1] * q.v[0];
+        const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+        const picked = T.surfaceScan(q, tex.scanLayers);
+        const phase = picked ? (q.o[0] * nx + q.o[1] * ny + q.o[2] * nz) * .317 + q.tint[1] * 11.7 : 0;
+        [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([s, t], c) => {
+          const v = k * 4 + c;
+          const x = q.o[0] + q.u[0] * s + q.v[0] * t, y = q.o[1] + q.u[1] * s + q.v[1] * t, z = q.o[2] + q.u[2] * s + q.v[2] * t;
+          scan.array[v * 4 + 2] = picked ? picked.layer : -1;
+          if (picked) {
+            scan.array[v * 4] = (x * uh[0] + y * uh[1] + z * uh[2]) / picked.tile + phase;
+            scan.array[v * 4 + 1] = (x * vh[0] + y * vh[1] + z * vh[2]) / picked.tile + phase * .63;
+            scan.array[v * 4 + 3] = picked.mode;
+          }
+        });
+      });
+      scan.needsUpdate = true;
+    }
+  }
+  function enableScanMaterials(tex, preset) {
+    if (!G.MapMesh || !G.MapMesh.materials || !tex.scanAlbedo) return;
+    const layers = tex.scanLayers || {};
+    for (const m of G.MapMesh.materials) {
+      if (!m.uniforms.uScanAlbedo) continue;
+      m.defines.SCAN_SURFACES = '';
+      m.uniforms.uScanAlbedo.value = tex.scanAlbedo;
+      m.uniforms.uScanNormal.value = tex.scanNormal;
+      m.uniforms.uGravelLayer.value = layers.gravelly_sand === undefined ? -1 : layers.gravelly_sand;
+      m.uniforms.uBrickLayer.value = layers.red_brick_03 === undefined ? -1 : layers.red_brick_03;
+      m.needsUpdate = true;
+    }
+    if (tex.barrelMaps && G.MapMesh.propMat) {
+      for (const k of ['map','normalMap','roughnessMap']) {
+        if (tex.barrelMaps[k] && G.MapMesh.propMat.uniforms[k]) G.MapMesh.propMat.uniforms[k].value = tex.barrelMaps[k];
+      }
+    }
+  }
+  T.upgradePhotoScans = async function (surfaces, preset, geo, onBytes) {
+    const size = Math.min(preset.surfaceSize, 1024);
+    const track = onBytes || null;
+    const scanImageTracked = async (file) => {
+      const path = 'assets/textures/' + size + '/' + file;
+      const r = await fetch(path);
+      if (!r.ok) throw Error(file);
+      const buf = await r.arrayBuffer();
+      if (track) track(path, buf.byteLength);
+      const blob = new Blob([buf]);
+      if (typeof document === 'undefined') return createImageBitmap(blob, { colorSpaceConversion: 'none' });
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = URL.createObjectURL(blob);
+      });
+    };
+    try {
+      const ids = Object.keys(SCANS);
+      const stride = size * size * 4;
+      const data = { size, count: ids.length, layers: {}, albedo: new Uint8Array(ids.length * stride), normal: new Uint8Array(ids.length * stride) };
+      const ctx = canvas(size).getContext('2d', { willReadFrequently: true });
+      function pixels(image) {
+        ctx.drawImage(image, 0, 0);
+        return ctx.getImageData(0, 0, size, size).data;
+      }
+      async function load(id, layer) {
+        const maps = await Promise.all(['Diffuse', 'nor_gl', 'arm'].map(map =>
+          scanImageTracked(id + '_' + map + '_1k.jpg').catch(() => null)));
+        if (!maps.every(map => map && map.width === size && map.height === size)) return;
+        const [diffuse, normal, arm] = maps.map(pixels), [exposure, saturation] = SCANS[id];
+        const a = data.albedo, n = data.normal;
+        for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+          const i = ((size - 1 - y) * size + x) * 4, o = layer * stride + (y * size + x) * 4;
+          const r = scanLinear[diffuse[i]], g = scanLinear[diffuse[i + 1]], b = scanLinear[diffuse[i + 2]];
+          const gray = (r * .2126 + g * .7152 + b * .0722) * (1 - saturation);
+          a[o] = 255 * Math.sqrt(sat((gray + r * saturation) * exposure));
+          a[o + 1] = 255 * Math.sqrt(sat((gray + g * saturation) * exposure));
+          a[o + 2] = 255 * Math.sqrt(sat((gray + b * saturation) * exposure));
+          a[o + 3] = arm[i + 1];
+          n[o] = normal[i]; n[o + 1] = normal[i + 1];
+          n[o + 2] = arm[i]; n[o + 3] = arm[i + 2];
+        }
+        data.layers[id] = layer;
+        for (const map of maps) if (map && map.close) map.close();
+      }
+      for (let i = 0; i < ids.length; i += 3) await Promise.all(ids.slice(i, i + 3).map((id, j) => load(id, i + j)));
+      if (!Object.keys(data.layers).length) return;
+      const added = T.worldArrays({ scans: data, layers: surfaces.layers, base: null, large: null }, preset.aniso);
+      surfaces.scanAlbedo = added.scanAlbedo;
+      surfaces.scanNormal = added.scanNormal;
+      surfaces.scanLayers = added.scanLayers;
+      surfaces.barrelMaps = added.barrelMaps;
+      enableScanMaterials(surfaces, preset);
+      patchScanMeshes(geo, surfaces);
+    } catch (e) { console.warn('photo scans unavailable', e); }
   };
 
   // ---------- small detail maps (RGBA, tiled, linear data) ----------

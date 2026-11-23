@@ -413,20 +413,47 @@
     return GM.mat || (GM.mat = G.Gfx.litMaterial({ detail: 'gun' }));
   };
   const realIds = ['p10','h50','v9','u45','ar7','tr4','fa2','r90','s40','s8','bomb','he','flash','smoke','molotov','incendiary'];
-  const base = 'assets/guns/', materialSets = {};
+  let texBase = 'assets/guns/', materialSets = {}, loadProgress = null;
+  GM.setAssetBase = function (path) { texBase = path; };
+  GM.resetRealCache = function () {
+    for (const id of realIds) delete cache[id];
+    for (const k of Object.keys(materialSets)) delete materialSets[k];
+    loading = null;
+  };
   async function materials(meta) {
     const opts = { normalFlipY: meta.normalFlipY }, loader = new THREE.TextureLoader();
     await Promise.all(Object.keys(meta.textures).map(async (key) => {
-      const texture = await loader.loadAsync(base + meta.textures[key]);
-      texture.anisotropy = G.Tex.aniso || 1;
-      opts[key] = texture;
+      const url = texBase + meta.textures[key];
+      if (loadProgress) {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(url);
+        const buf = await r.arrayBuffer();
+        loadProgress(url, buf.byteLength);
+        const objectUrl = URL.createObjectURL(new Blob([buf]));
+        const texture = await loader.loadAsync(objectUrl);
+        URL.revokeObjectURL(objectUrl);
+        texture.anisotropy = G.Tex.aniso || 1;
+        opts[key] = texture;
+      } else {
+        const texture = await loader.loadAsync(url);
+        texture.anisotropy = G.Tex.aniso || 1;
+        opts[key] = texture;
+      }
     }));
     return { worldMaterial: G.Gfx.litMaterial(opts), vmMaterial: G.Gfx.litMaterial(Object.assign({viewmodel:true},opts)) };
   }
   async function file(name) {
-    const response = await fetch(base + name);
+    const url = 'assets/guns/' + name;
+    const response = await fetch(url);
     if (!response.ok) throw new Error(name + ' HTTP ' + response.status);
-    return response;
+    if (!loadProgress) return response;
+    const buf = await response.arrayBuffer();
+    loadProgress(url, buf.byteLength);
+    return {
+      ok: true,
+      json: () => Promise.resolve(JSON.parse(new TextDecoder().decode(buf))),
+      arrayBuffer: () => Promise.resolve(buf),
+    };
   }
   async function loadModel(id) {
     const [meta, buf] = await Promise.all([file(id + '.json').then(r => r.json()), file(id + '.bin').then(r => r.arrayBuffer())]);
@@ -465,14 +492,15 @@
     cache[id] = Object.assign(gm, await materialSets[meta.source]);
   }
   let loading = null;
-  GM.loadReal = async function () {
+  GM.loadReal = async function (opts) {
     if (G.Gfx.preset.key === 'low') return;
     if (loading) return loading;
+    loadProgress = opts && opts.onBytes || null;
     loading = Promise.all(realIds.map(async id => {
       if (cache[id] && cache[id].worldMaterial) return;
       try { await loadModel(id); } catch (e) { console.warn('Using procedural ' + id, e); }
     }));
-    try { await loading; } finally { loading = null; }
+    try { await loading; } finally { loading = null; loadProgress = null; }
   };
   // a whole-gun mesh for the world (held by soldiers, dropped on the ground)
   GM.mesh = function (id) {

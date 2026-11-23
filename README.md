@@ -10,6 +10,8 @@
 
 本地试玩时，在项目根目录运行 `python -m http.server 8000`，然后打开 `http://localhost:8000/`。部署时，将本目录的内容放在 `sandfire` 仓库根目录，在仓库的 Settings → Pages 中选择从分支发布，并选中该分支的根目录。项目使用相对路径，无需构建。
 
+首次进入会先显示主菜单（程序生成的角色与枪械），高清 Rocketbox 角色、CC0 枪械与 Poly Haven 扫描贴图在后台按优先级下载；手机「均衡/流畅」使用 `assets/chars/m/` 与 `assets/guns/m/` 的半尺寸贴图（运行 `tools/make-mobile-assets.ps1` 生成）。菜单右下角或 `#status` 会显示进度。再次打开时 `sw.js` 会缓存静态资源加速载入——每次发布请同时把 `sw.js` 里的 `CACHE_VERSION` 与 `js/main.js` 引用的版本保持一致，避免玩家卡在旧脚本上。
+
 ## 键鼠操作
 
 | 输入 | 动作 |
