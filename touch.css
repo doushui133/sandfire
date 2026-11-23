@@ -42,8 +42,9 @@ html,body { overscroll-behavior:none }
 #touchLayer button { pointer-events:auto }
 #touchLayer button,.touch #slots button {
   box-sizing:border-box; min-width:52px; height:52px; padding:3px;
-  border:1px solid rgba(233,211,173,.5); color:var(--text); background:rgba(16,13,9,.52);
+  border:1px solid rgba(244,234,216,.38); color:var(--text); background:rgba(12,11,9,.62);
   border-radius:50%; font-weight:600; text-shadow:0 1px 3px #000; touch-action:none;
+  box-shadow:0 4px 12px rgba(0,0,0,.28);
 }
 #touchLayer button.held,#touchLayer button[aria-pressed=true],#touchLayer button:active,
 .touch #slots button:active { border-color:var(--sun); background:rgba(135,79,21,.85) }
