@@ -17,9 +17,10 @@
   R(2, 8, 15, 19, 'B');                                // site B: colonnade courtyard
   R(31, 7, 46, 16, 'A');                               // site A: market square
   R(23, 7, 26, 14, ',');                               // upper mid
-  P(24, 15, '='); P(25, 15, '=');                      // mid gate
+  P(24, 15, '=');                                      // mid gate
   R(22, 16, 27, 40, ',');                              // mid street
-  R(16, 17, 21, 18, ','); P(16, 17, '='); P(16, 18, '='); // mid → B alley
+  R(17, 17, 20, 20, 'u'); R(16, 17, 16, 18, '=');     // B dye house, open west doorway
+  P(16, 19, 'W'); R(19, 21, 22, 22, 'u');              // loom window and offset mid entrance
   R(28, 20, 32, 21, ','); R(31, 17, 32, 19, ',');      // mid → A connector
   R(16, 41, 33, 47, 'T');                              // attacker spawn (south)
   R(34, 42, 45, 46, '.'); R(40, 34, 45, 41, '.');      // east street
@@ -29,6 +30,13 @@
   R(6, 30, 8, 33, '%');                                // west street pinch
   R(3, 20, 5, 25, 'u');                                // tunnel into B
   R(9, 36, 21, 37, ',');                               // lower alley mid ↔ west
+  R(22, 38, 27, 41, '%');                              // loading yard divides the lower street
+  R(14, 38, 15, 42, ','); R(14, 38, 21, 39, ',');
+  R(28, 36, 35, 37, ','); R(34, 38, 35, 42, ',');
+  R(26, 31, 27, 34, '%'); R(22, 24, 23, 27, '%');    // stagger the mid street frontage
+  R(26, 18, 27, 19, '#'); R(20, 30, 21, 32, ',');    // recessed stall court
+  R(36, 27, 38, 28, 'h'); R(36, 22, 37, 26, ',');    // bazaar side passage
+  R(34, 21, 37, 22, ','); R(34, 17, 35, 20, ',');
 
   // site B dressing
   R(12, 8, 15, 11, '^'); R(12, 12, 15, 12, 's');
@@ -36,10 +44,13 @@
   P(3, 9, 'c'); P(3, 10, 'C'); P(13, 16, 'C'); P(14, 16, 'c'); P(10, 18, 'c'); R(7, 13, 8, 13, 'w');
   // site A dressing
   R(36, 9, 41, 12, '^'); R(37, 13, 40, 13, 's'); R(35, 10, 35, 11, 's');
+  R(37, 10, 40, 10, 't'); R(37, 8, 40, 9, 'L');      // dyers' drying terrace
+  P(41, 8, 't'); P(42, 8, '^'); P(43, 8, 's');        // side stairs from the north arcade
   P(32, 8, 'C'); P(33, 8, 'c'); P(45, 8, 'c'); P(45, 9, 'C'); P(44, 14, 'c'); R(34, 14, 35, 14, 'w'); P(46, 16, 'p');
   // spawns, mid, streets
   P(19, 3, 'c'); P(29, 3, 'C'); P(13, 2, 'b'); P(36, 2, 'c');
-  P(26, 12, 'c'); P(22, 22, 'C'); P(27, 25, 'c'); R(23, 29, 24, 29, 'w');
+  P(26, 12, 'c'); P(23, 19, 'C'); P(27, 25, 'c'); R(23, 29, 24, 29, 'w');
+  P(21, 31, 'c'); P(25, 35, 'w'); P(11, 17, 'C'); P(36, 15, 'C');
   P(17, 42, 'C'); P(32, 46, 'c'); P(20, 46, 'b'); P(29, 42, 'b'); P(16, 47, 'p'); P(33, 41, 'p');
   P(3, 27, 'b'); P(45, 36, 'b'); P(8, 40, 'b'); P(8, 27, 'c'); P(4, 38, 'C'); P(3, 46, 'p'); P(45, 46, 'p');
   P(44, 22, 'c'); P(41, 23, 'C'); R(40, 17, 42, 17, 'H');
@@ -49,8 +60,8 @@
   RIF(9, 20, 21, 35, '#', '%'); RIF(28, 22, 38, 40, '#', '%'); RIF(16, 7, 22, 16, '#', '%');
   M.grid = g;
 
-  const FLOOR = { '.': 'sand', ',': 'paved', A: 'tiles', B: 'tiles', T: 'sand', D: 'paved', '=': 'paved', u: 'paved', h: 'tiles', s: 'step', '^': 'plat' };
-  const FH = { s: 0.4, '^': 0.8 };
+  const FLOOR = { '.': 'sand', ',': 'paved', A: 'tiles', B: 'tiles', T: 'sand', D: 'paved', '=': 'paved', u: 'paved', h: 'tiles', s: 'step', '^': 'plat', t: 'stair', L: 'terrace' };
+  const FH = { s: 0.4, '^': 0.8, t: 1.2, L: 1.6 };
   M.FLOOR = FLOOR;
   M.inside = (c, r) => c >= 0 && r >= 0 && c < W && r < H;
   M.ch = (c, r) => (M.inside(c, r) ? g[r][c] : '#');
@@ -91,18 +102,18 @@
   };
   const cp = (a) => a.map(([c, r]) => M.cellPos(c, r));
   M.spawns = {
-    atk: cp([[19, 44], [22, 45], [25, 44], [28, 45], [31, 44]]),
-    def: cp([[20, 4], [23, 3], [25, 5], [27, 3], [29, 5]]),
+    atk: cp([[23, 46], [24, 45], [25, 46], [26, 45], [27, 46]]),
+    def: cp([[22, 3], [23, 4], [24, 3], [25, 4], [26, 3]]),
   };
   const hold = (site, c, r, lc, lr) => ({ site, pos: M.cellPos(c, r), yaw: G.yawTo(M.cellX(lc) - M.cellX(c), M.cellZ(lr) - M.cellZ(r)) });
   M.holds = [
-    hold('A', 38, 10, 43, 19), hold('A', 32, 10, 31, 18), hold('A', 45, 13, 43, 19), hold('A', 43, 8, 38, 15),
-    hold('B', 10, 9, 4, 20), hold('B', 13, 14, 17, 17), hold('B', 3, 15, 4, 21), hold('B', 14, 9, 16, 18),
-    hold('M', 24, 12, 24, 22), hold('M', 25, 9, 25, 20),
+    hold('A', 39, 8, 43, 19), hold('A', 35, 9, 34, 17), hold('A', 45, 13, 43, 19), hold('A', 44, 9, 38, 15),
+    hold('B', 10, 9, 4, 20), hold('B', 13, 14, 17, 17), hold('B', 3, 15, 4, 21), hold('B', 13, 9, 16, 18),
+    hold('M', 24, 12, 24, 22), hold('M', 25, 9, 24, 15),
   ];
   M.routes = {
-    A: [cp([[42, 44], [42, 37], [42, 30], [42, 21]]), cp([[24, 35], [24, 25], [30, 20], [31, 17]])],
-    B: [cp([[6, 44], [5, 35], [4, 27], [4, 22]]), cp([[24, 35], [23, 25], [19, 18]]), cp([[15, 37], [5, 33], [4, 23]])],
+    A: [cp([[42, 44], [42, 30], [43, 21]]), cp([[42, 33], [38, 27], [37, 22], [34, 18]]), cp([[34, 37], [27, 35], [30, 20], [31, 17]])],
+    B: [cp([[6, 44], [5, 35], [4, 27], [4, 22]]), cp([[14, 39], [24, 35], [24, 24], [19, 21], [18, 17]]), cp([[14, 38], [5, 36], [4, 23]])],
   };
 
   // ---------- colliders ----------
@@ -113,7 +124,7 @@
     return b;
   }
   M.addBox = addBox;
-  const SOLID = { '#': 1, '%': 1, H: 1, w: 1, '^': 1, s: 1, '=': 1, u: 1, h: 1 };
+  const SOLID = { '#': 1, '%': 1, H: 1, w: 1, '^': 1, s: 1, t: 1, L: 1, '=': 1, u: 1, h: 1 };
   function key(c, r) {
     const ch = g[r][c];
     if (!SOLID[ch]) return null;
@@ -132,8 +143,7 @@
       const ch = g[r][c], x0 = OX + c * CELL, z0 = OZ + r * CELL, x1 = x0 + w * CELL, z1 = z0 + h * CELL;
       if (ch === '#' || ch === '%' || ch === 'H') addBox(x0, 0, z0, x1, M.tallH(c, r), z1, ch === '#' ? 'wallA' : ch === '%' ? 'wallB' : 'wallC', { building: true });
       else if (ch === 'w') addBox(x0 + 0.25, 0, z0 + 0.25, x1 - 0.25, 1.0, z1 - 0.25, 'lowwall');
-      else if (ch === '^') addBox(x0, 0, z0, x1, 0.8, z1, 'plat');
-      else if (ch === 's') addBox(x0, 0, z0, x1, 0.4, z1, 'step');
+      else if (FH[ch]) addBox(x0, 0, z0, x1, FH[ch], z1, ch === 's' ? 'step' : 'plat');
       else if (ch === '=') addBox(x0, 3.4, z0, x1, 7.2, z1, 'roof');
       else if (ch === 'u') addBox(x0, 3.0, z0, x1, 5.5, z1, 'roof');
       else if (ch === 'h') addBox(x0, 4.4, z0, x1, 7.0, z1, 'roof');
@@ -160,11 +170,33 @@
       break;
     }
   }
-  for (const [c,r] of [[45,8],[33,8]]) {
+  for (const [c,r] of [[45,8],[33,8],[21,31]]) {
     const x=M.cellX(c), z=M.cellZ(r);
     for (const s of [-1,1]) addBox(x+s*.72-.035,1.05,z-.75,x+s*.72+.035,2.43,z-.68,'stallPost');
     addBox(x-.84,2.43,z-.84,x+.84,2.53,z+.84,'stallCanopy');
   }
+
+  // Stone reveals and a leaf swung south from its western hinge.
+  const gateX = M.cellX(24), gateZ = M.cellZ(15);
+  for (const side of [-1, 1]) {
+    const edge = gateX + side * .96;
+    addBox(edge - .06, 0, gateZ - 1.07, edge + .06, 2.62, gateZ + 1.07, 'gateStone');
+  }
+  addBox(gateX - 1.18, 2.62, gateZ - 1.07, gateX + 1.18, 3.4, gateZ + 1.07, 'gateStone');
+  for (let i = 0; i < 6; i++) {
+    const x = gateX - .90 + i * .08, z = gateZ + .75 + i * .175;
+    addBox(x, .025, z, x + .14, 2.53, z + .177, 'gateBoard');
+  }
+  const sillX = M.cellX(16), sillZ = M.cellZ(19);
+  addBox(sillX - 1, 0, sillZ - 1, sillX + 1, 1.04, sillZ + 1, 'windowSill');
+  addBox(sillX - 1, 2.35, sillZ - 1, sillX + 1, 5.5, sillZ + 1, 'windowHead');
+
+  const terraceX = M.cellX(37) - 1, terraceZ = M.cellZ(8) - 1;
+  for (const [x0, z0, x1, z1] of [
+    [terraceX, terraceZ, terraceX + 8, terraceZ + .13],
+    [terraceX, terraceZ + .13, terraceX + .13, terraceZ + 4],
+    [terraceX + 7.87, terraceZ + 2, terraceX + 8, terraceZ + 4],
+  ]) addBox(x0, 1.6, z0, x1, 2.49, z1, 'terraceRail');
 
   // spatial hash: cell → box indices
   const bins = Array.from({ length: W * H }, () => []);
@@ -250,8 +282,33 @@
     for (let d = 1; d < 6; d++) for (let dr = -d; dr <= d; dr++) for (let dc = -d; dc <= d; dc++) if (M.walkable(c + dc, r + dr)) return [c + dc, r + dr];
     return [c, r];
   };
+  const CLEARANCE = .32;
+  function clearAt(x, z, h) {
+    for (const b of M.query(x - CLEARANCE, z - CLEARANCE, x + CLEARANCE, z + CLEARANCE)) {
+      if (b.y0 >= h + 1.7 || b.y1 <= h + .45) continue;
+      if (x + CLEARANCE > b.x0 && x - CLEARANCE < b.x1 && z + CLEARANCE > b.z0 && z - CLEARANCE < b.z1) return false;
+    }
+    return true;
+  }
+  function startCell(pos) {
+    const c = M.colOf(pos.x), r = M.rowOf(pos.z);
+    if (M.walkable(c, r)) return [c, r];
+    // A bot can stand in the open margin of a prop cell. Rejoin from that side.
+    let best = null, distance = Infinity;
+    for (const [dc, dr] of DIRS) {
+      const nc = c + dc, nr = r + dr;
+      if (!M.walkable(nc, nr) || Math.abs(M.floorH(nc, nr) - pos.y) > .45) continue;
+      const dx = M.cellX(nc) - pos.x, dz = M.cellZ(nr) - pos.z, d = Math.hypot(dx, dz);
+      if (d >= distance) continue;
+      const samples = Math.ceil(d / .22);
+      let i = 1;
+      for (; i <= samples; i++) if (!clearAt(pos.x + dx * i / samples, pos.z + dz * i / samples, pos.y)) break;
+      if (i > samples) { best = [nc, nr]; distance = d; }
+    }
+    return best || M.nearestWalkable(c, r);
+  }
   M.findPath = function (from, to) {
-    const [sc, sr] = M.nearestWalkable(M.colOf(from.x), M.rowOf(from.z));
+    const [sc, sr] = startCell(from);
     const [ec, er] = M.nearestWalkable(M.colOf(to.x), M.rowOf(to.z));
     const start = sr * W + sc, goal = er * W + ec;
     const gs = new Float32Array(W * H).fill(Infinity), came = new Int32Array(W * H).fill(-1), closed = new Uint8Array(W * H);
@@ -277,8 +334,11 @@
     if (!found) return null;
     const cells = []; for (let i = goal; i !== -1; i = came[i]) cells.push(i); cells.reverse();
     const pts = cells.map((i) => M.cellPos(i % W, (i / W) | 0));
-    pts[pts.length - 1].set(to.x, M.floorH(ec, er), to.z);
-    return smooth(pts);
+    if (ec === M.colOf(to.x) && er === M.rowOf(to.z)) pts[pts.length - 1].set(to.x, M.floorH(ec, er), to.z);
+    if (pts.length === 1) return [from.clone(), pts[0]];
+    const path = smooth(pts);
+    if (!walkLine(from, path[1])) path.unshift(from.clone());
+    return path;
   };
   function walkLine(a, b) {
     const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
@@ -288,7 +348,10 @@
     for (let i = 1; i <= n; i++) {
       const x = a.x + dx * i / n, z = a.z + dz * i / n, c = M.colOf(x), r = M.rowOf(z);
       if (!M.walkable(c, r) || !M.walkable(M.colOf(x + px), M.rowOf(z + pz)) || !M.walkable(M.colOf(x - px), M.rowOf(z - pz))) return false;
-      const h = M.floorH(c, r); if (Math.abs(h - prevH) > 0.45) return false; prevH = h;
+      const h = M.floorH(c, r);
+      if (Math.abs(h - prevH) > 0.45) return false;
+      prevH = h;
+      if (!clearAt(x, z, h)) return false;
     }
     return true;
   }
@@ -307,14 +370,21 @@
   M.buildRadar = function () {
     const px = 5, c = document.createElement('canvas'); c.width = W * px; c.height = H * px;
     const x = c.getContext('2d');
-    const col = { sand: '#7c6a4c', paved: '#6f6250', tiles: '#7a6a52', step: '#8a7a5c', plat: '#93825f' };
+    const col = { sand: '#7c6a4c', paved: '#6f6250', tiles: '#7a6a52', step: '#8a7a5c', plat: '#93825f', stair: '#ab976d', terrace: '#c4ae82' };
     for (let r = 0; r < H; r++) for (let cc = 0; cc < W; cc++) {
       const ch = g[r][cc], f = FLOOR[ch];
       if (f) x.fillStyle = col[f];
-      else if ('cCbw+p'.includes(ch)) x.fillStyle = '#4b3f2e';
+      else if ('cCbw+pW'.includes(ch)) x.fillStyle = '#4b3f2e';
       else continue;
       x.fillRect(cc * px, r * px, px, px);
     }
+    x.fillStyle = '#4b3f2e';
+    for (const b of M.boxes) if (b.kind === 'gateBoard' || b.kind === 'terraceRail') {
+      x.fillRect((b.x0 - OX) / CELL * px, (b.z0 - OZ) / CELL * px,
+        Math.max(1, (b.x1 - b.x0) / CELL * px), Math.max(1, (b.z1 - b.z0) / CELL * px));
+    }
+    x.fillStyle = '#afa184';
+    x.fillRect(M.colOf(sillX) * px, M.rowOf(sillZ) * px + 2, px, 1);
     x.strokeStyle = 'rgba(255,174,66,.55)'; x.lineWidth = 2;
     for (const k in M.sites) {
       const s = M.sites[k];

@@ -66,6 +66,7 @@
     // 4×4 chunks so whole districts behind the camera are skipped
     const buckets = new Map();
     for (const q of geo.quads) {
+      if (preset.key === 'low' && q.detail) continue;
       const cx = q.o[0] + (q.u[0] + q.v[0]) / 2, cz = q.o[2] + (q.u[2] + q.v[2]) / 2;
       const key = q.decal ? 'decal' : Math.min(3, Math.max(0, Math.floor((cx + 50) / 25))) + ',' + Math.min(3, Math.max(0, Math.floor((cz + 50) / 25)));
       if (!buckets.has(key)) buckets.set(key, []);
@@ -142,6 +143,29 @@
           m4.makeRotationFromEuler(new THREE.Euler(rx, ry, 0, 'YXZ')).setPosition(p.x + top.x, top.y - 0.1, p.z + top.z);
           fg.applyMatrix4(m4);
           frondGeos.push(fg);
+        }
+      } else if (p.type === 'planter' && preset.key !== 'low') {
+        const pot = new THREE.CylinderGeometry(.22, .135, .34, 8);
+        G.Gfx.paint(pot, lin(0xb26544), .86, 0);
+        pot.translate(p.x, p.y + .17, p.z);
+        trunkGeos.push(pot);
+        for (let i = 0; i < 6; i++) {
+          const leaf = new THREE.SphereGeometry(1, 5, 3);
+          G.Gfx.paint(leaf, lin(i % 2 ? 0x677544 : 0x819252), .88, 0);
+          leaf.scale(.055, .095 + rng() * .10, .045);
+          leaf.rotateZ(.46 + rng() * .53);
+          leaf.translate(-.105, .08, 0);
+          leaf.rotateY(i * 2.39996);
+          leaf.translate(p.x, p.y + .37, p.z);
+          trunkGeos.push(leaf);
+        }
+        for (let i = 0; i < 3; i++) {
+          const stone = new THREE.DodecahedronGeometry(.06 + rng() * .05, 0);
+          G.Gfx.paint(stone, lin(0xba956a), .96, 0);
+          stone.scale(1.2, .58, .8);
+          stone.rotateY(rng() * 6.28);
+          stone.translate(p.x + (i - 1) * .23, p.y + .035, p.z + .23);
+          trunkGeos.push(stone);
         }
       } else if (p.type === 'rod') {
         const a = new THREE.Vector3().fromArray(p.a), b = new THREE.Vector3().fromArray(p.b), len = a.distanceTo(b);

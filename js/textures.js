@@ -373,7 +373,7 @@
   function canvas(w, h) { const c = typeof document === 'undefined' ? new OffscreenCanvas(w,h||w) : document.createElement('canvas'); c.width = w; c.height = h || w; return c; }
   gen.sign = function () {
     const L = layer(), c = canvas(S), g = c.getContext('2d'), r = rngOf(151);
-    const names = ['沙棠茶社', '南井杂货', '风栈客舍', '双砧五金', '石榴药房', '早炉饼坊', '青灯电器', '长辙车行'];
+    const names = ['沙棠茶社', '南井杂货', '风栈客舍', '双砧五金', '石榴药房', '早炉饼坊', '苇梭织坊', '绛砂染坊'];
     const boards = ['#7a2e22', '#2d4a5e', '#3e5a2e', '#6a4a24', '#1f3c4a', '#7a5a1e', '#4a2a3a', '#5a5248'];
     names.forEach((name, k) => {
       const x = (k % 2) * 256, y = ((k / 2) | 0) * 128;
