@@ -144,7 +144,8 @@
     requestAnimationFrame(function loop(now) {
       requestAnimationFrame(loop);
       const ms = now - last; last = now;
-      const dt = Math.min(0.05, ms / 1000);
+      // the first frame after the long boot can carry a timestamp from before it ended (ms < 0)
+      const dt = G.clamp(ms / 1000, 0, 0.05);
       if (G.loopOn) { frame(dt, now / 1000); trackFrame(ms); G.Video.stats(ms); }
     });
   };
