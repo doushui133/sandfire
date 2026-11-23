@@ -21,6 +21,12 @@
       delay: 0, crouchPref: false, crouchT: 0, hold: null, rotateTo: null, stepDist: 0,
     };
   }
+  B.resetPractice = function (a) {
+    a.ai = freshAI();
+    a.ai.roam = new THREE.Vector3();
+    a.ai.roamUntil = 0;
+    a.recoilComp = D.comp; a.aimNoise = D.noise;
+  };
 
   // ---------- round setup and buying ----------
   B.newRound = function () {
@@ -67,9 +73,11 @@
     a.ai.alertPos.copy(pos); a.ai.alertT = G.time + dur;
   }
   B.hearShot = function (s) {
+    G.HUD.soundMarker(s, s.pos, 'shot');
     for (const a of G.Game.agents) if (a.isBot && a.alive && a.team !== s.team && G.dist2D(a.pos, s.pos) < 55) alert(a, s.pos, 2.5);
   };
   B.hearStep = function (s) {
+    G.HUD.soundMarker(s, s.pos, 'step');
     for (const a of G.Game.agents) if (a.isBot && a.alive && a.team !== s.team && G.dist2D(a.pos, s.pos) < 15) alert(a, s.pos, 2);
   };
   B.onDamaged = function (v, attacker) {
@@ -105,9 +113,11 @@
       }
       ai.target = best; ai.targetVisible = true; ai.lastSeenPos.copy(best.pos); ai.lastSeenT = G.time;
       if (G.Player.agent && a.team === G.Player.agent.team) best.spottedUntil = G.time + 1.2;
-      if (a.team === 'atk') B.plan.contact = true;
-      const site = M.siteAt(best.pos.x, best.pos.z) || nearSite(best.pos);
-      if (site && a.team === 'def') threat(site, best);
+      if (G.Game.mode !== 'practice') {
+        if (a.team === 'atk') B.plan.contact = true;
+        const site = M.siteAt(best.pos.x, best.pos.z) || nearSite(best.pos);
+        if (site && a.team === 'def') threat(site, best);
+      }
     } else ai.targetVisible = false;
   }
   function nearSite(p) {
@@ -289,7 +299,7 @@
       if (Math.random() > 0.18) return;
     }
     const known=G.time-ai.lastSeenT<4 ? ai.lastSeenPos : ai.alertT>G.time ? ai.alertPos : null;
-    const site=a.team==='atk' ? M.sites[B.plan.site].center : bomb.state==='planted' ? bomb.pos : null;
+    const site=B.plan && a.team==='atk' ? M.sites[B.plan.site].center : bomb.state==='planted' ? bomb.pos : null;
     let goal=known, id;
     if (ai.throwId) { id=ai.throwId; goal=ai.throwGoal; ai.throwId=null; }
     else if (site && a.nades.smoke && G.dist2D(a.pos,site)<24) { id='smoke'; goal=site; }
@@ -330,6 +340,21 @@
 
   // ---------- main update ----------
   const SLOT_ORDER = ['primary', 'pistol', 'knife'];
+  function roam(a) {
+    const ai = a.ai;
+    if (ai.alertT > G.time && G.dist2D(a.pos, ai.alertPos) > 3) return ai.alertPos;
+    if (ai.roamUntil > G.time && G.dist2D(a.pos, ai.roam) > 2) return ai.roam;
+    for (let i = 0; i < 16; i++) {
+      const c = Math.floor(Math.random() * M.W), r = Math.floor(Math.random() * M.H);
+      if (!M.walkable(c, r)) continue;
+      const p = M.cellPos(c, r, ai.roam);
+      if (G.dist2D(a.pos, p) < 14 || G.Phys.blocked(p.x, p.y + 0.01, p.z, G.bodyHeight(0) - 0.01)) continue;
+      ai.roamUntil = G.time + 12;
+      return p;
+    }
+    ai.roamUntil = 0;
+    return null;
+  }
   function think(a, dt) {
     const ai = a.ai;
     if (!ai) return;
@@ -341,7 +366,8 @@
     if (ai.target && !ai.target.alive) { ai.target = null; ai.targetVisible = false; }
     if (ai.target && ai.targetVisible) combat(a, cmd, dt);
     else {
-      objective(a, cmd, dt);
+      if (G.Game.mode === 'practice') cmd.dest = roam(a);
+      else objective(a, cmd, dt);
       if (ai.target && G.time - ai.lastSeenT < 1.6) {
         cmd.faceYaw = G.yawTo(ai.lastSeenPos.x - a.pos.x, ai.lastSeenPos.z - a.pos.z); cmd.facePitch = 0;
         if (!cmd.use) { cmd.dest = null; cmd.stop = true; }
@@ -388,6 +414,7 @@
     a.crouchWant = cmd.crouch; a.walking = cmd.walk;
     const speed = W.maxSpeed(a) * (cmd.walk ? 0.52 : 1) * G.lerp(1, 0.34, a.crouch) * (G.time < a.slowUntil ? 0.55 : 1);
     G.Phys.step(a, wx, wz, wl > 0.05 ? speed : 0, false, dt);
+    if (a.landed) { G.HUD.soundMarker(a, a.pos, 'step'); a.landed = 0; }
     // facing
     let fy = cmd.faceYaw, fp = cmd.facePitch;
     if (fy === null || fy === undefined) { if (wl > 0.1) { fy = G.yawTo(wx, wz); fp = 0; } else { fy = a.yaw; fp = 0; } }
@@ -409,12 +436,12 @@
     }
     W.update(a, dt, { fire: cmd.fire, firePressed: cmd.firePressed, alt: false, altPressed: cmd.altPressed, reload: cmd.reload });
     G.Game.handleUse(a, cmd.use, dt);
-    W.tryPickup(a);
+    if (G.Game.mode !== 'practice') W.tryPickup(a);
   }
 
   B.update = function (dt) {
     for (const a of G.Game.agents) {
-      if (a.isBot && a.alive) think(a, dt);
+      if (a.isBot && a.alive && !(G.Game.mode === 'practice' && G.Game.frozen)) think(a, dt);
       G.BotModel.update(a, dt);   // every body, the player's too (it becomes a ragdoll on death)
     }
     G.BotModel.updateBlobs();

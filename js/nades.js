@@ -39,6 +39,7 @@
       p.addScaledVector(v, first);
       if (axis < 0) break;
       p[axes[axis]] += sign * 0.0001;
+      if (g.owner && Math.abs(v[axes[axis]]) > 1) G.HUD.soundMarker(g, p, 'bounce');
       v[axes[axis]] *= -0.42;
       if (axis === 1 && sign === 1) {
         g.groundHit = true;
@@ -237,6 +238,7 @@
   }
   function burst(g) {
     const p = g.pos;
+    G.HUD.soundMarker(g, p, 'burst');
     G.Audio.grenade(g.id,p);
     if (g.id === 'smoke') {
       const center = p.clone(); center.y += 0.65;
