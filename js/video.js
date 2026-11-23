@@ -74,7 +74,7 @@
     '#endif',
     'gl_FragColor=vec4(c,1.);}'
   ].join('\n');
-  let rt, glow, scene, cam, quad, extract, present;
+  let rt, glow, scene, cam, quad, extract, present, canvasKey = '';
   V.init = function (r, p) {
     if (!p.aa) return;
     rt = new THREE.WebGLMultisampleRenderTarget(1,1,{stencilBuffer:false});
@@ -94,7 +94,10 @@
     V.width = Math.max(1,Math.floor(innerWidth*base*scale));
     V.height = Math.max(1,Math.floor(innerHeight*base*scale));
     V.offscreen = !!rt && (!!glow || scale < 0.9999);
-    r.setPixelRatio(base * (V.offscreen ? 1 : scale)); r.setSize(innerWidth,innerHeight);
+    // Assigning the canvas size clears it even when nothing changes, so only touch it on a real change
+    // (offscreen rendering scales the render targets instead of the canvas).
+    const pr = base * (V.offscreen ? 1 : scale), key = pr + 'x' + innerWidth + 'x' + innerHeight;
+    if (key !== canvasKey) { canvasKey = key; r.setPixelRatio(pr); r.setSize(innerWidth,innerHeight); }
     G.Gfx.U.uSharpen.value = rt ? 0 : (1-scale)*0.65;
     if (!V.offscreen) return;
     rt.setSize(V.width,V.height);

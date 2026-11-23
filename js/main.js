@@ -9,7 +9,10 @@
   const yieldFrame = () => new Promise((r) => setTimeout(r, 0));
 
   // ---------- resolution: fixed base, scaled down while frames run long ----------
-  const DR = { base: 1, scale: 1, acc: 0, n: 0, t: 0, good: 0, auto: true };
+  // Resizing the canvas clears it, so size changes are only flagged here (`pending`) and applied at the
+  // start of the next animation frame, right before it is drawn; resizing after a frame was drawn
+  // showed a blank (black) frame each time the scale moved.
+  const DR = { base: 1, scale: 1, acc: 0, n: 0, t: 0, good: 0, bad: 0, auto: true, pending: false };
   G.DR = DR;
   function baseRatio(preset) {
     // A software rasteriser stays at 1x on the low preset. Real GPUs keep the preset cap,
@@ -27,14 +30,16 @@
   function trackFrame(ms) {
     if (!DR.auto || ms <= 0 || ms > 120) return;   // ignore stalls and hidden-tab gaps
     DR.acc += ms; DR.n++; DR.t += ms;
-    if (DR.t < 1200 || DR.n < 20) return;
+    if (DR.t < 2000 || DR.n < 30) return;
     const avg = DR.acc / DR.n, p = G.Gfx.preset;
     DR.acc = DR.n = DR.t = 0;
     let s = DR.scale;
-    if (avg > 19.5) { s = Math.max(p.scaleMin, s * Math.max(0.8, Math.sqrt(16.7 / avg))); DR.good = 0; }
-    else if (avg < 17.6 && s < p.scaleMax) { if (++DR.good >= 3) { s = Math.min(p.scaleMax, s * 1.07); DR.good = 0; } }
-    else DR.good = 0;
-    if (s !== DR.scale) { DR.scale = s; applySize(); }
+    // hysteresis: two slow windows in a row to step down, three with clear headroom to step up, so a
+    // frame time hovering near the target never makes the resolution bounce
+    if (avg > 19.5) { DR.good = 0; if (++DR.bad >= 2) { s = Math.max(p.scaleMin, s * Math.max(0.85, Math.sqrt(16.7 / avg))); DR.bad = 0; } }
+    else if (avg < 15.5 && s < p.scaleMax) { DR.bad = 0; if (++DR.good >= 3) { s = Math.min(p.scaleMax, s * 1.06); DR.good = 0; } }
+    else DR.good = DR.bad = 0;
+    if (Math.abs(s - DR.scale) > 0.01) { DR.scale = s; DR.pending = true; }
   }
 
   // Compile every shader the game uses later (guns, soldiers, bomb, effects) before play, so the
@@ -131,7 +136,7 @@
     applySize();
     warmUp(renderer, scene, camera);
 
-    window.addEventListener('resize', applySize);
+    window.addEventListener('resize', () => { DR.pending = true; });
     wireMenu();
     status.textContent = '准备就绪 · 选择阵营开始';
     $('btnAtk').disabled = $('btnDef').disabled = false;
@@ -148,6 +153,7 @@
       const ms = now - last; last = now;
       // the first frame after the long boot can carry a timestamp from before it ended (ms < 0)
       const dt = G.clamp(ms / 1000, 0, 0.05);
+      if (DR.pending) { DR.pending = false; applySize(); }   // clears the canvas: only right before drawing
       if (G.loopOn) { frame(dt, now / 1000); trackFrame(ms); G.Video.stats(ms); }
     });
   };
