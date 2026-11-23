@@ -112,7 +112,7 @@ function setup(projectDir, threePath) {
   // radiance leaving a surface hit by a ray (one bounce of sun and sky)
   const tmp = [0, 0, 0];
   function bounce(px, py, pz, nx, ny, nz, out) {
-    const alb = py < 0.02 && ny > 0.9 ? [0.48, 0.37, 0.24] : [0.54, 0.45, 0.33];
+    const alb = py < 0.02 && ny > 0.9 ? [0.50, 0.375, 0.23] : [0.57, 0.455, 0.32];
     const ndl = nx * sd[0] + ny * sd[1] + nz * sd[2];
     let vis = 0;
     if (ndl > 0) vis = trace(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02, sd[0], sd[1], sd[2], MAXD) < 0 ? 1 : 0;
@@ -132,7 +132,11 @@ function setup(projectDir, threePath) {
       const dx = t1[0] * lx + t2[0] * ly + n[0] * lz, dy = t1[1] * lx + t2[1] * ly + n[1] * lz, dz = t1[2] * lx + t2[2] * ly + n[2] * lz;
       const t = trace(px, py, pz, dx, dy, dz, MAXD);
       if (t < 0) sky(dx, dy, dz, tmp);
-      else bounce(px + dx * t, py + dy * t, pz + dz * t, hit.nx, hit.ny, hit.nz, tmp);
+      else {
+        bounce(px + dx * t, py + dy * t, pz + dz * t, hit.nx, hit.ny, hit.nz, tmp);
+        const contact = .80 + .20 * Math.min(1, t / .85);
+        tmp[0] *= contact; tmp[1] *= contact; tmp[2] *= contact;
+      }
       r += tmp[0]; g += tmp[1]; b += tmp[2];
     }
     const k = 1 / (side * side);

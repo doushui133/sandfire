@@ -209,11 +209,11 @@ for (let i=0;i<5000;i++) {
 }
 console.log('5,000 random wall throws passed');
 
-field(); ally.alive=false; me.pos.set(0,0,42); foe.pos.set(0,0,38);
+field(); ally.alive=false; me.pos.set(35,0,43); foe.pos.set(35,0,39);
 me.yaw=0; me.pitch=Math.atan2(1.18-1.62,4); me.recoilP=me.recoilY=me.inacc=0;
 function pelletDamage(range) {
   me.inv.primary=W.item('s8'); me.cur='primary'; me.inacc=me.recoilP=me.recoilY=0;
-  me.pitch=Math.atan2(1.18-1.62,range); foe.pos.z=42-range; foe.hp=1000;
+  me.pitch=Math.atan2(1.18-1.62,range); foe.pos.z=me.pos.z-range; foe.hp=1000;
   const random=Math.random; Math.random=()=>0;
   try { W.update(me,.033,{firePressed:true}); } finally { Math.random=random; }
   return 1000-foe.hp;
@@ -237,11 +237,11 @@ event('touchend',[f],[]); assert.equal(G.Touch.pointers.size,0); assert.equal(G.
 event('touchstart',[a],[a]); event('touchcancel',[],[]); assert.equal(G.Touch.pointers.size,0);
 console.log('Document touch movement, replacement, simultaneous fire, end reconciliation and cancel passed');
 
-ally.alive=false; me.pos.set(0,0,40); foe.pos.set(.3,0,30); me.yaw=0; me.pitch=0;
+ally.alive=false; me.pos.set(35,0,40); foe.pos.set(35.3,0,30); me.yaw=0; me.pitch=0;
 G.Touch.joystick.x=.3; G.input.dx=G.input.dy=0;
 G.Player.touchLook(me,.03,.002); assert(me.yaw<0 && Math.hypot(me.yaw,me.pitch)<=.03*Math.PI/30+.000001);
 me.yaw=me.pitch=0; G.Touch.realTouch=false; G.Player.touchLook(me,.03,.002); assert.equal(me.yaw,0);
-G.Touch.realTouch=true; at('smoke',V(0,.1,35)); tick(1.2); G.Player.touchLook(me,.03,.002); assert.equal(me.yaw,0);
+G.Touch.realTouch=true; at('smoke',V(35,.1,35)); tick(1.2); G.Player.touchLook(me,.03,.002); assert.equal(me.yaw,0);
 N.clear(); me.pos.set(cover.x-2,0,cover.z); foe.pos.set(cover.x+2,0,cover.z+.11); me.yaw=-Math.PI/2;
 G.Player.touchLook(me,.03,.002); assert.equal(me.yaw,-Math.PI/2);
 console.log('Aim assist speed bound, mouse exclusion, wall and smoke occlusion passed');
@@ -255,12 +255,12 @@ W.update(me,.01,{fire:true,firePressed:true}); assert(me.primed);
 W.update(me,.01,{}); assert.equal(N.flying[0].id,item); assert.equal(W.grenadeCount(me),3);
 console.log('Carry caps, slot cycling and release-to-throw passed');
 
-field(); me.pos.set(0,0,42); foe.pos.set(0,0,34); ally.alive=false;
+field(); me.pos.set(35,0,42); foe.pos.set(35,0,34); ally.alive=false;
 G.Touch.realTouch=true; G.Touch.joystick.x=0; G.input.releaseAll(); G.input.endFrame();
 me.yaw=me.pitch=0; me.cur='pistol'; me.inv.pistol=W.item('m18'); G.settings.autoFire=true;
 const clip=me.inv.pistol.clip;
 G.Player.update(1/30); assert.equal(me.inv.pistol.clip,clip-1);
-at('smoke',V(0,.1,38)); tick(1.3); G.Player.update(1/30); assert.equal(me.inv.pistol.clip,clip-1);
+at('smoke',V(35,.1,38)); tick(1.3); G.Player.update(1/30); assert.equal(me.inv.pistol.clip,clip-1);
 N.clear(); me.pos.set(cover.x-2,0,cover.z); foe.pos.set(cover.x+2,0,cover.z); me.yaw=-Math.PI/2;
 G.Player.update(1/30); assert.equal(me.inv.pistol.clip,clip-1);
 console.log('Touch auto fire fired on exposed target and stopped behind cover and smoke');
@@ -357,6 +357,138 @@ for (const [width,height] of [[640,360],[740,360],[844,390],[1024,768]]) {
 }
 console.log('24 calculated control layouts passed at four viewports, three scales and two safe-area settings');
 
+function mapChecks() {
+  const M = G.Map, dt = 1 / 30, runSpeed = W.defs.ar7.speed;
+  function runRoute(from, stops) {
+    const runner = game.makeAgent('atk', '路线测试', false);
+    runner.pos.copy(from);
+    let elapsed = 0;
+    for (const stop of stops) {
+      assert(M.walkable(M.colOf(stop.x), M.rowOf(stop.z)));
+      const path = M.findPath(runner.pos, stop);
+      assert(path && path[path.length - 1].distanceTo(stop) < .01, 'Missing route to ' + stop.toArray());
+      for (const p of path.slice(1)) {
+        for (let ticks = 0; G.dist2D(runner.pos, p) > .32; ticks++) {
+          assert(ticks < 1200, 'Blocked route at ' + runner.pos.toArray() + ' toward ' + p.toArray());
+          const dx = p.x - runner.pos.x, dz = p.z - runner.pos.z, d = Math.hypot(dx, dz);
+          G.Phys.step(runner, dx / d, dz / d, runSpeed, false, dt);
+          elapsed += dt;
+        }
+      }
+      // Let the ground settle before checking the final elevation.
+      for (let i = 0; i < 8 && Math.abs(runner.pos.y - stop.y) > .08; i++) G.Phys.step(runner, 0, 0, 0, false, dt);
+      assert(Math.abs(runner.pos.y - stop.y) <= .08, 'Wrong floor at ' + runner.pos.toArray());
+    }
+    return elapsed;
+  }
+  const gate = M.cellPos(24, 15);
+  assert(!M.walkable(25, 15));
+  assert(!M.raycast(gate.x, 1.62, gate.z + 3, 0, 0, -1, 6));
+  assert.equal(M.raycast(gate.x - .62, 1.62, gate.z + 3, 0, 0, -1, 6).box.kind, 'gateBoard');
+  runRoute(M.cellPos(24, 18), [M.cellPos(24, 13)]);
+  runRoute(M.cellPos(24, 22), [M.cellPos(19, 20), M.cellPos(18, 19), M.cellPos(15, 18)]);
+  assert(M.clearLine(V(-15, 1.65, -11), V(-19, 1.65, -11)));
+  assert.equal(M.raycast(-15, .8, -11, -1, 0, 0, 5).box.kind, 'windowSill');
+  const terrace = M.cellPos(38, 9);
+  assert.equal(terrace.y, 1.6);
+  assert.equal(M.raycast(terrace.x, 4, terrace.z, 0, -1, 0, 5).y, 1.6);
+  runRoute(M.sites.A.center, [terrace, M.cellPos(44, 8)]);
+  runRoute(V(32.65, 0, 7.8001), [M.cellPos(43, 21)]);
+  const createElement = document.createElement, radarColors = new Map();
+  const ctx = { fillRect(x, y, w, h) { if (w === 5 && h === 5) radarColors.set(x + ',' + y, this.fillStyle); },
+    strokeRect: noop, fillText: noop };
+  try {
+    document.createElement = () => ({ getContext: () => ctx });
+    const radar = M.buildRadar();
+    assert.equal(radar.width, M.W * 5);
+    const stairs = [8, 10, 11, 13].map(r => radarColors.get(38 * 5 + ',' + r * 5));
+    assert(stairs.every(Boolean) && new Set(stairs).size === 4, 'Radar shades for all four raised levels');
+    assert(radarColors.has('120,75') && !radarColors.has('125,75'), 'Single-cell gate on radar');
+  } finally {
+    document.createElement = createElement;
+  }
+  const times = {};
+  for (const site of ['A', 'B']) {
+    const atk = M.routes[site].map(route => runRoute(M.spawns.atk[2], [...route, M.sites[site].center]));
+    const def = M.holds.filter(h => h.site === site).map(h => runRoute(M.spawns.def[2], [h.pos]));
+    times[site] = { atk: atk.map(t => +t.toFixed(1)), def: def.map(t => +t.toFixed(1)) };
+    assert(atk.every(t => t >= 17.5 && t <= 24.5), 'Attacker timing ' + JSON.stringify(times));
+    assert(def.every(t => t >= 7.5 && t <= 12.5), 'Defender timing ' + JSON.stringify(times));
+  }
+  const rotation = runRoute(M.sites.A.center, [M.sites.B.center]);
+  console.log('Run times at ' + runSpeed + ' m/s:', JSON.stringify(times), 'A–B rotation', rotation.toFixed(1) + 's');
+}
+
+function botRoundChecks() {
+  const M = G.Map, dt = 1 / 30, rounds = 12;
+  const random = Math.random, physics = G.Phys.step, findPath = M.findPath;
+  const visits = { atk: new Set(), def: new Set() }, plants = { A: 0, B: 0 }, stuck = [];
+  const progress = new Map();
+  const failedPaths = new Set();
+  M.findPath = function (from, to) {
+    const path = findPath(from, to);
+    if (!path) failedPaths.add(from);
+    return path;
+  };
+  G.Phys.step = function (a, x, z, speed, jump, elapsed) {
+    physics(a, x, z, speed, jump, elapsed);
+    if (game.phase !== 'live') return;
+    let p = progress.get(a);
+    if (!p) progress.set(a, p = { pos: a.pos.clone(), lastMove: G.time, duration: 0 });
+    if (G.dist2D(a.pos, p.pos) >= .85 || G.time - p.lastMove > 1) {
+      p.pos.copy(a.pos); p.duration = 0;
+    }
+    // Standing guard, using the bomb and pausing during a fight are intentional.
+    if (!failedPaths.delete(a.pos) && (speed <= 0 || !a.ai.path || a.ai.pathIdx >= a.ai.path.length)) return;
+    p.lastMove = G.time;
+    p.duration += elapsed;
+    if (p.duration > 8 && p.duration <= 8 + elapsed) {
+      stuck.push({ round: game.round, name: a.name, team: a.team, pos: a.pos.toArray(), goal: a.ai.goal.toArray(),
+        cell: [M.colOf(a.pos.x), M.rowOf(a.pos.z)] });
+    }
+  };
+  try {
+    Math.random = G.seeded(217);
+    game.start('atk', 1);
+    G.Player.agent.isPlayer = false;
+    G.Player.agent.isBot = true;
+    G.Bots.newRound();
+    for (let round = 1; round <= rounds; round++) {
+      progress.clear();
+      failedPaths.clear();
+      let planted = false;
+      for (let tick = 0; game.phase !== 'end' && tick < 6000; tick++) {
+        G.time += dt;
+        game.update(dt); G.Bots.update(dt); G.FX.update(dt);
+        if (game.phase !== 'live') continue;
+        for (const a of game.agents) {
+          if (!a.alive) continue;
+          const site = M.siteAt(a.pos.x, a.pos.z);
+          if (site) visits[a.team].add(site);
+        }
+        if (game.bomb.state === 'planted' && !planted) {
+          plants[game.bomb.site]++;
+          planted = true;
+        }
+      }
+      assert.equal(game.phase, 'end', 'Bot round ' + round + ' did not finish');
+      if (round < rounds) {
+        game.over = null;
+        game.newRound();
+      }
+    }
+  } finally {
+    Math.random = random;
+    G.Phys.step = physics;
+    M.findPath = findPath;
+  }
+  if (stuck.length) console.error('Bot movement blocked for >8s:', JSON.stringify(stuck));
+  assert.deepEqual(stuck, []);
+  for (const team of ['atk', 'def']) assert.deepEqual(visits[team], new Set(['A', 'B']));
+  assert(plants.A > 0 && plants.B > 0, 'Expected plants at both sites: ' + JSON.stringify(plants));
+  console.log(rounds + ' full 5v5 bot rounds:', plants, 'plants, both teams reached both sites, no stalls >8s');
+}
+
 // Boot with a renderer stub so wireMenu registers its actual capture and settings listeners.
 async function captureChecks() {
   class Renderer {
@@ -446,7 +578,8 @@ function momentChecks() {
   advance(4.1);
   game.damage(foes[2],player,200,{weapon:'tr4'});
   assert.equal(kills[kills.length-1].multi,1);
-  game.bomb.state='planted';
+  if (game.bomb.carrier) game.bomb.carrier.inv.bomb=false;
+  game.bomb.state='planted'; game.bomb.carrier=null;
   for (const enemy of foes.slice(3)) game.damage(enemy,player,200,{weapon:'tr4'});
   assert(kills[kills.length-1].last && !kills[kills.length-1].ace && !p.orbit);
   game.newRound(); assert.equal(G.timeScale,1);
@@ -472,5 +605,7 @@ function momentChecks() {
   assert(G.timeScale===1 && !p.orbit && !G.renderer.domElement.style.filter);
   console.log('Kill tiers, HUD payloads, wall-clock window, orbit before banner, planted-bomb control, death fall, killer zoom, spectating, pause and menu cleanup passed');
 }
+mapChecks();
+botRoundChecks();
 captureChecks().catch(err=>{console.error(err);process.exitCode=1;});
 

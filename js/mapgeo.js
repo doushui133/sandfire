@@ -57,13 +57,15 @@
 
   // occupied height intervals of a grid cell
   const ROOF = { '=': [3.4, 7.2], u: [3.0, 5.5], h: [4.4, 7.0] };
+  const TILE_TINT = [1.13, 1.015, 0.85];
   const OUT = [{ y0: 0, y1: 99, k: 'out' }];
   function column(c, r) {
     if (!M.inside(c, r)) return OUT;
     const ch = M.ch(c, r);
     if (ch === '#' || ch === '%' || ch === 'H') return [{ y0: 0, y1: M.tallH(c, r), k: ch }];
-    if (ch === '^') return [{ y0: 0, y1: 0.8, k: '^' }];
-    if (ch === 's') return [{ y0: 0, y1: 0.4, k: 's' }];
+    const h = M.floorH(c, r);
+    if (h) return [{ y0: 0, y1: h, k: ch }];
+    if (ch === 'W') return [{ y0: 0, y1: 1.04, k: 'W' }, { y0: 2.35, y1: 5.5, k: 'W' }];
     if (ROOF[ch]) return [{ y0: ROOF[ch][0], y1: ROOF[ch][1], k: ch }];
     return [];
   }
@@ -81,12 +83,12 @@
     }
     return parts.filter(([p0, p1]) => p1 - p0 > 0.01);
   }
-  const SIDE_MAT = { '#': 'blocks', '%': 'plaster', H: 'rubble', '^': 'trim', s: 'trim', '=': 'blocks', u: 'rubble', h: 'plaster' };
-  const PLASTER_TINTS = [[1, 1, 1], [1, 0.95, 0.86], [1, 0.9, 0.78], [0.97, 0.86, 0.8], [1, 0.97, 0.92], [0.93, 0.9, 0.84]];
+  const SIDE_MAT = { '#': 'blocks', '%': 'plaster', H: 'rubble', '^': 'trim', s: 'trim', t: 'trim', L: 'trim', '=': 'blocks', u: 'rubble', h: 'plaster', W: 'plaster' };
+  const PLASTER_TINTS = [[1, 1, 1], [1.08, 0.93, 0.78], [1, 0.90, 0.74], [1.06, 0.83, 0.74], [0.93, 1.01, 0.95], [0.94, 0.89, 0.81]];
   const STONE_TINTS = [[1, 1, 1], [1.04, 1.0, 0.95], [0.95, 0.93, 0.9], [1.02, 0.97, 0.9]];
   function tintOf(c, r, k) {
     const h = ((Math.floor(c / 4) * 7919) ^ (Math.floor(r / 4) * 104729)) >>> 0;
-    if (k === '%' || k === 'h') return PLASTER_TINTS[h % PLASTER_TINTS.length];
+    if (k === '%' || k === 'h' || k === 'W') return PLASTER_TINTS[h % PLASTER_TINTS.length];
     return STONE_TINTS[h % STONE_TINTS.length];
   }
   // sides: dc, dr, outward normal n, along-face direction t (u of the quad), face id of the back side
@@ -102,7 +104,7 @@
     const quads = [], occ = [], occQuads = [], props = [];
     const WHITE = [1, 1, 1];
     function Q(m, o, u, v, opt) {
-      const q = { m, o, u, v, tint: (opt && opt.tint) || WHITE, uv: (opt && opt.uv) || null, wall: (opt && opt.wall) || null, decal: m === 'decal' };
+      const q = { m, o, u, v, tint: (opt && opt.tint) || WHITE, uv: (opt && opt.uv) || null, wall: (opt && opt.wall) || null, decal: m === 'decal', detail: !!(opt && opt.detail) };
       quads.push(q);
       return q;
     }
@@ -111,7 +113,7 @@
       const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0, sk = opt.skip || '';
       if (dx <= 0.001 || dy <= 0.001 || dz <= 0.001) return;
       if (opt.occ !== false) occ.push([x0, y0, z0, x1, y1, z1]);
-      const o2 = { tint: opt.tint, uv: opt.uv, wall: opt.wall }, mt = opt.top || m;
+      const o2 = { tint: opt.tint, uv: opt.uv, wall: opt.wall, detail: opt.detail }, mt = opt.top || m;
       if (!sk.includes('px')) Q(m, [x1, y0, z1], [0, 0, -dz], [0, dy, 0], o2);
       if (!sk.includes('nx')) Q(m, [x0, y0, z0], [0, 0, dz], [0, dy, 0], o2);
       if (!sk.includes('pz')) Q(m, [x0, y0, z1], [dx, 0, 0], [0, dy, 0], o2);
@@ -197,15 +199,15 @@
         emit(k, M.cellX(c) - 1, M.cellZ(r) - 1, M.cellX(c + w - 1) + 1, M.cellZ(r + h - 1) + 1, c, r);
       }
     }
-    const topMat = (k, c, r) => (k === '^' || k === 's' ? (M.siteAt(M.cellX(c), M.cellZ(r)) ? 'tiles' : 'cobble') : 'roof');
+    const topMat = (c, r) => M.floorH(c, r) ? (M.siteAt(M.cellX(c), M.cellZ(r)) ? 'tiles' : 'cobble') : 'roof';
     greedy((c, r) => {
       const col = column(c, r);
       if (!col.length) return null;
       const iv = col[col.length - 1];
-      return topMat(iv.k, c, r) + '|' + iv.y1 + '|' + tintOf(c, r, iv.k).join(',');
+      return topMat(c, r) + '|' + iv.y1 + '|' + tintOf(c, r, iv.k).join(',');
     }, (k, x0, z0, x1, z1) => {
       const [m, y, t] = k.split('|');
-      Q(m, [x0, +y, z1], [x1 - x0, 0, 0], [0, 0, -(z1 - z0)], { tint: m === 'roof' ? t.split(',').map(Number) : WHITE });
+      Q(m, [x0, +y, z1], [x1 - x0, 0, 0], [0, 0, -(z1 - z0)], { tint: m === 'roof' ? t.split(',').map(Number) : m === 'tiles' ? TILE_TINT : WHITE });
     });
     greedy((c, r) => {
       const ch = M.ch(c, r);
@@ -229,7 +231,7 @@
       for (const k in votes) if (votes[k] > bv) { bv = votes[k]; best = k; }
       return best;
     }
-    greedy(floorOf, (m, x0, z0, x1, z1) => Q(m, [x0, 0, z1], [x1 - x0, 0, 0], [0, 0, -(z1 - z0)]));
+    greedy(floorOf, (m, x0, z0, x1, z1) => Q(m, [x0, 0, z1], [x1 - x0, 0, 0], [0, 0, -(z1 - z0)], { tint: m === 'tiles' ? TILE_TINT : WHITE }));
 
     // ---------- facade trim and detail ----------
     // does the same wall carry on past this end of the segment (so trim must not stick out there)?
@@ -258,6 +260,7 @@
       if (Math.abs(s.y1 - s.top) < 0.01 && s.top > 2) {
         const [a0, a1] = run(faceEdge, s, f, 0.12);
         f.box('trim', a0, a1, s.top - 0.22, s.top + 0.04, 0, 0.12, { tint: s.k === '%' ? WHITE : s.tint });
+        if (s.k === '%') f.box('trim', a0, a1, s.top - .50, s.top - .43, 0, .075, { tint: s.tint, occ: false });
       }
       // bays of 2 m: doors, windows, signs, AC units, pipes
       const nb = Math.round(L / 2);
@@ -269,10 +272,15 @@
         const covered = ROOF[outCh] !== undefined;
         const rng = rand(hash3(pc[0], pc[1], s.di + 1));
         const roll = rng();
+        if (ground && M.walkable(oc, orow) && !M.floorH(oc, orow) && !covered && (hash3(pc[0], pc[1], 73) % 8 === 0)) {
+          const a = f.point(c + .87, .045);
+          Q('sand', [a[0], .12, a[1]], [-d.t[0] * 1.74, 0, -d.t[2] * 1.74],
+            [d.n[0] * .41, -.108, d.n[2] * .41], { tint: [1, .94, .83], detail: true });
+        }
         const inY = (y0, y1) => y0 >= s.y0 - 0.001 && y1 <= s.y1 + 0.001;
         let usedGround = false;
         if (ground && open && s.top > 2.8) {
-          if (roll < 0.17 && !covered && outCh !== '^' && outCh !== 's' && inY(0, 2.6)) {
+          if (roll < 0.17 && !covered && !M.floorH(oc, orow) && inY(0, 2.6)) {
             usedGround = true;
             f.quad('door', c - 0.5, c + 0.5, 0.12, 2.24, 0.035, { uv: [0, 0, 1, 1] });
             f.box('trim', c - 0.66, c - 0.5, 0, 2.24, 0, 0.13);
@@ -363,7 +371,17 @@
           }
           box('wood',x0,.10,z0,x1,base,z1);
         }
-        box('crate', x0, y0+base, z0, x1, y1, z1, { skip: 'ny', uv: [0, 0, 1, 1] });
+        const colors = [[1, .9, .78], [.72, .87, .86], [1.05, 1.04, .94]];
+        box('crate', x0, y0+base, z0, x1, y1, z1, { skip: 'ny', uv: [0, 0, 1, 1], tint: colors[hash3(x0, z0, y0) % colors.length] });
+      } else if (kind === 'gateStone') {
+        box('blocks', x0, y0, z0, x1, y1, z1, { skip: 'ny', occ: false });
+        for (const z of [z0, z1 - .05]) box('trim', x0 - .016, y0, z, x1 + .016, y1, z + .05, { skip: 'ny', occ: false });
+      } else if (kind === 'gateBoard') {
+        box('wood', x0, y0, z0, x1, y1, z1, { tint: [.77, .56, .34], occ: false });
+        for (const y of [.46, 1.88]) box('metal', x0 - .009, y, z0, x1 + .009, y + .075, z1, { occ: false });
+      } else if (kind === 'terraceRail') {
+        box('wood', x0, y0, z0, x1, y1 - .1, z1, { tint: [.52, .76, .72], skip: 'ny', occ: false });
+        box('wood', x0 - .025, y1 - .1, z0 - .025, x1 + .025, y1, z1 + .025, { tint: [.82, .84, .65], occ: false });
       } else if (kind === 'lamp') {
         box('metal',x0,y0,z0,x1,y0+.06,z1);
         box('trim',x0+.02,y0+.06,z0+.02,x1-.02,y1-.07,z1-.02,{tint:[1.15,.94,.62]});
@@ -373,7 +391,14 @@
       } else if (kind === 'stallPost') {
         box('wood',x0,y0,z0,x1,y1,z1);
       } else if (kind === 'stallCanopy') {
-        box('cloth',x0,y0,z0,x1,y1,z1,{uv:[0,.06,1,.48]});
+        const uv = x0 < 0 ? [0, .55, 1, .96] : [0, .06, 1, .48];
+        box('cloth', x0, y0, z0, x1, y1, z1, { uv });
+        for (let i = 0; i < 5; i++) {
+          const x = x0 + .1 + i * .27, z = (z0 + z1) / 2 + (i % 2) * .22;
+          box('trim', x, 1.05, z, x + .18, 1.20 + (i % 3) * .04, z + .22, {
+            tint: [[1.24, .53, .29], [.64, .89, .44], [1.04, .83, .52]][i % 3], detail: true, occ: false, skip: 'ny'
+          });
+        }
       } else if (kind === 'lowwall' && x1-x0 > 2) {
         // Three courses on the old cover volume. Rounded sacks are shared across courses.
         const rows=3, wide=x1-x0, n=Math.ceil(wide/.85);
@@ -400,8 +425,31 @@
         occ.push([x0 + 0.08, 0, z0 + 0.08, x1 - 0.08, 6, z1 - 0.08]);
       }
     }
-    // sagging cables between rooftops
-    [[22, 28, 18], [22, 28, 27], [22, 28, 34], [39, 46, 37], [39, 46, 21], [2, 9, 29], [2, 9, 40], [15, 34, 44]].forEach(([c0, c1, row]) => {
+    // Gate threshold and the deep, open loom window.
+    box('trim', -2, 0, -20.15, 0, .018, -17.85, { skip: 'ny', occ: false });
+    box('trim', -18.16, 1.02, -12, -15.84, 1.10, -10, { occ: false });
+    box('wood', -18.12, 2.26, -12, -15.88, 2.36, -10, { occ: false });
+    Q('wood', [-18, 2.35, -12], [2, 0, 0], [0, 0, 2]);
+    for (const z of [-15.6, -13.6, -11.6, -9.6]) box('wood', -16, 2.84, z, -8, 3, z + .16, { occ: false });
+    Q('sign', [-18.025, 2.66, -11.72], [0, 0, 1.42], [0, .53, 0], { uv: MG.SIGNS[0] });
+    Q('sign', [21.98, 2.82, -15.76], [0, 0, 1.52], [0, .58, 0], { uv: MG.SIGNS[1] });
+    for (const [x, z] of [[-12, 13.2], [-42.6, -26], [-21.3, -14.8], [20.6, -15.6], [41.4, -29.6], [24.5, -33.5], [24.5, -4.8]]) {
+      props.push({ type: 'planter', x, z, y: M.floorH(M.colOf(x), M.rowOf(z)), seed: hash3(x, z, 87) });
+    }
+    for (const [x, z, y, width] of [[18, -13.5, 3.65, 4], [-2, .3, 4.2, 8]]) {
+      box('wood', x - .12, y + .03, z - .05, x + width + .12, y + .15, z + .05, { occ: false });
+      box('wood', x - .12, y - .22, z + 1.35, x + width + .12, y - .10, z + 1.45, { occ: false });
+      for (let i = 0; i < 3; i++) {
+        const h = [.1, -.17, -.15, .08], a = i * width / 3;
+        const u = [width / 3, h[i + 1] - h[i], 0], v = [0, -.22, 1.4], uv = [i / 3, .55, (i + 1) / 3, .98];
+        const o = [x + a, y + h[i], z];
+        Q('cloth', [x + a + u[0], y + h[i + 1], z], u.map(n => -n), v, { uv: [uv[2], uv[1], uv[0], uv[3]] });
+        Q('cloth', [o[0], o[1] - .015, z], u, v, { uv });
+        occQuads.push({ o, u, v });
+      }
+    }
+    // Sagging cables between rooftops.
+    [[22, 27, 18], [23, 28, 27], [22, 26, 33], [39, 46, 37], [39, 46, 21], [2, 6, 29], [2, 9, 40], [21, 28, 39]].forEach(([c0, c1, row]) => {
       props.push({ type: 'cable', a: [M.cellX(c0) - 1, 5.4, M.cellZ(row)], b: [M.cellX(c1) + 1, 5.4, M.cellZ(row)], sag: 1.4 });
     });
 
@@ -412,7 +460,7 @@
       const u = [size * cs, 0, -size * sn], v = [-size * sn, 0, -size * cs];
       Q('decal', [x - u[0] / 2 - v[0] / 2, y, z - u[2] / 2 - v[2] / 2], u, v, { uv: MG.DECALS[key] });
     };
-    decal('A', 28, 0.812, -28, 3.4, 0.1);
+    decal('A', 27, 0.012, -20.2, 3.25, 0.1);
     decal('B', -28, 0.012, -20, 3.4, -0.15);
     const dr = rand(77);
     for (let i = 0; i < 46; i++) {
