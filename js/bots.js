@@ -98,7 +98,7 @@
       const inFov = (dx * fx + dz * fz) / (d || 1) > cosF || d < 2.5 || ai.target === e || (ai.alertT > G.time && G.dist2D(ai.alertPos, e.pos) < 6);
       if (!inFov) continue;
       const h = W.hitboxes(e);
-      let vis = G.Nades.visible(eye, tv.set(e.pos.x, h.headY, e.pos.z));
+      let vis = G.Nades.visible(eye, tv.set(h.headX, h.headY, h.headZ));
       if (!vis) vis = G.Nades.visible(eye, tv.set(e.pos.x, (h.legTop + h.bodyTop) / 2, e.pos.z));
       if (!vis && d < 40) vis = G.Nades.visible(eye, tv.set(e.pos.x, e.pos.y + 0.4, e.pos.z));
       if (vis && d < bestD) { bestD = d; best = e; }
@@ -232,12 +232,14 @@
     G.eyePos(a, eye);
     const torso = (h.legTop + h.bodyTop) / 2 + (level < 2 ? -0.12 : 0.14);
     const ay = ai.aimHead ? h.headY - 0.03 : torso;
-    const dx = e.pos.x - eye.x, dz = e.pos.z - eye.z, dist = Math.hypot(dx, dz), dy = ay - eye.y;
+    // aim at the animated head when going for it (the hit sphere follows the model's head)
+    const tx = ai.aimHead ? h.headX : e.pos.x, tz = ai.aimHead ? h.headZ : e.pos.z;
+    const dx = tx - eye.x, dz = tz - eye.z, dist = Math.hypot(dx, dz), dy = ay - eye.y;
     a.aimNoise = (D.noise + D.bloom * a.inacc) * (1 + (level === 0 ? G.clamp((dist - 12) / 20, 0, 0.75) : 0));
     // Lower tiers favour a low hold. Leave room for the weapon's full spread
     // below shoulder height, even as automatic fire climbs.
     ai.bodyCeiling = level < 2 && !ai.aimHead ? Math.atan2(h.bodyTop - 0.08 - eye.y, dist + 0.25) : null;
-    if (!G.Nades.visible(eye,tv.set(e.pos.x,ay,e.pos.z))) { ai.targetVisible=false; return; }
+    if (!G.Nades.visible(eye,tv.set(tx,ay,tz))) { ai.targetVisible=false; return; }
     // Keep the initial sighting error until the bot reacts, then settle over the burst.
     if (G.time >= ai.reactUntil || level === 2) {
       const settle = Math.exp(-dt * D.track);

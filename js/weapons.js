@@ -213,6 +213,13 @@
     const c = a.crouch, x = a.pos.x, y = a.pos.y, z = a.pos.z;
     const h=out || {};
     h.headY=y+1.63-0.5*c; h.legTop=y+0.85-0.35*c; h.bodyTop=y+1.48-0.5*c; h.x=x; h.z=z;
+    h.headX=x; h.headZ=z;
+    // The head sphere follows the animated head (lean, bob, crouch) when the model was posed just now.
+    const rig = a.rig, hl = rig && rig.headLocal;
+    if (hl && a.alive && !rig.rd && G.time - rig.headAt < 0.25) {
+      const s = Math.sin(a.yaw), co = Math.cos(a.yaw);
+      h.headX = x + hl.x * co + hl.z * s; h.headY = y + hl.y; h.headZ = z - hl.x * s + hl.z * co;
+    }
     return h;
   };
   W.trace = function (shooter, ox, oy, oz, dx, dy, dz, maxDist) {
@@ -226,7 +233,7 @@
       // cheap reject
       const lx = h.x - ox, lz = h.z - oz, along = lx * dx + lz * dz;
       if (along < -1 || along > best + 1) continue;
-      let t = raySphere(ox, oy, oz, dx, dy, dz, h.x, h.headY, h.z, 0.15);
+      let t = raySphere(ox, oy, oz, dx, dy, dz, h.headX, h.headY, h.headZ, 0.15);
       if (t > 0 && t < best) { best = t; res.agent = a; res.group = 'head'; }
       t = rayCyl(ox, oy, oz, dx, dy, dz, h.x, h.z, 0.24, h.legTop, h.bodyTop);
       if (t > 0 && t < best) { best = t; res.agent = a; res.group = 'body'; }

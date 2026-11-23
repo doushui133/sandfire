@@ -131,20 +131,23 @@
   }
 
   const assistPoint = new THREE.Vector3(), assistEye = new THREE.Vector3(), assistDir = new THREE.Vector3();
-  const assist = { yaw:0, pitch:0, found:false };
+  const assist = { yaw:0, pitch:0, found:false }, assistBox = {};
   function acquire(a) {
     assist.found = false;
     let best = Math.PI * 3.5 / 180;
     G.eyePos(a,assistEye);
     for (const e of G.Game.agents) {
       if (!e.alive || e.team===a.team) continue;
-      const dx=e.pos.x-assistEye.x, dz=e.pos.z-assistEye.z, horizontal=Math.hypot(dx,dz);
-      const y=G.wrapAngle(G.yawTo(dx,dz)-a.yaw);
+      const hb=G.Weapons.hitboxes(e, assistBox);
       for (let k=0;k<2;k++) {
-        const height=e.pos.y+(k ? 1.165-.425*e.crouch : 1.63-.5*e.crouch);
+        // k 0: the (animated) head, k 1: the chest
+        const px=k ? e.pos.x : hb.headX, pz=k ? e.pos.z : hb.headZ;
+        const height=k ? e.pos.y+1.165-.425*e.crouch : hb.headY;
+        const dx=px-assistEye.x, dz=pz-assistEye.z, horizontal=Math.hypot(dx,dz);
+        const y=G.wrapAngle(G.yawTo(dx,dz)-a.yaw);
         const pitch=Math.atan2(height-assistEye.y,horizontal)-a.pitch;
         const distance=Math.hypot(y*Math.cos(a.pitch),pitch);
-        if (distance<best && G.Nades.visible(assistEye,assistPoint.set(e.pos.x,height,e.pos.z))) {
+        if (distance<best && G.Nades.visible(assistEye,assistPoint.set(px,height,pz))) {
           best=distance; assist.yaw=y; assist.pitch=pitch; assist.found=true;
         }
       }

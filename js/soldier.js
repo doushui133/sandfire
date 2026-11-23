@@ -412,7 +412,7 @@
       idleSeed: Math.random() * Math.PI * 2, gait: 0, weight: 0, settle: 0, pelvisY: P.pelY,
       gestureName: '', gestureT: 0, throwing: 0, reload: 0, ground: true, landing: 0,
       hp: a.hp, hit: 0, hitX: 0, hitZ: 1, pitch: 0, recoil: 0, lastShot: -9, lower: 0, twist: 0,
-      holdOffset: new THREE.Vector3(),
+      holdOffset: new THREE.Vector3(), headLocal: new THREE.Vector3(), headAt: -9,
       sun: 1, sunT: Math.random() * .15, rd: null, hidden: false,
     };
     G.scene.add(root);
@@ -515,7 +515,7 @@
     rig.hp = a.hp; rig.pitch = a.pitch;
     rig.ground = a.onGround; rig.air = a.onGround ? 0 : 1; rig.lastAirY = a.vel.y;
     rig.crouch = a.crouch; rig.kneel = 0;
-    rig.pelvisY = rig.P.pelY - .036 - .37 * a.crouch;
+    rig.pelvisY = rig.P.pelY - .015 - .37 * a.crouch;
     rig.poseYaw = a.yaw;
     rig.stepping = -1; rig.stepDelay = 0;
     const cy = Math.cos(a.yaw), sy = Math.sin(a.yaw);
@@ -529,23 +529,34 @@
   function startStep(a, rig, i, cy, sy, run, move, dt) {
     const foot = rig.feet[i], side = LEGS[i].side, P = rig.P;
     const c = rig.crouch, speed = rig.speed;
-    const interval = G.lerp(.32, .213, sst(.7, 5.6, speed));
-    const duration = move ? G.lerp(.266, .307, run) : .21;
+    // Human cadence: ~3 steps/s walking, ~3.3 steps/s running (the old ~4.7 was a shuffle).
+    const interval = G.lerp(.33, .305, sst(.7, 5.6, speed)) * G.lerp(1, 1.08, c);
+    const lx = rig.vx * cy - rig.vz * sy, lz = rig.vx * sy + rig.vz * cy;
+    const lateral = sst(.35, .9, Math.abs(lx) / Math.max(speed, .4));
+    // Each planted foot covers a fixed contact length under the body (~0.6 m walking, ~0.8 m running,
+    // shorter for side steps and crouching). The swing fills the rest of the stride, so a run gets a
+    // flight phase instead of the lunges and splits that long ground contact forced.
+    const contact = G.lerp(.62, .8, run) * G.lerp(1, .55, lateral) * G.lerp(1, .7, c);
+    const stance0 = G.clamp(contact / Math.max(speed, .5), .14, .5);
+    const duration = move ? G.clamp(2 * interval - stance0, .2, .5) : .21;
     const age = rig.stepDelay <= 0 ? Math.min(-rig.stepDelay, dt) : 0;
     foot.duration = duration;
-    foot.lift = move ? G.lerp(.073, .145, run) * (1 - .45 * c) * G.lerp(.56, 1, sst(.4, 2.4, speed)) : .064;
+    foot.moving = move;
+    foot.lift = move ? G.lerp(.085, .17, run) * (1 - .4 * c) * G.lerp(.56, 1, sst(.4, 2.4, speed)) : .064;
     foot.phase = 0;
     foot.start.copy(foot.point);
     foot.startYaw = foot.yaw;
     footHome(foot.target, a, P, side, cy, sy);
     if (move) {
-      const lx = rig.vx * cy - rig.vz * sy, lz = rig.vx * sy + rig.vz * cy;
       const stance = 2 * interval - duration;
       const travel = duration - age + Math.min(stance * .48, .4 / Math.max(speed, .4));
       foot.target.x += rig.vx * travel;
       foot.target.z += rig.vz * travel;
+      // running feet land closer to the body's midline
+      const inward = .045 * run * (1 - lateral);
+      foot.target.x -= side * inward * cy;
+      foot.target.z += side * inward * sy;
       // The trailing foot can cross behind its partner during a lateral step.
-      const lateral = sst(.35, .9, Math.abs(lx) / Math.max(speed, .4));
       const cross = side * lx < 0 ? lateral * (1 - .65 * c) : 0;
       foot.target.x += cross * (-side * .135 * cy + .15 * sy);
       foot.target.z += cross * (side * .135 * sy + .15 * cy);
@@ -562,7 +573,10 @@
 
   function advanceStep(foot, dt) {
     foot.phase = Math.min(1, foot.phase + dt / foot.duration);
-    const blend = sst(0, 1, foot.phase), lift = Math.sin(Math.PI * foot.phase);
+    // While moving, the swing is nearly linear in the world: an eased start leaves the foot standing
+    // still while the body runs on, which read as a long back-kick. In place, a smooth ease is right.
+    const eased = sst(0, 1, foot.phase), blend = foot.moving ? G.lerp(foot.phase, eased, .2) : eased;
+    const lift = Math.sin(Math.PI * (foot.moving ? Math.pow(foot.phase, .8) : foot.phase));
     foot.point.copy(foot.start).lerp(foot.target, blend);
     foot.point.y += lift * lift * foot.lift;
     foot.yaw = foot.startYaw + G.wrapAngle(foot.targetYaw - foot.startYaw) * blend;
@@ -607,7 +621,8 @@
       if (rig.feet[next].phase < 1) return;
       const trail = next ? trailR : trailL, distance = next ? distR : distL;
       const needsStep = speed > .75 || trail > trigger || distance > .27;
-      if ((needsStep && rig.stepDelay <= 0) || trail > .55 || distance > .62)
+      // emergency replants only: a running stride legitimately leaves the foot ~0.5 m behind
+      if ((needsStep && rig.stepDelay <= 0) || trail > .55 + .35 * run || distance > .62 + .3 * run)
         startStep(a, rig, next, cy, sy, run, true, dt);
     } else if (rig.stepping < 0) {
       const yawL = Math.abs(G.wrapAngle(a.yaw - left.yaw)), yawR = Math.abs(G.wrapAngle(a.yaw - right.yaw));
@@ -624,6 +639,14 @@
     const x = foot.point.x - a.pos.x, y = foot.point.y - a.pos.y, z = foot.point.z - a.pos.z;
     const kn = rig.kneel, air = rig.air;
     out.set(x * cy - z * sy, y, x * sy + z * cy);
+    // A planted foot that trails the body rolls onto its toes: the raised heel lengthens the leg, so the
+    // hips need not sink (the old low, bent-knee "duck walk").
+    foot.heel = 0;
+    if (foot.phase === 1 && rig.speed > .5) {
+      const behind = -(x * rig.vx + z * rig.vz) / rig.speed;
+      foot.heel = G.clamp((behind - .1) * .3, 0, .085) * (1 - kn);
+      out.y += foot.heel;
+    }
     out.lerp(tp[5].set(side * (P.footX + .025), P.footY + (i ? .06 : 0), i ? .33 : -.31), kn);
     out.lerp(tp[5].set(side * (P.footX + .012) + rig.leanZ * .10,
       P.footY + .17 + (i ? -.08 : .08) + .055 * rig.takeoff,
@@ -651,14 +674,15 @@
     const yaw = G.clamp(G.wrapAngle(rig.poseYaw - a.yaw), -.32, .32) * .63 + bodyShift;
     const forward = -(rig.vx * sy + rig.vz * cy) / Math.max(1, rig.speed);
     const strafe = (rig.vx * cy - rig.vz * sy) / Math.max(1, rig.speed);
-    poseQ(qPel, rig.leanX * .45 - .115 * run * forward - .13 * c - .12 * kn,
+    poseQ(qPel, rig.leanX * .45 - .115 * run * forward - .19 * c - .12 * kn,
       yaw, rig.leanZ * .4 - rig.weight * 1.3 - run * strafe * .07);
     const pel = tp[0].set(rig.weight, 0, .065 * c + .043 * kn);
     const hipL = tp[1].copy(P.hipL).applyQuaternion(qPel).add(pel);
     const hipR = tp[2].copy(P.hipR).applyQuaternion(qPel).add(pel);
     const reach = (P.lThigh + P.lShin) * .997;
-    const wantY = P.pelY - .036 - .37 * c - .32 * kn * (1 - .55 * c) - run * .073 - rig.landing * .10 - rig.settle * .033 +
-      swing * (.011 + run * .025) + air * .026 - .034 * rig.takeoff + breath * .003;
+    // Near-straight legs: the hips sit 1.5 cm below standing at rest and only ~3 cm lower at a run.
+    const wantY = P.pelY - .015 - .33 * c - .32 * kn * (1 - .55 * c) - run * .03 - rig.landing * .09 - rig.settle * .025 +
+      swing * (.012 + run * .03) + air * .026 - .034 * rig.takeoff + breath * .003;
     const maxY = Math.min(reachableHip(hipL, left, reach, rig.feet[0].phase), reachableHip(hipR, right, reach, rig.feet[1].phase));
     rig.pelvisY = damp(rig.pelvisY, Math.min(wantY, maxY), 17, dt);
     pel.y = Math.min(rig.pelvisY, maxY);
@@ -673,7 +697,7 @@
       setB(rig, leg.shin, knee, dirQ(tq[1], knee, ankle));
       const roll = Math.sin(foot.phase * 2 * Math.PI) * -.19 * (1 - air) * (1 - kn);
       const yaw = G.wrapAngle(foot.yaw - a.yaw) * (1 - kn) * (1 - air);
-      setB(rig, leg.foot, ankle, poseQ(tq[2], roll + .37 * air + (i ? -.88 * kn : 0), yaw, 0));
+      setB(rig, leg.foot, ankle, poseQ(tq[2], roll + .37 * air + (i ? -.88 * kn : 0) + (foot.heel || 0) * 3.4, yaw, 0));
     }
     return pel;
   }
@@ -716,28 +740,22 @@
     const counter = -rig.gait * (.062 + run * .09);
     rig.twist = damp(rig.twist, hold.twist, 18, dt);
     const twist = rig.twist * (1 - kn);
-    poseQ(tq[3], .30 * pitch + rig.leanX * .35 - .15 * c + hitPitch, twist * .45 + counter, hitRoll);
+    poseQ(tq[3], .30 * pitch + rig.leanX * .35 - .21 * c + hitPitch, twist * .45 + counter, hitRoll);
     qSp.copy(qPel).multiply(tq[3]);
     const spine = tp[5].copy(P.spine).applyQuaternion(qPel).add(pel);
     setB(rig, 'spine', spine, qSp);
     poseQ(tq[3], .39 * pitch - rig.leanX * .25 + breath * .012, twist * .55, breath * .017 + hitRoll * .35);
     qCh.copy(qSp).multiply(tq[3]);
+    // The skeleton stays rigid: bones keep their lengths (no lifted chest, no head pinned to a fixed height,
+    // which stretched the neck and torso while moving). The hit sphere follows the animated head instead.
     const chest = tp[6].copy(P.chest).applyQuaternion(qSp).add(spine);
-    chest.y += .09 * run + .059 * rig.landing + .023 * rig.takeoff;
-
-    // Match aim while keeping the head inside the hit sphere during stance changes.
     poseQ(qHd, pitch + hitPitch * .65, -hitRoll * .35, hitRoll * .7);
     const head = tp[7].copy(P.neck).applyQuaternion(qCh).add(chest);
     const headOffset = tp[8].fromArray(P.headOff).applyQuaternion(qHd);
-    head.add(headOffset);
-    head.x = G.clamp(head.x, -.045, .045);
-    head.y = 1.63 - .5 * a.crouch - .095 * kn;
-    head.z = G.clamp(head.z, -.056, .053);
-    head.sub(headOffset);
-    const neckShift = tp[9].copy(P.neck).applyQuaternion(qCh).add(chest).sub(head);
-    chest.addScaledVector(neckShift, -.5);
     setB(rig, 'chest', chest, qCh);
     setB(rig, 'head', head, qHd);
+    rig.headLocal.copy(head).add(headOffset);
+    rig.headAt = G.time;
 
     const switchLeft = sst(0, .2, a.switchEnd - G.time);
     const reloadPhase = it && it.reloading ? G.clamp(1 - (it.reloadEnd - G.time) / it.def.reload, 0, 1) : 0;
