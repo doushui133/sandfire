@@ -143,7 +143,10 @@ function movementMetrics(hz) {
     }
     assert.fail('movement never reached the expected speed');
   };
-  const full = until(() => G.Phys.step(a, 1, 0, top, false, dt), () => speed() >= top - 1e-6);
+  // CS:GO-style: full speed is approached (95% counts), a counter-strafe carries the velocity through zero.
+  const full = until(() => G.Phys.step(a, 1, 0, top, false, dt), () => speed() >= 0.95 * top);
+  for (let i = 0; i < hz; i++) G.Phys.step(a, 1, 0, top, false, dt);
+  assert(Math.abs(speed() - top) < 1e-6, 'held key settles exactly at the weapon speed');
   const release = until(() => G.Phys.step(a, 0, 0, 0, false, dt), () => speed() === 0);
   a.vel.x = top;
   let accurateAt = 0, firstSpread;
@@ -154,11 +157,10 @@ function movementMetrics(hz) {
       accurateAt += dt;
       if (speed() <= 0.3 * top + 1e-9) firstSpread = W.spread(a, rifle);
     }
-  }, () => speed() === 0);
+  }, () => a.vel.x <= 0);
   assert.equal(firstSpread, rifle.def.inacc.stand);
-  reverse();
-  assert(a.vel.x < 0 && speed() < 0.2 * top, 'held reverse should ramp up from rest');
-  return { full, release, counter, accurateAt, firstSpread };
+  const turned = until(reverse, () => a.vel.x <= -0.95 * top);
+  return { full, release, counter, accurateAt, firstSpread, turn: counter + turned };
 }
 
 function combatChecks() {
@@ -170,14 +172,17 @@ function combatChecks() {
     G.FX = { muzzle: noop, blood: noop, impact: noop, tracer: noop };
     for (const hz of [30, 60, 120]) {
       const row = movementMetrics(hz);
-      assert(row.full >= 0.32 && row.full <= 0.38, 'run acceleration');
-      assert(row.release >= 0.28 && row.release <= 0.32, 'key release stop');
-      assert(row.counter >= 0.08 && row.counter <= 0.12, 'counter-strafe stop');
+      // CS:GO reference (sv_accelerate 5.5, sv_friction 5.2, sv_stopspeed 80): ~0.45 s to 95% speed,
+      // ~0.38 s released stop, ~0.13 s counter-strafe, ~0.6 s full left to full right
+      assert(row.full >= 0.38 && row.full <= 0.52, 'run acceleration ' + row.full);
+      assert(row.release >= 0.33 && row.release <= 0.43, 'key release stop ' + row.release);
+      assert(row.counter >= 0.10 && row.counter <= 0.16, 'counter-strafe stop ' + row.counter);
+      assert(row.turn >= 0.5 && row.turn <= 0.75, 'full reverse ' + row.turn);
       assert(row.counter < row.release / 2);
       if (hz === 60) {
-        console.log('AR-7 at 60 Hz:', row.full.toFixed(3) + 's to run,', row.release.toFixed(3) + 's release,',
-          row.counter.toFixed(3) + 's counter-strafe,', row.firstSpread.toFixed(4) + 'rad first-shot cone at',
-          row.accurateAt.toFixed(3) + 's into braking');
+        console.log('AR-7 at 60 Hz:', row.full.toFixed(3) + 's to 95% run,', row.release.toFixed(3) + 's release,',
+          row.counter.toFixed(3) + 's counter-strafe,', row.turn.toFixed(3) + 's full reverse,', row.firstSpread.toFixed(4) +
+          'rad first-shot cone at', row.accurateAt.toFixed(3) + 's into braking');
       }
     }
 
@@ -305,13 +310,13 @@ function touchBrakeChecks() {
       G.settings.touchBrake = brake;
       const step = () => { G.time += dt; G.Player.update(dt); };
       touch.joystick.x = 1;
-      for (let i = 0; i < 30; i++) step();
+      for (let i = 0; i < 45; i++) step();   // CS:GO acceleration settles at full speed after ~0.56 s
       const speed = Math.hypot(p.vel.x, p.vel.z), top = W.maxSpeed(p);
       assert(Math.abs(speed - top) < 1e-6, 'touch run speed ' + speed + ' m/s, expected ' + top);
       touch.joystick.x = 0;
-      for (let i = 0; i < 6; i++) step();
+      for (let i = 0; i < 9; i++) step();    // the centre brake is a counter-strafe (~0.12 s)
       assert.equal(Math.hypot(p.vel.x, p.vel.z) === 0, brake);
-      for (let i = 0; i < 15; i++) step();
+      for (let i = 0; i < 20; i++) step();   // a plain release coasts to a stop in ~0.38 s
       assert.equal(Math.hypot(p.vel.x, p.vel.z), 0);
     }
     console.log('Touch stick centre braking and setting override passed');

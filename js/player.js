@@ -74,18 +74,22 @@
     a.vel.x += acc * wx; a.vel.z += acc * wz;
   }
 
-  // brake requests a stop without an opposing input.
+  // CS:GO ground movement: sv_friction 5.2, sv_stopspeed 80 units (2.03 m/s), sv_accelerate 5.5.
+  // Full speed in ~0.46 s, a released stop in ~0.38 s, a counter-strafe (the opposite key: friction plus
+  // acceleration against the motion) in ~0.13 s, and full left-to-full right in ~0.6 s.
+  // An analog stick asks for low wish speeds: its stop speed scales down so a light push still moves.
+  const ACCEL = 5.5, FRICTION = 5.2, STOP_SPEED = 2.03;
+  // brake (touch stick released after moving) acts like the opposite key: a counter-strafe stop.
   Ph.step = function (a, wx, wz, wishSpeed, jump, dt, brake = false) {
     Ph.crouch(a, dt);
     if (a.onGround) {
       const speed = Math.hypot(a.vel.x, a.vel.z);
-      const maxSpeed = G.Weapons.maxSpeed(a);
-      const opposed = wishSpeed > 0 && a.vel.x * wx + a.vel.z * wz < -0.3 * speed * Math.hypot(wx, wz);
-      if (brake || opposed) friction(a, speed, maxSpeed * 10 * dt);
-      else if (wishSpeed > 0) {
-        friction(a, speed, Math.max(speed, wishSpeed * 0.34) * 3.6 * dt);
-        accelerate(a, wx, wz, wishSpeed, wishSpeed, 5.2, dt);
-      } else friction(a, speed, Math.max(speed, maxSpeed * 0.41) * 6.3 * dt);
+      const stop = wishSpeed > 0 ? Math.min(STOP_SPEED, wishSpeed * 0.75) : STOP_SPEED;
+      if (speed > 1e-4) friction(a, speed, Math.max(speed, stop) * FRICTION * dt);
+      if (brake) {
+        const left = Math.hypot(a.vel.x, a.vel.z);
+        if (left > 1e-4) friction(a, left, ACCEL * G.Weapons.maxSpeed(a) * dt);
+      } else if (wishSpeed > 0) accelerate(a, wx, wz, wishSpeed, wishSpeed, ACCEL, dt);
       if (jump && a.crouch < 0.5) { a.vel.y = JUMP_V; a.onGround = false; a.jumped = true; }
     } else accelerate(a, wx, wz, wishSpeed, 0.76, 12, dt);
     const h = G.bodyHeight(a.crouch) - 0.01;
@@ -310,8 +314,7 @@
     if (a.stepUp) { P.camY -= 0; a.stepUp = 0; }
     P.camY = Math.abs(P.camY - targetY) > 1.2 ? targetY : G.lerp(P.camY, targetY, 1 - Math.exp(-dt * 18));
     cam.position.set(a.pos.x, P.camY, a.pos.z);
-    const lean = -G.clamp(a.moveAccelX / 48, -1, 1) * Math.PI / 300;
-    a.moveRoll = G.lerp(a.moveRoll || 0, lean, 1 - Math.exp(-dt * 16));
+    a.moveRoll = 0;   // CS:GO keeps the horizon level while strafing: no camera roll from movement
     const shotFov = a.viewFov >= 0.01 ? a.viewFov : 0;
     const sh = G.FX.shake * 0.02 + shotFov * 0.008 + (G.time < a.punchUntil ? 0.012 : 0);
     const pitch = a.pitch + a.recoilP * 0.5 + a.viewPunch + (Math.random() - 0.5) * sh;
