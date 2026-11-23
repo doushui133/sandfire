@@ -240,6 +240,7 @@
 
   W.baseDamage = (def, dist) => def.dmg * Math.pow(def.fall || 1, def.shell ? Math.max(0, dist - 6) / 5 : dist / 10);
   W.applyDamage = function (target, shooter, def, group, dist, dirx, dirz, wallbang, diry) {
+    if (G.Game.spawnProtected(target)) return null;
     let d = W.baseDamage(def, dist) * (wallbang ? 0.55 : 1);
     d *= group === 'head' ? 4 : group === 'legs' ? 0.75 : 1;
     const armored = target.armor > 0 && (group === 'body' || (group === 'head' && target.helmet));
@@ -276,6 +277,7 @@
     return next;
   }
   function shoot(a, it, recovery) {
+    G.Game.breakSpawnProtection(a);
     const d = it.def;
     it.clip--; it.nextFire = G.time + 60 / d.rpm;
     G.eyePos(a, eye);
@@ -296,7 +298,7 @@
       fwd.copy(barrel).addScaledVector(right, Math.cos(ang) * rad).addScaledVector(upv, Math.sin(ang) * rad).normalize();
       const r = bulletTrace(a, d, fwd);
       hitP.set(r.wx, r.wy, r.wz);
-      if (r.agent) {
+      if (r.agent && !G.Game.spawnProtected(r.agent)) {
         const v = r.agent;
         if (d.pellets) {
           let h = pelletHits.get(v);
@@ -347,7 +349,7 @@
     G.eyePos(a, eye); G.forward(a.yaw, a.pitch, fwd);
     const r = W.trace(a, eye.x, eye.y, eye.z, fwd.x, fwd.y, fwd.z, d.range);
     let hitSomething = false;
-    if (r.agent) {
+    if (r.agent && !G.Game.spawnProtected(r.agent)) {
       const v = r.agent, facing = G.forward(v.yaw, 0, right), back = facing.x * fwd.x + facing.z * fwd.z > 0.5;
       const dmg = (heavy ? d.dmg2 : d.dmg) * (back ? 3 : 1);
       let armorK = v.armor > 0 ? 0.85 : 1;
@@ -410,6 +412,7 @@
   };
   W.startReload = function (a, it) {
     it.reloading = true; it.reloadEnd = G.time + it.def.reload; it.zoom = 0; it.rezoom = 0;
+    G.HUD.soundMarker(a, a.pos, 'reload');
     if (a.isPlayer) { G.Audio.reload(it.def, false); if (G.VM) G.VM.onReload(it.def.reload); }
   };
   W.switchTo = function (a, slot) {
@@ -454,6 +457,7 @@
       bottom: boundsFor(mesh).min.y, vx: -Math.sin(yaw) * 1.7, vz: -Math.cos(yaw) * 1.7, vy: 1.9, floor: 0, settled: false });
   }
   W.drop = function (a, slot, scene) {
+    if (G.Game.mode === 'practice') return false;
     const it = a.inv[slot];
     if (!it || slot === 'knife') return;
     if (slot === 'grenade') { if (a.cur === slot) G.Nades.cancel(a); W.takeGrenade(a, it.id); }
@@ -564,4 +568,5 @@
     return true;
   };
   W.clearDrops = function () { W.drops.forEach(removeDrop); W.drops.length = 0; };
+  W.trimDrops = function (keep) { while (W.drops.length > keep) removeDrop(W.drops.shift()); };
 })(window.G);

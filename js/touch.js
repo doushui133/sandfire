@@ -147,6 +147,7 @@
       b.setAttribute('aria-pressed', selected);
     });
     $('iosTip').hidden = !ios || navigator.standalone || matches('(display-mode: standalone)') || matches('(display-mode: fullscreen)');
+    syncSoundMarkers();
     resize();
     if (wasEnabled && !T.enabled) T.sync();
   }
@@ -193,6 +194,10 @@
   document.addEventListener('gesturestart', (e) => { if (T.enabled) e.preventDefault(); }, { passive: false });
 
   const options = document.querySelectorAll('[data-setting]');
+  const soundOptions = document.querySelectorAll('[data-setting="soundMarkers"]');
+  function syncSoundMarkers() {
+    soundOptions.forEach((el) => { el.checked = settings.soundMarkers === null ? T.enabled : settings.soundMarkers; });
+  }
   function readSetting(el) {
     if (el.type === 'range') return +el.value;
     if (el.type === 'checkbox') return el.checked;
@@ -204,6 +209,7 @@
       if (el.type === 'range' || el.type === 'color') el.value = v;
       else if (el.type === 'checkbox') el.checked = !!v;
     });
+    syncSoundMarkers();
     document.body.style.setProperty('--radar-scale', G.clamp(+settings.radarScale || 1, 0.75, 1.45));
     measureLayout();
   }

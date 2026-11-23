@@ -6,7 +6,11 @@
     freeze: 8, buyTime: 45, roundTime: 115, bombTime: 40, plant: 3.2, defuse: 10, defuseKit: 5, endDelay: 5, winRounds: 8,
     startMoney: 1000, maxMoney: 16000, win: { elim: 3000, bomb: 3300, defuse: 3300, time: 3000 }, loss: [1700, 2100, 2500, 2900, 3300], plantBonus: 300, defuseBonus: 300,
   };
-  const Gm = G.Game = { CFG, agents: [], round: 0, score: { atk: 0, def: 0 }, phase: 'menu', frozen: true, timeLeft: CFG.roundTime, phaseT: 0, buyUntil: 0, lossStreak: { atk: 0, def: 0 }, bomb: { state: 'none' } };
+  const Gm = G.Game = { CFG, mode: 'competitive', agents: [], round: 0, score: { atk: 0, def: 0 }, phase: 'menu', frozen: true, timeLeft: CFG.roundTime, phaseT: 0, buyUntil: 0, lossStreak: { atk: 0, def: 0 }, bomb: { state: 'none' } };
+  const PRACTICE = { duration: 480, target: 50, respawn: 2, shield: 1.5 };
+  const practiceKeys = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
+  const spawnCells = [], spawnEnemies = [], spawnEyes = [], spawnPoint = new THREE.Vector3(), spawnEye = new THREE.Vector3();
+  const spawnHeights = [0.25, 0.9, G.eyeHeight(0)];
   const NAMES = { atk: ['猎鹰', '蝎子', '沙狐', '铁砧', '游隼'], def: ['灰狼', '雷鸣', '堡垒', '哨兵', '北极星'] };
   let nextId = 1, bombMesh = null, bombLed = null;
 
@@ -17,14 +21,22 @@
       nades: {}, blindUntil:0, throwReady:0, inv: { grenade:null, primary: null, pistol: W.item('p10'), knife: W.item('knife'), bomb: false }, cur: 'pistol', prevSlot: 'knife', switchEnd: 0,
       recoilP: 0, recoilY: 0, inacc: 0, shots: 0, lastShot: -9, kills: 0, deaths: 0, slowUntil: 0, punchUntil: 0,
       planting: false, plantT: 0, defusing: false, defuseT: 0, stepUp: 0, spottedUntil: 0,
+      roundKills: 0, roundDamage: 0, clutchKills: 0, damageTo: new Map(),
     };
   };
   Gm.alive = (team) => Gm.agents.filter((a) => a.alive && a.team === team).length;
-  Gm.clearScene = function () { G.Player.resetSpectate(); G.Nades.clear(); if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; } };
+  Gm.clearScene = function () {
+    G.Player.resetSpectate(); G.Nades.clear(); G.HUD.clearMatch();
+    if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; }
+    bombLed = null; Gm.bomb = { state: 'none' };
+    Gm.pendingBanner = Gm.over = G.Bots.plan = null;
+  };
 
-  Gm.start = function (team, diff) {
+  Gm.start = function (team, diff, mode) {
+    Gm.clearScene();
     Gm.agents.forEach((a) => G.BotModel.remove(a));
     Gm.agents = [];
+    Gm.mode = mode === 'practice' ? 'practice' : 'competitive';
     G.Bots.setDifficulty(diff);
     const me = Gm.makeAgent(team, '你', true);
     G.Player.agent = me;
@@ -35,16 +47,24 @@
     // every soldier gets a body; the player's own is only drawn once dead (for the ragdoll)
     Gm.agents.forEach((a) => G.BotModel.create(a, a.team === team && !a.isPlayer));
     Gm.score = { atk: 0, def: 0 }; Gm.round = 0; Gm.lossStreak = { atk: 0, def: 0 }; Gm.over = null;
-    Gm.newRound();
+    if (Gm.mode === 'practice') startPractice();
+    else Gm.newRound();
   };
 
   function resetLoadout(a) {
     a.nades = {}; a.inv.grenade = null;
     a.inv.primary = null; a.inv.pistol = W.item('p10'); a.armor = 0; a.helmet = false; a.kit = false;
   }
+  function resetRoundStats() {
+    Gm.roundKills = 0; Gm.playerKills = 0; Gm.recentKills = []; Gm.pendingBanner = null;
+    for (const a of Gm.agents) {
+      a.roundKills = a.roundDamage = a.clutchKills = 0;
+      a.damageTo.clear();
+    }
+  }
   Gm.newRound = function () {
     Gm.round++;
-    Gm.roundKills = 0; Gm.playerKills = 0; Gm.recentKills = []; Gm.pendingBanner = null;
+    resetRoundStats();
     G.Nades.clear(); G.FX.clear(); W.clearDrops();
     if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; }
     const spawns = { atk: G.shuffle(M.spawns.atk.slice()), def: G.shuffle(M.spawns.def.slice()) };
@@ -72,8 +92,143 @@
     G.HUD.roundStart(Gm.round, carrier === G.Player.agent);
   };
 
-  Gm.update = function (dt) {
+  // ---------- team deathmatch ----------
+  function cacheSpawnCells() {
+    for (let r = 0; r < M.H; r++) for (let c = 0; c < M.W; c++) {
+      if (!M.walkable(c, r)) continue;
+      const p = M.cellPos(c, r, spawnPoint);
+      if (!G.Phys.blocked(p.x, p.y + 0.01, p.z, G.bodyHeight(0) - 0.01)) spawnCells.push(p.clone());
+    }
+  }
+  function findSpawn(a) {
+    let enemies = 0;
+    for (const other of Gm.agents) {
+      if (!other.alive || other === a || other.team === a.team) continue;
+      if (!spawnEyes[enemies]) spawnEyes[enemies] = new THREE.Vector3();
+      spawnEnemies[enemies] = other.pos;
+      G.eyePos(other, spawnEyes[enemies++]);
+    }
+    const start = Math.floor(Math.random() * spawnCells.length);
+    let best = null, bestScore = -Infinity;
+    for (let i = 0; i < spawnCells.length; i++) {
+      const p = spawnCells[(start + i) % spawnCells.length];
+      let enemyDist = Infinity, allyDist = Infinity;
+      for (const other of Gm.agents) {
+        if (!other.alive || other === a) continue;
+        const dx = p.x - other.pos.x, dz = p.z - other.pos.z, d = dx * dx + dz * dz;
+        if (other.team === a.team) allyDist = Math.min(allyDist, d);
+        else enemyDist = Math.min(enemyDist, d);
+      }
+      if (enemyDist < 100 || allyDist < 4) continue;
+      const score = Math.min(enemyDist, allyDist * 2.25) - Math.random() * 20;
+      if (best && score <= bestScore) continue;
+      let covered = true;
+      spawnEye.set(p.x, p.y + G.eyeHeight(0), p.z);
+      for (let j = 0; j < enemies && covered; j++) {
+        const other = spawnEnemies[j];
+        for (const h of spawnHeights) {
+          spawnPoint.set(p.x, p.y + h, p.z);
+          if (M.clearLine(spawnEyes[j], spawnPoint)) { covered = false; break; }
+          spawnPoint.set(other.x, other.y + h, other.z);
+          if (M.clearLine(spawnEye, spawnPoint)) { covered = false; break; }
+        }
+      }
+      if (covered) { best = p; bestScore = score; if (score === Infinity) break; }
+    }
+    return best;
+  }
+  Gm.choosePracticeLoadout = function (choice) {
+    const p = G.Player.agent;
+    if (!p || Gm.mode !== 'practice' || Gm.phase !== 'live' ||
+        !Number.isInteger(choice) || choice < 0 || choice >= practiceKeys.length) return false;
+    p.practiceLoadout = choice;
+    return true;
+  };
+  Gm.spawnProtected = (a) => Gm.mode === 'practice' && a.protectedUntil > Gm.practiceTime;
+  Gm.breakSpawnProtection = function (a) {
+    if (Gm.mode === 'practice') a.protectedUntil = 0;
+  };
+  function respawn(a) {
+    const spawn = findSpawn(a);
+    if (!spawn) { a.spawnCheckAt = Gm.practiceTime + 0.2; return; }
+    resetLoadout(a);
+    const id = [a.team === 'atk' ? 'ar7' : 'tr4', 'v9', 'r90', 'h50'][a.practiceLoadout];
+    a.inv[W.defs[id].slot] = W.item(id);
+    W.addGrenade(a, 'he'); W.addGrenade(a, 'flash');
+    a.cur = W.bestSlot(a); a.prevSlot = 'knife'; a.inv.knife = W.item('knife');
+    a.pos.copy(spawn); a.vel.set(0, 0, 0);
+    a.yaw = Math.atan2(spawn.x, spawn.z); a.pitch = 0;
+    a.alive = a.onGround = true; a.hp = 100;
+    a.crouchWant = a.walking = a.touchMoving = a.useHeld = false;
+    a.crouch = a.stepUp = a.landed = a.spottedUntil = 0;
+    a.blindUntil = a.throwReady = a.slowUntil = a.punchUntil = a.switchEnd = 0;
+    a.recoilP = a.recoilY = a.inacc = a.shots = a.viewPunch = a.viewRoll = a.viewFov = 0;
+    a.lastShot = -9; a.deathInfo = null;
+    a.protectedUntil = Gm.practiceTime + PRACTICE.shield;
+    if (a.isPlayer) {
+      Gm.playerKills = 0; Gm.recentKills.length = 0;
+      G.Player.camY = a.pos.y + G.eyeHeight(0);
+      G.Player.stepDist = 0;
+      G.Player.resetSpectate();
+      G.HUD.clearSoundMarkers();
+      if (G.Touch.enabled) G.Touch.reset();
+      if (G.VM) G.VM.onSwitch();
+    } else G.Bots.resetPractice(a);
+  }
+  function startPractice() {
+    if (!spawnCells.length) cacheSpawnCells();
+    G.FX.clear(); W.clearDrops();
+    resetRoundStats();
+    Gm.phase = 'live'; Gm.frozen = false; Gm.buyUntil = 0;
+    Gm.practiceTime = 0; Gm.timeLeft = PRACTICE.duration;
+    for (const a of Gm.agents) {
+      a.practiceLoadout = a.isPlayer ? 0 : Math.floor(Math.random() * 4);
+      a.respawnAt = a.spawnCheckAt = 0;
+      respawn(a);
+    }
+    G.HUD.practiceStart();
+  }
+  function endPractice() {
+    const s = Gm.score;
+    Gm.over = s.atk === s.def ? 'draw' : s.atk > s.def ? 'atk' : 'def';
+    Gm.phase = 'end'; Gm.phaseT = 3; Gm.frozen = true;
+    G.HUD.practiceEnd(Gm.over);
+  }
+  function updatePractice(dt, elapsed) {
+    if (Gm.phase === 'end') {
+      Gm.phaseT -= elapsed;
+      if (Gm.phaseT <= 0) Gm.phase = 'over';
+      return;
+    }
+    Gm.practiceTime += elapsed;
+    Gm.timeLeft = Math.max(0, PRACTICE.duration - Gm.practiceTime);
+    if (Gm.timeLeft <= 0) { endPractice(); return; }
+    // 1-4 pick the next loadout only while waiting to respawn (alive they switch weapons as usual);
+    // B, unused without buying, cycles it at any time
+    const me = G.Player.agent;
+    if (!G.Touch.enabled && me && !me.alive) {
+      for (let i = 0; i < practiceKeys.length; i++) {
+        if (!G.input.hit(practiceKeys[i])) continue;
+        Gm.choosePracticeLoadout(i);
+        delete G.input.pressed[practiceKeys[i]];
+      }
+    }
+    if (me && G.input.hit('KeyB')) {
+      Gm.choosePracticeLoadout(((me.practiceLoadout | 0) + 1) % practiceKeys.length);
+      delete G.input.pressed.KeyB;
+    }
+    for (const a of Gm.agents) {
+      if (!a.alive && Gm.practiceTime >= a.respawnAt && Gm.practiceTime >= a.spawnCheckAt) respawn(a);
+    }
+    G.Nades.update(dt);
+    W.updateDrops(dt);
+    // weapons dropped by the dead pile up over an eight-minute match: keep the newest few
+    if (W.drops.length > 14) W.trimDrops(14);
+  }
+
+  Gm.update = function (dt, elapsed = dt) {
     if (Gm.phase === 'menu' || Gm.phase === 'over') return;
+    if (Gm.mode === 'practice') { updatePractice(dt, elapsed); return; }
     G.Nades.update(dt);
     W.updateDrops(dt);
     const b = Gm.bomb;
@@ -100,7 +255,7 @@
       if (b.state === 'planted') { b.timer -= dt; if (b.timer <= 0) explode(true); }
       if (Gm.pendingBanner) {
         if (G.Player.orbit) return;
-        announceEnd(Gm.pendingBanner.winner, Gm.pendingBanner.reason);
+        announceEnd(Gm.pendingBanner.winner, Gm.pendingBanner.reason, Gm.pendingBanner.mvp);
         Gm.pendingBanner = null;
       }
       Gm.phaseT -= dt;
@@ -137,7 +292,7 @@
   }
 
   Gm.bombUse = function (a) {
-    if (Gm.phase !== 'live' || !a.onGround) return null;
+    if (Gm.mode === 'practice' || Gm.phase !== 'live' || !a.onGround) return null;
     if (a.inv.bomb) return M.siteAt(a.pos.x, a.pos.z);
     const b = Gm.bomb;
     if (a.team === 'def' && b.state === 'planted' && (!b.defuser || b.defuser === a) &&
@@ -178,7 +333,7 @@
   }
   function defuse(a) {
     const b = Gm.bomb;
-    b.state = 'defused'; a.defusing = false;
+    b.state = 'defused'; b.defuser = a; a.defusing = false;
     a.money = Math.min(CFG.maxMoney, a.money + CFG.defuseBonus);
     G.Audio.radio('defused');
     end('def', 'defuse');
@@ -210,9 +365,17 @@
   };
 
   // ---------- damage / kills ----------
+  Gm.damageBetween = (attacker, victim) => attacker && victim && attacker.damageTo.get(victim.id);
   Gm.damage = function (v, attacker, dmg, info) {
-    if (!v.alive) return null;
+    if (!v.alive || Gm.spawnProtected(v) || (Gm.mode === 'practice' && Gm.phase !== 'live')) return null;
     if (attacker && attacker !== v && attacker.team === v.team && !info.area) return null;
+    if (attacker && attacker !== v && dmg > 0) {
+      let stats = Gm.damageBetween(attacker, v);
+      if (!stats) { stats = { damage: 0, hits: 0 }; attacker.damageTo.set(v.id, stats); }
+      const applied = Math.min(v.hp, dmg);
+      stats.damage += applied; stats.hits++;
+      if (attacker.team !== v.team) attacker.roundDamage += applied;
+    }
     if (attacker && attacker.isPlayer && attacker.team !== v.team) {
       const hit = { head: !!info.head, kill: dmg >= v.hp, dmg: Math.min(v.hp, dmg) };
       if (G.HUD.hitFx) G.HUD.hitFx(hit);
@@ -239,10 +402,14 @@
     if (v.rig && G.BotModel.prepareDeath) G.BotModel.prepareDeath(v);
     v.alive = false; v.hp = 0; v.deaths++; v.planting = v.defusing = false; v.vel.set(0, 0, 0); v.crouch = Math.min(v.crouch, 0.5);
     if (Gm.bomb.defuser === v) Gm.bomb.defuser = null;
+    const practice = Gm.mode === 'practice';
+    if (practice) v.respawnAt = Gm.practiceTime + PRACTICE.respawn;
     if (attacker && attacker.team !== v.team) {
-      attacker.kills++;
+      attacker.kills++; attacker.roundKills++;
+      if (!practice && attacker.alive && Gm.alive(attacker.team) === 1) attacker.clutchKills++;
       const d = W.defs[info.weapon];
-      attacker.money = Math.min(CFG.maxMoney, attacker.money + (d ? d.kill : 300));
+      if (practice) Gm.score[attacker.team]++;
+      else attacker.money = Math.min(CFG.maxMoney, attacker.money + (d ? d.kill : 300));
       Gm.roundKills++;
       if (attacker.isPlayer) {
         Gm.playerKills++;
@@ -252,26 +419,47 @@
         const fx = { victim: v.name, weapon: info.weapon, headshot: !!info.head,
           multi: Math.min(5, Gm.recentKills.length), streak: Gm.playerKills,
           knife: info.weapon === 'knife', grenade: !!d && d.slot === 'grenade',
-          wallbang: !!info.wallbang, first: Gm.roundKills === 1, last: Gm.alive(v.team) === 0,
-          ace: Gm.playerKills === 5 };
+          wallbang: !!info.wallbang, first: Gm.roundKills === 1, last: !practice && Gm.alive(v.team) === 0,
+          ace: !practice && Gm.playerKills === 5 };
         if (G.HUD.killFx) G.HUD.killFx(fx);
         G.Audio.killSting(fx);
         G.Player.onKill(v, fx);
       }
     }
     G.Nades.cancel(v);
-    if (v.cur === 'grenade') W.drop(v, 'grenade');
-    if (v.inv.bomb) Gm.dropBomb(v, true);
-    if (v.inv.primary) W.drop(v, 'primary'); else if (v.inv.pistol) W.drop(v, 'pistol');
+    if (!practice) {
+      if (v.cur === 'grenade') W.drop(v, 'grenade');
+      if (v.inv.bomb) Gm.dropBomb(v, true);
+      if (v.inv.primary) W.drop(v, 'primary'); else if (v.inv.pistol) W.drop(v, 'pistol');
+    }
     const wname = info.weapon === 'bomb' ? '爆炸' : (W.defs[info.weapon] ? W.defs[info.weapon].name : '');
     G.HUD.killfeed(attacker, v, wname, info.head);
     if (v.isPlayer) {
-      G.Player.onDeath(attacker); G.HUD.died(attacker, wname, info.head);
+      const other = attacker !== v ? attacker : null;
+      G.Player.onDeath(attacker); G.HUD.died(attacker, wname, info.head,
+        Gm.damageBetween(v, other), Gm.damageBetween(other, v));
       if (G.HUD.deathFx) G.HUD.deathFx({ killer: attacker ? attacker.name : '爆炸', weapon: info.weapon,
         headshot: !!info.head, killerHp: attacker ? attacker.hp : 0 });
     }
+    if (practice && attacker && Gm.score[attacker.team] >= PRACTICE.target) endPractice();
   }
 
+  function roundMvp(winner, reason) {
+    let best = null;
+    const objective = reason === 'defuse' ? Gm.bomb.defuser : Gm.bomb.planter;
+    for (const a of Gm.agents) {
+      if (a.team !== winner) continue;
+      if (!best || a.roundKills > best.roundKills ||
+          (a.roundKills === best.roundKills && (a.roundDamage > best.roundDamage ||
+           (a.roundDamage === best.roundDamage && a === objective)))) best = a;
+    }
+    if (!best) return null;
+    let badge = 'kills';
+    if (reason === 'defuse' && Gm.bomb.defuser === best) badge = 'defused';
+    else if (Gm.bomb.planter === best) badge = 'planted';
+    else if (best.alive && best.clutchKills >= 2) badge = 'clutch';
+    return { name: best.name, kills: best.roundKills, damage: best.roundDamage, badge, mine: best.isPlayer };
+  }
   function end(winner, reason) {
     if (Gm.phase !== 'live') return;
     Gm.phase = 'end'; Gm.phaseT = CFG.endDelay; Gm.frozen = false;
@@ -285,18 +473,19 @@
     }
     Gm.lossStreak[loser]++; Gm.lossStreak[winner] = Math.max(0, Gm.lossStreak[winner] - 1);
     if (Gm.score[winner] >= CFG.winRounds) Gm.over = winner;
-    if (G.Player.orbit) Gm.pendingBanner = { winner, reason };
-    else announceEnd(winner, reason);
+    const mvp = roundMvp(winner, reason);
+    if (G.Player.orbit) Gm.pendingBanner = { winner, reason, mvp };
+    else announceEnd(winner, reason, mvp);
   }
-  function announceEnd(winner, reason) {
+  function announceEnd(winner, reason, mvp) {
     const mine = G.Player.agent.team === winner;
     G.Audio.radio(mine ? 'win' : 'lose');
-    G.HUD.roundEnd(winner, reason);
+    G.HUD.roundEnd(winner, reason, mvp);
   }
 
   // ---------- buying ----------
   Gm.canBuy = function (a) {
-    if (!a.alive || (Gm.phase !== 'freeze' && Gm.phase !== 'live') || G.time >= Gm.buyUntil) return false;
+    if (Gm.mode === 'practice' || !a.alive || (Gm.phase !== 'freeze' && Gm.phase !== 'live') || G.time >= Gm.buyUntil) return false;
     const sp = M.spawns[a.team];
     return sp.some((p) => G.dist2D(p, a.pos) < 14);
   };

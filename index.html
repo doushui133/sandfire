@@ -164,6 +164,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   <div id="gasView" hidden></div><div id="flashView" hidden></div>
   <div id="scope" hidden></div>
   <div id="crosshair"><i class="h" id="chL"></i><i class="h" id="chR"></i><i class="v" id="chT"></i><i class="v" id="chB"></i><i class="d" id="chDot"></i></div>
+  <div id="soundMarkers" aria-hidden="true"></div>
   <div id="nadeCharge" aria-label="投掷蓄力" hidden></div>
   <div id="nadeWheel" aria-label="选择投掷物" hidden></div>
   <div id="hitmarker"></div>
@@ -195,7 +196,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
     </svg>
     <div id="killPips" class="km-pips" aria-hidden="true"></div>
   </div>
-  <div id="centerMsg" hidden><div id="msgTitle"></div><div id="msgSub"></div></div>
+  <div id="centerMsg" hidden><div id="msgTitle"></div><div id="msgSub"></div><div id="roundMvp" hidden></div></div>
   <div id="progress" hidden><div id="progressLabel"></div><div id="progressTrack"><div id="progressBar"></div></div></div>
   <div id="hint" hidden></div>
   <div id="deathCard" hidden></div>
@@ -216,7 +217,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
         <span class="bar"><i id="armorBar"></i></span>
       </div>
     </div>
-    <div class="vit vit-money">
+    <div class="vit vit-money" id="vitMoney">
       <span class="ico ico-cash" aria-hidden="true"></span>
       <span class="num" id="money">$800</span>
       <span class="num" id="moneyDelta"></span>
@@ -253,6 +254,13 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
   </div>
   <div id="grenadeFan" hidden></div>
 </div>
+<div id="practicePick" role="group" aria-label="下次复活武器" hidden>
+  <span id="practiceStatus">下次复活</span>
+  <button type="button" id="practiceRifle" aria-pressed="true"><kbd>1</kbd> 步枪</button>
+  <button type="button" id="practiceSmg" aria-pressed="false"><kbd>2</kbd> 冲锋枪</button>
+  <button type="button" id="practiceSniper" aria-pressed="false"><kbd>3</kbd> 狙击枪</button>
+  <button type="button" id="practicePistol" aria-pressed="false"><kbd>4</kbd> 手枪</button>
+</div>
 <div id="layoutEditor" hidden>
   <div class="le-panel">
     <h2>自定义键位</h2>
@@ -280,6 +288,10 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
         <p class="sub">烈沙镇 · 5 对 5 爆破 · 单人对战机器人</p>
       </header>
       <section class="menu-queue" aria-label="开始对局">
+        <div class="row match-mode" role="group" aria-label="游戏模式">
+          <label><input name="matchMode" type="radio" id="modeCompetitive" checked><span>竞技爆破</span></label>
+          <label><input name="matchMode" type="radio" id="modePractice"><span>练枪死斗</span></label>
+        </div>
         <div class="row team-row">
           <button class="big btn-atk" id="btnAtk" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 9h-4v8h-8v-8H4Zm-5 19h10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>加入进攻方</span></button>
           <button class="big btn-def" id="btnDef" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 4v6c0 4-4 8-8 10-4-2-8-6-8-10V6Zm-3 10 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>加入防守方</span></button>
@@ -331,6 +343,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
             <div class="row mouse-only"><label for="raw">原始输入</label><input type="checkbox" id="raw" checked><span class="inline-note">直接读取鼠标移动，不受系统指针加速影响（推荐）。用触控板转不动视角时请关掉。</span></div>
             <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
             <div class="row"><label><input data-setting="chStatic" type="checkbox"> 固定准星</label><label><input data-setting="chDot" type="checkbox" checked> 准星中心点</label></div>
+            <div class="row"><label><input data-setting="soundMarkers" type="checkbox"> 声音指示</label></div>
             <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
           </section>
           <section class="menu-sec">
@@ -378,6 +391,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
       <div class="row touch-only"><label>陀螺仪灵敏度 <input data-setting="gyroSens" type="range" min="0.2" max="2.5" step="0.05" value="1"></label><button type="button" id="btnLayout2">自定义键位</button></div>
       <div class="row"><label>准星大小 <input data-setting="chSize" type="range" min="0.6" max="1.8" step="0.05" value="1"></label><label>间隙 <input data-setting="chGap" type="range" min="0.5" max="2" step="0.05" value="1"></label><label>颜色 <input data-setting="chColor" type="color" value="#7dff6a"></label></div>
       <div class="row"><label><input data-setting="chStatic" type="checkbox"> 固定准星</label><label><input data-setting="chDot" type="checkbox" checked> 准星中心点</label></div>
+      <div class="row"><label><input data-setting="soundMarkers" type="checkbox"> 声音指示</label></div>
       <div class="row"><label><input data-setting="radarRot" type="checkbox" checked> 雷达跟随视角</label><label>雷达大小 <input data-setting="radarScale" type="range" min="0.75" max="1.45" step="0.05" value="1"></label></div>
       <div class="row mouse-only"><label><input data-setting="fullscreen" type="checkbox"> 全屏游玩（推荐）</label></div>
       <div class="note direct-address" hidden>完整锁定鼠标请直接打开 <span>https://doushui133.github.io/sandfire/</span></div>

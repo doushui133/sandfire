@@ -980,7 +980,8 @@ function momentChecks() {
   G.HUD.killFx=info=>kills.push(info); G.HUD.hitFx=info=>hits.push(info);
   const deathFx=G.HUD.deathFx;
   G.HUD.deathFx=info=>{ deaths.push(info); deathFx(info); };
-  G.HUD.roundEnd=(...args)=>banners.push(args);
+  const roundEnd=G.HUD.roundEnd;
+  G.HUD.roundEnd=(...args)=>{ banners.push(args); roundEnd(...args); };
   const hudUpdate=G.HUD.update;
   G.HUD.update=dt=>{ hudSteps.push(dt); hudUpdate(dt); };
   let t=0;
@@ -1072,7 +1073,165 @@ function momentChecks() {
   game.damage(p.agent,null,200,{weapon:'bomb'});
   elem('btnQuit').emit('click');
   assert(G.timeScale===1 && !p.orbit && !G.renderer.domElement.style.filter);
+  G.HUD.roundEnd=roundEnd; G.HUD.update=hudUpdate;
   console.log('Kill tiers, HUD payloads, last-kill orbit, death impact and pullback, killer outline, bomb death, skip, pause and menu still frame passed');
+}
+
+function gameplayChecks() {
+  const H = G.HUD, P = G.Player, M = G.Map, touch = G.Touch;
+  function hit(victim, attacker, damage) {
+    return game.damage(victim, attacker, damage, {weapon:'p10'});
+  }
+  G.startMatch('atk', true, 'competitive');
+  const me = P.agent, mates = game.agents.filter(a => a.team === 'atk' && a !== me);
+  const enemies = game.agents.filter(a => a.team === 'def');
+  const [enemy, other] = enemies;
+  const [mate, assist] = mates;
+  const markers = () => elem('soundMarkers').children.filter(node => !node.hidden);
+  game.phase = 'live'; game.frozen = false;
+  me.pos.set(0, 0, 0); me.yaw = 0;
+  enemy.pos.set(10, 0, 0);
+  G.settings.soundMarkers = null; touch.enabled = false;
+  G.Bots.hearShot(enemy); H.update(0); assert.equal(markers().length, 0);
+  touch.enabled = true;
+  G.Bots.hearShot(enemy); H.update(0);
+  assert.equal(markers().length, 1);
+  const marker = markers()[0];
+  assert.equal(marker.style.transform, 'rotate(90deg)');
+  assert.equal(marker.style.color, '#ff984e');
+  enemy.pos.set(3, 0, 0);
+  W.startReload(enemy, enemy.inv.pistol);
+  H.update(0);
+  assert.deepEqual(markers(), [marker]);
+  assert.equal(marker.style.color, '#fff');
+  me.yaw = -Math.PI / 2; H.update(0);
+  assert.equal(marker.style.transform, 'rotate(0deg)');
+  const alpha = marker.style.opacity;
+  P.clock += 0.6; H.update(0);
+  assert(marker.style.opacity < alpha && marker.style.opacity > 0);
+  P.clock += 0.61; H.update(0); assert.equal(markers().length, 0);
+  enemy.pos.set(80, 0, 0); G.Bots.hearShot(enemy);
+  mate.pos.set(1, 0, 0); G.Bots.hearStep(mate);
+  H.update(0); assert.equal(markers().length, 0);
+  for (const owner of game.agents.filter(a => a !== me).slice(0, 7)) H.soundMarker({owner}, V(-3, 0, -3), 'bounce');
+  H.update(0);
+  assert.equal(markers().length, 6);
+  assert(markers().every(node => node.style.color === '#ffe25c'));
+  touch.enabled = false;
+
+  hit(enemy, me, 25); hit(enemy, me, 42);
+  hit(me, enemy, 20); hit(me, enemy, 30); hit(me, enemy, 20); hit(me, enemy, 200);
+  assert.deepEqual(game.damageBetween(me, enemy), {damage:67, hits:2});
+  assert.deepEqual(game.damageBetween(enemy, me), {damage:100, hits:4});
+  H.deathStage('killer');
+  assert(elem('deathCard').innerHTML.includes('你 → 对方 67 (2)'));
+  assert(elem('deathCard').innerHTML.includes('对方 → 你 100 (4)'));
+  game.newRound(); game.phase = 'live'; game.frozen = false;
+  assert.equal(game.damageBetween(me, enemy), undefined);
+  hit(enemy, me, 100);
+  hit(other, assist, 90);
+  hit(other, mate, 100);
+  hit(enemies[2], me, 15); hit(enemies[3], assist, 40);
+  for (const foe of enemies.slice(2)) hit(foe, mates[2], 100);
+  game.update(0);
+  assert(elem('roundMvp').innerHTML.includes(mates[2].name), 'kills outweigh damage');
+  game.newRound(); game.phase = 'live'; game.frozen = false;
+  hit(enemy, me, 100); hit(other, mate, 100);
+  hit(enemies[2], me, 50);
+  for (const foe of enemies.slice(2)) hit(foe, null, 100);
+  game.update(0);
+  assert(elem('roundMvp').classList.contains('mine'));
+  assert(elem('roundMvp').innerHTML.includes('1 杀 · 150 伤害'), 'damage breaks a kill tie');
+  H.update(3.01); assert(elem('roundMvp').hidden);
+  game.newRound(); game.phase = 'live'; game.frozen = false;
+  game.bomb.state = 'planted'; game.bomb.pos.copy(enemies[0].pos);
+  game.handleUse(enemies[0], true, game.CFG.defuse);
+  assert(elem('roundMvp').innerHTML.includes('拆除炸弹') && elem('roundMvp').innerHTML.includes(enemy.name));
+
+  function checkSpawn(a) {
+    const {x, y, z} = a.pos;
+    assert(M.walkable(M.colOf(x), M.rowOf(z)));
+    assert(!G.Phys.blocked(x, y + 0.01, z, G.bodyHeight(0) - 0.01));
+    for (const foe of game.agents.filter(o => o.alive && o.team !== a.team)) {
+      assert(G.dist2D(foe.pos, a.pos) >= 10);
+      for (const height of [0.25, 0.9, G.eyeHeight(0)]) {
+        assert(!M.clearLine(G.eyePos(foe), V(x, y + height, z)), 'spawn exposed to a living enemy');
+      }
+    }
+  }
+  elem('modePractice').checked = true;
+  G.startMatch('atk', true);
+  let p = P.agent, foe = game.agents.find(a => a.team === 'def');
+  assert(game.agents.every(a => a.alive));
+  assert.equal(game.alive('atk'), 5); assert.equal(game.alive('def'), 5);
+  assert.equal(game.phase, 'live'); assert.equal(game.bomb.state, 'none'); assert.equal(game.timeLeft, 480);
+  assert(!game.canBuy(p) && !game.bombUse(p) && !G.Bots.plan);
+  for (const a of game.agents) checkSpawn(a);
+  assert.equal(hit(p, foe, 200), null);
+  assert.equal(p.hp, 100);
+  G.input.pressed.Digit3 = true;
+  game.update(0);
+  assert.equal(p.practiceLoadout, 0);   // alive: 1-4 keep switching weapons
+  assert(G.input.pressed.Digit3); delete G.input.pressed.Digit3;
+  for (let i = 0; i < 2; i++) { G.input.pressed.KeyB = true; game.update(0); }
+  assert.equal(p.practiceLoadout, 2);
+  assert.equal(W.current(p).id, 'ar7');
+  assert(!G.input.pressed.KeyB);
+  const clip = W.current(p).clip;
+  W.update(p, 0, {fire:true, firePressed:true});
+  assert.equal(W.current(p).clip, clip - 1);
+  assert(!game.spawnProtected(p));
+  hit(p, foe, 200);
+  assert(!p.alive && game.score.def === 1);
+  assert.equal(W.drops.length, 0);
+  game.update(1.99); assert(!p.alive);
+  H.update(0); assert.equal(elem('practiceStatus').textContent, '1 秒后复活');
+  game.update(.01);
+  assert(p.alive && p.hp === 100);
+  checkSpawn(p);
+  assert.equal(W.current(p).id, 'r90');
+  assert.deepEqual(p.nades, {he:1, flash:1});
+  game.update(1.49); assert.equal(hit(p, foe, 200), null);
+  game.update(.01); assert(!game.spawnProtected(p));
+  touch.enabled = true;
+  elem('practicePistol').emit('click');
+  assert.equal(p.practiceLoadout, 3);
+  assert.equal(W.current(p).id, 'r90');
+  touch.enabled = false;
+  hit(p, foe, 200);
+  const line = M.clearLine;
+  try {
+    M.clearLine = () => true;
+    game.update(2); assert(!p.alive, 'wait when every spawn is exposed');
+  } finally { M.clearLine = line; }
+  game.update(.21);
+  assert(p.alive && W.current(p).id === 'h50');
+  checkSpawn(p);
+
+  const origins = game.agents.map(a => a.pos.clone());
+  G.debugStep(15);
+  assert(game.agents.filter((a, i) => a.isBot && a.pos.distanceTo(origins[i]) > 8).length >= 6);
+  game.score.atk = 49;
+  foe = game.agents.find(a => a.alive && a.team === 'def' && !game.spawnProtected(a));
+  hit(foe, p, 200);
+  assert.equal(game.score.atk, 50);
+  assert.equal(game.over, 'atk'); assert.equal(game.phase, 'end');
+  game.phaseT = 0;
+  G.frame(1/60, 100);
+  assert(game.phase === 'menu' && !P.agent && game.agents.length === 0 && elem('practicePick').hidden);
+  assert.equal(game.bomb.state, 'none');
+  G.startMatch('def', true, 'practice');
+  game.score.atk = 4; game.score.def = 5;
+  game.update(0, 479.99); assert.equal(game.phase, 'live');
+  game.update(0, .02);
+  assert(game.phase === 'end' && game.over === 'def' && game.timeLeft === 0);
+  G.startMatch('atk', true, 'practice');
+  game.update(0, 480); assert.equal(game.over, 'draw');
+  elem('modePractice').checked = false;
+  G.startMatch('def', true);
+  assert(game.phase === 'freeze' && game.bomb.state === 'carried' && game.canBuy(P.agent));
+  elem('btnQuit').emit('click');
+  console.log('Sound marker direction, expiry and pool; safe practice respawns, protection, loadouts and scoring; round MVP and death damage summary passed');
 }
 mapChecks();
 botRoundChecks();
@@ -1080,5 +1239,6 @@ captureChecks().then(() => {
   combatChecks();
   crosshairChecks();
   touchBrakeChecks();
+  gameplayChecks();
 }).catch(err=>{console.error(err);process.exitCode=1;});
 

@@ -216,9 +216,11 @@
     if (inp.active && !G.paused) {
       const realDt = lastActiveFrame === null || t <= lastActiveFrame ? dt : t - lastActiveFrame;
       lastActiveFrame = t;
-      const simDt = dt * G.timeScale;
+      const practice = G.Game.mode === 'practice';
+      const simDt = practice ? dt : dt * G.timeScale;
       G.time += simDt;
-      G.Game.update(simDt);
+      G.Game.update(simDt, Math.min(realDt, 0.25));   // the practice clock must not jump after a long stall
+      if (practice && G.Game.phase === 'over') { toMenu(); return; }
       G.Player.update(simDt, realDt);
       G.Bots.update(simDt);
       G.FX.update(simDt);
@@ -333,15 +335,17 @@
   };
   G.onEscape = () => { if (G.HUD.buyOpen) G.HUD.toggleBuy(false); else pause(false); };
 
-  function startMatch(team, test) {
+  function startMatch(team, test, mode = $('modePractice').checked ? 'practice' : 'competitive') {
     if (G.Touch.portrait) return;
     lastTeam = team;
+    lastActiveFrame = null;
     G.Audio.init(); G.Audio.setVolume(G.settings.vol);
     if (G.Touch.enabled && !test) G.Touch.enterDisplay();
     $('menu').hidden = true; $('endScreen').hidden = true; showPause(null);
     $('hud').hidden = false;
     G.input.active = true; G.input.test = !!test;
-    G.Game.start(team, G.settings.diff);
+    G.Game.start(team, G.settings.diff, mode);
+    if (mode === 'practice') G.BotModel.upgradeAgents();
     if (G.Touch.enabled) { G.paused = false; G.Touch.sync(); return; }
     if (test) { G.paused = false; return; }
     G.paused = true; resume();
@@ -352,7 +356,8 @@
     requesting = false; keyboardOff();
     inp.active = false; inp.test = false; G.paused = true;
     if (G.Touch.enabled) G.Touch.sync();
-    showPause(null); G.HUD.toggleBuy(false); G.HUD.showScores(false);
+    showPause(null); G.HUD.toggleBuy(false); G.HUD.showScores(false); G.HUD.toggleMap(false);
+    inp.releaseAll(); inp.endFrame(); G.look.reset();
     G.Game.agents.forEach((a) => G.BotModel.remove(a));
     G.Game.agents = []; G.Player.agent = null; G.Game.phase = 'menu';
     G.Game.clearScene(); G.Weapons.clearDrops(); G.FX.clear();
@@ -444,7 +449,7 @@
       $('game').classList.toggle('freelook', !!G.input.freeLook);
     });
     $('btnQuit').addEventListener('click', toMenu);
-    $('btnRestart').addEventListener('click', () => startMatch(lastTeam));
+    $('btnRestart').addEventListener('click', () => startMatch(lastTeam, false, G.Game.mode));
     $('pause').addEventListener('click', (e) => {
       if (!G.Touch.enabled && !e.target.closest('input,label,button,.direct-address,summary,details')) resume();
     });

@@ -8,6 +8,11 @@
   const TEAM = { atk: '进攻方', def: '防守方' };
   const MULTI = ['', '击杀', '双杀', '三杀', '四杀', '全歼'];
   const STAT_NAME = { '伤': '伤害', '射': '射速', '精': '精度', '机': '机动' };
+  const soundRange = { shot: 55, step: 15, reload: 9, bounce: 16, burst: 36 };
+  const soundColor = { shot: '#ff984e', step: '#fff', reload: '#fff', bounce: '#ffe25c', burst: '#ffe25c' };
+  const soundSlots = [];
+  const pickIds = ['practiceRifle', 'practiceSmg', 'practiceSniper', 'practicePistol'];
+  let mvpTime = 0, shownPick = -1;
 
   H.init = function () {
     el = {};
@@ -17,6 +22,22 @@
       'mapOverlay', 'mapFull', 'mapClose', 'nadeWheel', 'nadeCharge', 'killPips', 'specName'].forEach((k) => (el[k] = $(k)));
     rctx = el.radar.getContext('2d');
     fctx = el.mapFull ? el.mapFull.getContext('2d') : null;
+    el.roundMvp = $('roundMvp'); el.vitMoney = $('vitMoney');
+    el.practicePick = $('practicePick'); el.practiceStatus = $('practiceStatus');
+    el.pickButtons = pickIds.map((id, i) => {
+      const button = $(id);
+      button.addEventListener('click', () => G.Game.choosePracticeLoadout(i));
+      return button;
+    });
+    const ring = $('soundMarkers');
+    ring.textContent = '';
+    soundSlots.length = 0;
+    for (let i = 0; i < 6; i++) {
+      const node = document.createElement('i');
+      node.hidden = true;
+      ring.appendChild(node);
+      soundSlots.push({ node, source: null, end: 0, x: 0, z: 0, strength: 0, angle: null, alpha: null });
+    }
     if (el.radar) el.radar.addEventListener('pointerup', (e) => {
       if (e.button && e.button !== 0) return;
       if (G.Touch && G.Touch.editing) return;
@@ -100,6 +121,57 @@
     if (killTimer) { clearTimeout(killTimer); killTimer = 0; }
     if (el.killBanner) el.killBanner.hidden = true;
   }
+  H.clearSoundMarkers = function () {
+    for (const s of soundSlots) {
+      s.source = null; s.end = 0;
+      hid(s.node, true);
+    }
+  };
+  function soundEnabled() {
+    return G.settings.soundMarkers === null ? G.Touch.enabled : G.settings.soundMarkers;
+  }
+  H.soundMarker = function (source, pos, kind) {
+    const p = G.Player.agent, range = soundRange[kind];
+    if (!el || !p || !p.alive || !soundEnabled() || !range) return;
+    if (source === p || (source.owner ? source.owner === p : source.team === p.team)) return;
+    const distance = p.pos.distanceTo(pos);
+    if (distance >= range) return;
+    const now = G.Player.clock, owner = source.owner || source;
+    let slot = soundSlots[0];
+    for (const s of soundSlots) {
+      if (s.source === owner) { slot = s; break; }
+      if (s.end < slot.end) slot = s;
+    }
+    slot.source = owner; slot.x = pos.x; slot.z = pos.z;
+    slot.strength = 1 - 0.78 * distance / range; slot.end = now + 1.2;
+    sty(slot.node, 'color', soundColor[kind]);
+  };
+  function updateSoundMarkers(p) {
+    const show = p.alive && soundEnabled(), now = G.Player.clock;
+    for (const s of soundSlots) {
+      if (!s.source) continue;
+      if (!show || s.end <= now) {
+        s.source = null; s.end = 0;
+        hid(s.node, true);
+        continue;
+      }
+      const angle = Math.round(-G.wrapAngle(G.yawTo(s.x - p.pos.x, s.z - p.pos.z) - p.yaw) * 180 / Math.PI);
+      const alpha = Math.round((s.end - now) / 1.2 * s.strength * 100);
+      if (s.angle !== angle) { s.angle = angle; s.node.style.transform = 'rotate(' + angle + 'deg)'; }
+      if (s.alpha !== alpha) { s.alpha = alpha; s.node.style.opacity = alpha / 100; }
+      hid(s.node, false);
+    }
+  }
+  H.clearMatch = function () {
+    if (!el) return;
+    H.clearSoundMarkers(); clearKills();
+    for (const id in seenEnemy) delete seenEnemy[id];
+    mvpTime = vign = moneyT = 0; shownPick = -1;
+    el.killfeed.textContent = el.dmgdir.textContent = el.hitFx.textContent = el.moneyDelta.textContent = '';
+    el.hitFx.hidden = true;
+    hid(el.roundMvp, true); hid(el.practicePick, true);
+    H.message('', '');
+  };
   H.roundStart = function (round, hasBomb) {
     if (G.Touch.enabled) G.Touch.reset();
     const p = G.Player.agent;
@@ -107,13 +179,34 @@
     H.message('第 ' + round + ' 回合', sub, G.Game.CFG.freeze);
     H.deathStage('');
     clearKills();
+    H.clearSoundMarkers();
+    mvpTime = 0; hid(el.roundMvp, true); hid(el.practicePick, true); hid(el.vitMoney, false);
   };
-  H.roundEnd = function (winner, reason) {
+  H.roundEnd = function (winner, reason, mvp) {
     const mine = G.Player.agent.team === winner, loser = winner === 'atk' ? 'def' : 'atk';
     const why = { elim: TEAM[loser] + '已被全部消灭', bomb: '炸弹已爆炸', defuse: '炸弹已被拆除', time: '时间耗尽，炸弹未能安放' }[reason];
     H.message((mine ? '我方获胜 · ' : '敌方获胜 · ') + TEAM[winner], why, G.Game.CFG.endDelay);
     el.msgTitle.style.color = winner === 'atk' ? 'var(--atk)' : 'var(--def)';
     H.toggleBuy(false);
+    if (mvp) {
+      const badge = { kills: ['◎', '击杀贡献'], planted: ['◆', '安放炸弹'], defused: ['✓', '拆除炸弹'], clutch: ['★', '残局制胜'] }[mvp.badge];
+      el.roundMvp.innerHTML = '<span class="mvp-icon" title="' + badge[1] + '" aria-label="' + badge[1] + '">' + badge[0] +
+        '</span><span>回合最佳 <b>' + esc(mvp.name) + '</b></span><span>' + mvp.kills + ' 杀 · ' + mvp.damage + ' 伤害</span>';
+      cls(el.roundMvp, 'mine', mvp.mine);
+      hid(el.roundMvp, false); mvpTime = 3;
+      if (mvp.mine) G.Audio.click('buy');
+    }
+  };
+  H.practiceStart = function () {
+    hid(el.vitMoney, true);
+    H.message('练枪死斗', '率先达到 50 杀，或在 8 分钟内取得更高击杀数', 3);
+  };
+  H.practiceEnd = function (winner) {
+    const s = G.Game.score;
+    const title = winner === 'draw' ? '平局' : G.Player.agent.team === winner ? '胜利' : '失败';
+    H.showScores(false); H.toggleMap(false);
+    H.message(title, '练枪死斗 · ' + s.atk + ' : ' + s.def, 3);
+    if (winner !== 'draw') G.Audio.radio(G.Player.agent.team === winner ? 'win' : 'lose');
   };
   H.matchOver = function (winner) {
     const p = G.Player.agent, s = G.Game.score;
@@ -192,7 +285,7 @@
   const skullPip = '<svg viewBox="0 0 48 48"><use href="#km-skull"/></svg>';
   function paintKill(info, fast) {
     const tier = info.ace ? 5 : G.clamp(info.multi | 0, 1, 5);
-    const label = [MULTI[tier], agentName(info.victim), weaponLabel(info.weapon)];
+    const label = [tier === 5 && G.Game.mode === 'practice' ? '五连杀' : MULTI[tier], agentName(info.victim), weaponLabel(info.weapon)];
     let classes = 'kill-marker' + (fast ? ' fast' : '') + (tier === 5 ? ' ace' : '');
     if (info.headshot) { classes += ' headshot'; label.push('爆头'); }
     if (info.knife) { classes += ' knife'; label.push('刀杀'); }
@@ -241,19 +334,25 @@
     const team = deathActor ? deathActor.team : '';
     const wid = weaponId(info.weapon);
     const head = info.headshot ? '<svg class="dc-head" viewBox="0 0 24 24" role="img" aria-label="爆头"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor"/><path d="M12 1v7m0 8v7M1 12h7m8 0h7" stroke="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>' : '';
+    const dealt = info.damageDealt, taken = info.damageTaken;
+    const damage = dealt || taken ? '<div class="dc-damage" aria-label="伤害统计"><span title="你对对方造成的伤害（命中次数）">你 → 对方 ' +
+      (dealt ? dealt.damage + ' (' + dealt.hits + ')' : '0 (0)') +
+      '</span><span title="对方对你造成的伤害（命中次数）">对方 → 你 ' +
+      (taken ? taken.damage + ' (' + taken.hits + ')' : '0 (0)') + '</span></div>' : '';
     el.deathCard.innerHTML = '<div class="dc-card"><div class="dc-weapon" title="' + esc(weaponLabel(info.weapon)) + '">' +
       ico(wid, 'wico-lg') + '</div><div class="dc-details"><div class="dc-row"><b class="' + (team ? 't-' + team : '') +
       '">' + esc(name || '你已阵亡') + '</b>' + head + '</div>' +
       (hp == null ? '' : '<div class="dc-hp" aria-label="剩余生命 ' + hp + '"><span aria-hidden="true">+</span><s><i style="width:' +
-        Math.min(100, hp) + '%"></i></s><b class="num">' + hp + '</b></div>') + '</div></div>';
+        Math.min(100, hp) + '%"></i></s><b class="num">' + hp + '</b></div>') + damage + '</div></div>';
   }
   H.deathFx = function (info) {
-    if (info) deathInfo = info;
+    if (info) deathInfo = Object.assign(deathInfo || {}, info);
   };
-  H.died = function (k, wname, head) {
+  H.died = function (k, wname, head, dealt, taken) {
     if (G.Touch.enabled) G.Touch.reset();
     deathActor = k && k !== G.Player.agent ? k : null;
-    deathInfo = { killer: k, weapon: wname, headshot: !!head };
+    deathInfo = { killer: k, weapon: wname, headshot: !!head,
+      damageDealt: dealt && { ...dealt }, damageTaken: taken && { ...taken } };
     H.deathStage('fall');
     H.toggleBuy(false);
   };
@@ -391,6 +490,7 @@
   H.toggleBuy = function (force) {
     const p = G.Player.agent;
     const want = force === undefined ? !H.buyOpen : force;
+    if (want && G.Game.mode === 'practice') return;
     if (want && (!p || !G.Game.canBuy(p))) { if (force === undefined) H.message('', '现在无法购买（只能在回合开始时于出生点购买）', 2); return; }
     if (want === H.buyOpen) return;
     H.buyOpen = want;
@@ -418,14 +518,16 @@
   function renderScores() {
     sbRefresh = 0.25;
     const p = G.Player.agent;
-    let html = '<div class="sb-head"><h2>记分板</h2><span class="sb-round">第 ' + G.Game.round + ' 回合</span><span class="num sb-score"><span class="t-atk">' +
+    const practice = G.Game.mode === 'practice';
+    let html = '<div class="sb-head"><h2>记分板</h2><span class="sb-round">' + (practice ? '练枪死斗' : '第 ' + G.Game.round + ' 回合') + '</span><span class="num sb-score"><span class="t-atk">' +
       G.Game.score.atk + '</span><span class="sb-colon">:</span><span class="t-def">' + G.Game.score.def + '</span></span></div>';
     ['atk', 'def'].forEach((t) => {
-      html += '<section class="sb-team is-' + t + '"><h3 class="t-' + t + '">' + TEAM[t] + '</h3><table class="sb"><thead><tr><th>干员</th><th>击杀</th><th>死亡</th><th>金钱</th></tr></thead><tbody>';
+      html += '<section class="sb-team is-' + t + '"><h3 class="t-' + t + '">' + TEAM[t] + '</h3><table class="sb"><thead><tr><th>干员</th><th>击杀</th><th>死亡</th>' + (practice ? '' : '<th>金钱</th>') + '</tr></thead><tbody>';
       G.Game.agents.filter((a) => a.team === t).sort((a, b) => b.kills - a.kills).forEach((a) => {
         const tags = (a.inv.bomb && t === p.team ? '<span class="tag">炸弹</span>' : '') + (a.kit && t === p.team ? '<span class="tag">拆弹器</span>' : '');
         html += '<tr class="' + (a === p ? 'me ' : '') + (a.alive ? '' : 'dead') + '"><td><i class="pip' + (a.alive ? ' on' : '') + '"></i>' + esc(a.name) + tags +
-          '</td><td class="n">' + a.kills + '</td><td class="n">' + a.deaths + '</td><td class="n">' + (a.team === p.team ? '$' + a.money : '—') + '</td></tr>';
+          '</td><td class="n">' + a.kills + '</td><td class="n">' + a.deaths + '</td>' +
+          (practice ? '' : '<td class="n">' + (a.team === p.team ? '$' + a.money : '—') + '</td>') + '</tr>';
       });
       html += '</tbody></table></section>';
     });
@@ -552,12 +654,12 @@
       c.fillStyle = fill;
       c.fillText(text, x, y);
     };
-    const sites = M.sites || {};
-    for (const name in sites) {
+    const competitive = G.Game.mode !== 'practice', sites = M.sites;
+    if (competitive && sites) for (const name in sites) {
       const spot = project(sites[name].center.x, sites[name].center.z);
       if (inside(spot[0], spot[1])) label(name, spot[0], spot[1], '#ffb14a', Math.round((full ? 26 : 15) * k));
     }
-    const marks = spawnMarks();
+    const marks = competitive && spawnMarks();
     if (marks) {
       if (marks.atk) {
         const s = project(marks.atk.x, marks.atk.z);
@@ -695,9 +797,9 @@
     let counts = 0;
     for (const id of W.grenades) counts = counts * 3 + (view.nades[id] || 0);
     const rev = G.Icons ? G.Icons.rev : 0;
-    const c = slotCache, inv = view.inv;
+    const c = slotCache, inv = view.inv, practice = G.Game.mode === 'practice';
     if (c.primary === inv.primary && c.pistol === inv.pistol && c.grenade === inv.grenade && c.bomb === inv.bomb &&
-        c.counts === counts && c.cur === view.cur && c.alive === p.alive && c.touch === G.Touch.enabled && c.rev === rev) return;
+        c.counts === counts && c.cur === view.cur && c.alive === p.alive && c.touch === G.Touch.enabled && c.rev === rev && c.practice === practice) return;
     const touch = G.Touch.enabled;
     const slotTxt = ['primary', 'pistol', 'knife', 'grenade', 'bomb'].map((s, i) => {
       const has = s === 'bomb' ? view.inv.bomb : view.inv[s];
@@ -717,7 +819,7 @@
       return '<div class="' + (view.cur === s ? 'on' : '') + '">' + key + body + '</div>';
     }).join('');
     c.primary = inv.primary; c.pistol = inv.pistol; c.grenade = inv.grenade; c.bomb = inv.bomb;
-    c.counts = counts; c.cur = view.cur; c.alive = p.alive; c.touch = touch; c.rev = G.Icons ? G.Icons.rev : 0;
+    c.counts = counts; c.cur = view.cur; c.alive = p.alive; c.touch = touch; c.rev = rev; c.practice = practice;
     if (el.slots._t !== slotTxt) { el.slots.innerHTML = slotTxt; el.slots._t = slotTxt; }
   }
   function syncAmmoIcon(it, view) {
@@ -748,6 +850,22 @@
     if (!p || !el) return;
     if (G.Icons && (iconTick = (iconTick + 1) % 30) === 0) G.Icons.ensure();
     const Gm = G.Game, view = p.alive ? p : G.Player.spectateTarget() || p;
+    if (mvpTime > 0) { mvpTime -= dt; if (mvpTime <= 0) hid(el.roundMvp, true); }
+    updateSoundMarkers(p);
+    const practice = Gm.mode === 'practice';
+    hid(el.practicePick, !practice || Gm.phase !== 'live' || H.scoresOpen || H.mapOpen);
+    hid(el.aliveAtk, practice); hid(el.aliveDef, practice);
+    if (practice && Gm.phase === 'live') {
+      if (shownPick !== p.practiceLoadout) {
+        shownPick = p.practiceLoadout;
+        for (let i = 0; i < el.pickButtons.length; i++) el.pickButtons[i].setAttribute('aria-pressed', i === shownPick);
+      }
+      const remaining = p.alive ? null : Math.max(0, Math.ceil(p.respawnAt - Gm.practiceTime));
+      if (el.practiceStatus._remaining !== remaining) {
+        el.practiceStatus._remaining = remaining;
+        txt(el.practiceStatus, remaining === null ? (G.Touch.enabled ? '下次复活' : '下次复活 · B 切换') : remaining ? remaining + ' 秒后复活' : '等待安全复活');
+      }
+    }
     const hp = Math.max(0, view.hp);
     txt(el.hp, hp); cls(el.hp, 'low', view.hp <= 25);
     if (el.vitHp) cls(el.vitHp, 'low', view.hp <= 25);
@@ -782,7 +900,7 @@
       cls(el.bombStat, 'hot', b.state === 'planted');
     }
     txt(el.scoreAtk, Gm.score.atk); txt(el.scoreDef, Gm.score.def);
-    ['atk', 'def'].forEach((t) => {
+    if (!practice) ['atk', 'def'].forEach((t) => {
       const n = Gm.alive(t), pips = (t === 'atk' ? el.aliveAtk : el.aliveDef).children;
       for (let i = 0; i < pips.length; i++) cls(pips[i], 'dead', i >= n);
     });

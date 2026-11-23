@@ -486,6 +486,53 @@ table.sb tr.me td:first-child { box-shadow: inset 2px 0 0 var(--sun); }
 .grenade-choice small { font-size: clamp(10px, calc(var(--button-unit) * .2), 15px); white-space: nowrap; }
 .grenade-choice.picked { background: #87551d; border: 2px solid var(--sun); }
 
+#soundMarkers {
+  position: absolute; top: 50%; left: 50%; pointer-events: none;
+  --sound-radius: clamp(43px, 10vmin, 82px);
+}
+#soundMarkers i {
+  position: absolute; top: calc(-1 * var(--sound-radius)); left: -7px;
+  width: 14px; height: 8px; transform-origin: 7px var(--sound-radius);
+  filter: drop-shadow(0 1px 2px #000);
+}
+#soundMarkers i::before {
+  content: ""; position: absolute; inset: 0; background: currentColor;
+  clip-path: polygon(50% 0, 100% 100%, 50% 66%, 0 100%);
+}
+#roundMvp {
+  display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 7px;
+  padding: 5px 4px 0; border-top: 1px solid var(--line); color: var(--text); font-size: 13px;
+}
+#roundMvp.mine { border-color: #efbf68; color: #ffda87; }
+.mvp-icon { color: #efbf68; font-size: 16px; }
+.dc-damage { display: flex; flex-wrap: wrap; column-gap: 10px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dc-damage span:first-child { color: #a5e5c0; }
+.dc-damage span:last-child { color: #ffb49b; }
+#menu .match-mode { margin: 0 0 7px; gap: 6px; }
+.match-mode label { position: relative; flex: 1; cursor: pointer; }
+.match-mode input { position: absolute; opacity: 0; }
+.match-mode span {
+  display: block; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px;
+  text-align: center; color: var(--muted); font-size: 13px;
+}
+.match-mode input:checked + span { color: #ffcf94; border-color: #e6a363; background: #f4a65126; }
+.match-mode input:focus-visible + span { outline: 2px solid var(--sun); outline-offset: 2px; }
+#practicePick {
+  position: fixed; left: 50%; bottom: max(5%, env(safe-area-inset-bottom));
+  transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+  width: max-content; max-width: 95vw; font-size: 12px; z-index: 7; pointer-events: none;
+}
+#practicePick span { padding: 4px 6px; color: var(--text); background: var(--panel); border-radius: 4px; }
+#practicePick button {
+  min-height: 36px; padding: 4px 7px; font-size: 12px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+}
+#practicePick button[aria-pressed="true"] { color: #ffda87; border-color: #e6a363; }
+#practicePick kbd { color: var(--muted); }
+.touch #practicePick { bottom: max(4px, env(safe-area-inset-bottom)); }
+.touch #practicePick button { min-height: 44px; pointer-events: auto; touch-action: manipulation; }
+.touch #practicePick kbd { display: none; }
+
 @media (max-height: 420px) {
   .overlay { padding: 8px; }
   .slab { padding: 10px 12px; }
