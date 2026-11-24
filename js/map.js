@@ -10,6 +10,11 @@
   const R = (c0, r0, c1, r1, ch) => { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) g[r][c] = ch; };
   const P = (c, r, ch) => { g[r][c] = ch; };
   const RIF = (c0, r0, c1, r1, from, to) => { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (g[r][c] === from) g[r][c] = to; };
+  const windows = new Map();
+  function windowCell(c, r, sill, head) {
+    P(c, r, 'W');
+    windows.set(r * W + c, { sill, head, top: 5.5 });
+  }
 
   R(18, 2, 30, 6, 'D');                                // defender spawn (north)
   R(5, 2, 17, 4, ','); R(5, 5, 7, 7, ',');             // back corridor → B
@@ -20,7 +25,7 @@
   P(24, 15, '=');                                      // mid gate
   R(22, 16, 27, 40, ',');                              // mid street
   R(17, 17, 20, 20, 'u'); R(16, 17, 16, 18, '=');     // B dye house, open west doorway
-  P(16, 19, 'W'); R(19, 21, 22, 22, 'u');              // loom window and offset mid entrance
+  windowCell(16, 19, 1.04, 2.35); R(19, 21, 22, 22, 'u'); // loom window and offset mid entrance
   R(28, 20, 32, 21, ','); R(31, 17, 32, 19, ',');      // mid → A connector
   R(16, 41, 33, 47, 'T');                              // attacker spawn (south)
   R(34, 42, 45, 46, '.'); R(40, 34, 45, 41, '.');      // east street
@@ -37,6 +42,25 @@
   R(26, 18, 27, 19, '#'); R(20, 30, 21, 32, ',');    // recessed stall court
   R(36, 27, 38, 28, 'h'); R(36, 22, 37, 26, ',');    // bazaar side passage
   R(34, 21, 37, 22, ','); R(34, 17, 35, 20, ',');
+
+  // West market house, with a bend into the recessed mid stall court.
+  R(10, 25, 14, 29, 'h'); P(9, 28, 'h');
+  P(12, 26, 'K'); P(10, 29, 'k');                    // crates under the hall roof
+  R(15, 28, 21, 28, ','); P(15, 28, 'h'); P(21, 29, ',');
+  windowCell(22, 28, 1.04, 2.35);
+
+  // Well court, with separate doors to mid and the bazaar.
+  R(30, 28, 34, 32, ','); R(35, 29, 35, 32, ',');
+  R(28, 30, 29, 30, ','); R(36, 31, 38, 31, 'h');
+  R(32, 30, 33, 31, 'o'); P(34, 28, 'C'); P(35, 32, 'c');
+
+  // Defender overlook. The slit is shorter than a fully crouched player.
+  R(17, 9, 20, 11, 'u'); R(21, 10, 22, 10, 'u');
+  windowCell(16, 10, 1.24, 2.10);
+
+  // Loading dock, with one door in each end wall.
+  R(25, 39, 30, 40, 'h'); P(26, 38, 'h');
+  P(28, 41, 'h'); R(29, 41, 30, 41, '%');
 
   // site B dressing
   R(12, 8, 15, 11, '^'); R(12, 12, 15, 12, 's');
@@ -56,6 +80,10 @@
   P(44, 22, 'c'); P(41, 23, 'C'); R(40, 17, 42, 17, 'H');
   P(41, 28, '+'); P(44, 28, '+'); P(41, 31, '+'); P(44, 31, '+');
   P(13, 37, 'c'); P(19, 36, 'b');
+  // Stagger cover so each street keeps a two-cell lane.
+  P(6, 26, 'C'); P(5, 32, 'C'); P(7, 41, 'w');
+  P(43, 18, 'C'); P(42, 25, 'b'); P(43, 38, 'C');
+  P(10, 4, 'C'); P(16, 2, 'b'); P(39, 4, 'C'); P(42, 2, 'w');
   // lower inner blocks use the plaster style
   RIF(9, 20, 21, 35, '#', '%'); RIF(28, 22, 38, 40, '#', '%'); RIF(16, 7, 22, 16, '#', '%');
   M.grid = g;
@@ -65,6 +93,7 @@
   M.FLOOR = FLOOR;
   M.inside = (c, r) => c >= 0 && r >= 0 && c < W && r < H;
   M.ch = (c, r) => (M.inside(c, r) ? g[r][c] : '#');
+  M.windowAt = (c, r) => M.ch(c, r) === 'W' ? windows.get(r * W + c) : undefined;
   M.walkable = (c, r) => FLOOR[M.ch(c, r)] !== undefined;
   M.floorH = (c, r) => FH[M.ch(c, r)] || 0;
   M.cellX = (c) => OX + c * CELL + CELL / 2;
@@ -109,11 +138,11 @@
   M.holds = [
     hold('A', 39, 8, 43, 19), hold('A', 35, 9, 34, 17), hold('A', 45, 13, 43, 19), hold('A', 44, 9, 38, 15),
     hold('B', 10, 9, 4, 20), hold('B', 13, 14, 17, 17), hold('B', 3, 15, 4, 21), hold('B', 13, 9, 16, 18),
-    hold('M', 24, 12, 24, 22), hold('M', 25, 9, 24, 15),
+    hold('M', 24, 12, 24, 22), hold('M', 17, 10, 13, 10),
   ];
   M.routes = {
-    A: [cp([[42, 44], [42, 30], [43, 21]]), cp([[42, 33], [38, 27], [37, 22], [34, 18]]), cp([[34, 37], [27, 35], [30, 20], [31, 17]])],
-    B: [cp([[6, 44], [5, 35], [4, 27], [4, 22]]), cp([[14, 39], [24, 35], [24, 24], [19, 21], [18, 17]]), cp([[14, 38], [5, 36], [4, 23]])],
+    A: [cp([[42, 44], [42, 30], [43, 21]]), cp([[42, 33], [38, 27], [37, 22], [34, 18]]), cp([[28, 41], [26, 38], [30, 30], [36, 31], [43, 21]])],
+    B: [cp([[6, 44], [5, 35], [4, 27], [4, 22]]), cp([[14, 39], [24, 35], [24, 24], [19, 21], [18, 17]]), cp([[25, 36], [21, 29], [16, 28], [9, 28], [4, 22]])],
   };
 
   // ---------- colliders ----------
@@ -124,12 +153,12 @@
     return b;
   }
   M.addBox = addBox;
-  const SOLID = { '#': 1, '%': 1, H: 1, w: 1, '^': 1, s: 1, t: 1, L: 1, '=': 1, u: 1, h: 1 };
+  const SOLID = { '#': 1, '%': 1, H: 1, w: 1, o: 1, '^': 1, s: 1, t: 1, L: 1, '=': 1, u: 1, h: 1, k: 1, K: 1 };
   function key(c, r) {
     const ch = g[r][c];
     if (!SOLID[ch]) return null;
     if (ch === '#' || ch === '%' || ch === 'H') return ch + M.tallH(c, r);
-    return ch;
+    return ch === 'k' || ch === 'K' ? 'h' : ch;
   }
   (function greedy() {
     const seen = new Uint8Array(W * H);
@@ -140,9 +169,16 @@
       let h = 1;
       outer: while (r + h < H) { for (let i = 0; i < w; i++) if (seen[(r + h) * W + c + i] || key(c + i, r + h) !== k) break outer; h++; }
       for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) seen[(r + j) * W + c + i] = 1;
-      const ch = g[r][c], x0 = OX + c * CELL, z0 = OZ + r * CELL, x1 = x0 + w * CELL, z1 = z0 + h * CELL;
+      const ch = k[0], x0 = OX + c * CELL, z0 = OZ + r * CELL, x1 = x0 + w * CELL, z1 = z0 + h * CELL;
       if (ch === '#' || ch === '%' || ch === 'H') addBox(x0, 0, z0, x1, M.tallH(c, r), z1, ch === '#' ? 'wallA' : ch === '%' ? 'wallB' : 'wallC', { building: true });
       else if (ch === 'w') addBox(x0 + 0.25, 0, z0 + 0.25, x1 - 0.25, 1.0, z1 - 0.25, 'lowwall');
+      else if (ch === 'o') {
+        const left = x0 + .25, right = x1 - .25, north = z0 + .25, south = z1 - .25, rim = .4;
+        addBox(left, 0, north, right, 1, north + rim, 'wellWall');
+        addBox(left, 0, south - rim, right, 1, south, 'wellWall');
+        addBox(left, 0, north + rim, left + rim, 1, south - rim, 'wellWall');
+        addBox(right - rim, 0, north + rim, right, 1, south - rim, 'wellWall');
+      }
       else if (FH[ch]) addBox(x0, 0, z0, x1, FH[ch], z1, ch === 's' ? 'step' : 'plat');
       else if (ch === '=') addBox(x0, 3.4, z0, x1, 7.2, z1, 'roof');
       else if (ch === 'u') addBox(x0, 3.0, z0, x1, 5.5, z1, 'roof');
@@ -151,8 +187,14 @@
   })();
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
     const ch = g[r][c], x0 = OX + c * CELL, z0 = OZ + r * CELL;
-    if (ch === 'c') addBox(x0 + 0.15, 0, z0 + 0.15, x0 + 1.85, 1.05, z0 + 1.85, 'crate');
-    else if (ch === 'C') { addBox(x0 + 0.15, 0, z0 + 0.15, x0 + 1.85, 1.05, z0 + 1.85, 'crate'); addBox(x0 + 0.4, 1.05, z0 + 0.3, x0 + 1.7, 2.05, z0 + 1.6, 'crate'); }
+    if ('cCkK'.includes(ch)) {
+      addBox(x0 + 0.15, 0, z0 + 0.15, x0 + 1.85, 1.05, z0 + 1.85, 'crate');
+      if (ch === 'C' || ch === 'K') addBox(x0 + 0.4, 1.05, z0 + 0.3, x0 + 1.7, 2.05, z0 + 1.6, 'crate');
+    } else if (ch === 'W') {
+      const { sill, head, top } = M.windowAt(c, r);
+      addBox(x0, 0, z0, x0 + CELL, sill, z0 + CELL, 'windowSill');
+      addBox(x0, head, z0, x0 + CELL, top, z0 + CELL, 'windowHead');
+    }
     else if (ch === 'b') addBox(x0 + 0.55, 0, z0 + 0.55, x0 + 1.45, 1.15, z0 + 1.45, 'barrel');
     else if (ch === '+') { const top = M.ch(c + 1, r) === 'h' || M.ch(c - 1, r) === 'h' ? 4.4 : 4.6; addBox(x0 + 0.5, 0, z0 + 0.5, x0 + 1.5, top, z0 + 1.5, 'pillar'); }
     else if (ch === 'p') addBox(x0 + 0.78, 0, z0 + 0.78, x0 + 1.22, 6, z0 + 1.22, 'palm');
@@ -187,10 +229,6 @@
     const x = gateX - .90 + i * .08, z = gateZ + .75 + i * .175;
     addBox(x, .025, z, x + .14, 2.53, z + .177, 'gateBoard');
   }
-  const sillX = M.cellX(16), sillZ = M.cellZ(19);
-  addBox(sillX - 1, 0, sillZ - 1, sillX + 1, 1.04, sillZ + 1, 'windowSill');
-  addBox(sillX - 1, 2.35, sillZ - 1, sillX + 1, 5.5, sillZ + 1, 'windowHead');
-
   const terraceX = M.cellX(37) - 1, terraceZ = M.cellZ(8) - 1;
   for (const [x0, z0, x1, z1] of [
     [terraceX, terraceZ, terraceX + 8, terraceZ + .13],
@@ -374,17 +412,19 @@
     for (let r = 0; r < H; r++) for (let cc = 0; cc < W; cc++) {
       const ch = g[r][cc], f = FLOOR[ch];
       if (f) x.fillStyle = col[f];
-      else if ('cCbw+pW'.includes(ch)) x.fillStyle = '#4b3f2e';
+      else if ('cCkKbow+pW'.includes(ch)) x.fillStyle = '#4b3f2e';
       else continue;
       x.fillRect(cc * px, r * px, px, px);
+      if (ch === 'W') {
+        x.fillStyle = '#afa184';
+        x.fillRect(cc * px + 2, r * px, 1, px);
+      }
     }
     x.fillStyle = '#4b3f2e';
     for (const b of M.boxes) if (b.kind === 'gateBoard' || b.kind === 'terraceRail') {
       x.fillRect((b.x0 - OX) / CELL * px, (b.z0 - OZ) / CELL * px,
         Math.max(1, (b.x1 - b.x0) / CELL * px), Math.max(1, (b.z1 - b.z0) / CELL * px));
     }
-    x.fillStyle = '#afa184';
-    x.fillRect(M.colOf(sillX) * px, M.rowOf(sillZ) * px + 2, px, 1);
     x.strokeStyle = 'rgba(255,174,66,.55)'; x.lineWidth = 2;
     for (const k in M.sites) {
       const s = M.sites[k];

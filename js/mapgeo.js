@@ -57,6 +57,7 @@
 
   // occupied height intervals of a grid cell
   const ROOF = { '=': [3.4, 7.2], u: [3.0, 5.5], h: [4.4, 7.0] };
+  const roofCell = (ch) => ch === 'k' || ch === 'K' ? 'h' : ch;
   const TILE_TINT = [1.13, 1.015, 0.85];
   const OUT = [{ y0: 0, y1: 99, k: 'out' }];
   function column(c, r) {
@@ -65,8 +66,12 @@
     if (ch === '#' || ch === '%' || ch === 'H') return [{ y0: 0, y1: M.tallH(c, r), k: ch }];
     const h = M.floorH(c, r);
     if (h) return [{ y0: 0, y1: h, k: ch }];
-    if (ch === 'W') return [{ y0: 0, y1: 1.04, k: 'W' }, { y0: 2.35, y1: 5.5, k: 'W' }];
-    if (ROOF[ch]) return [{ y0: ROOF[ch][0], y1: ROOF[ch][1], k: ch }];
+    if (ch === 'W') {
+      const { sill, head, top } = M.windowAt(c, r);
+      return [{ y0: 0, y1: sill, k: 'W' }, { y0: head, y1: top, k: 'W' }];
+    }
+    const roof = roofCell(ch);
+    if (ROOF[roof]) return [{ y0: ROOF[roof][0], y1: ROOF[roof][1], k: roof }];
     return [];
   }
   MG.column = column;
@@ -210,10 +215,11 @@
       Q(m, [x0, +y, z1], [x1 - x0, 0, 0], [0, 0, -(z1 - z0)], { tint: m === 'roof' ? t.split(',').map(Number) : m === 'tiles' ? TILE_TINT : WHITE });
     });
     greedy((c, r) => {
-      const ch = M.ch(c, r);
-      return ROOF[ch] ? 'wood|' + ROOF[ch][0] : null;
-    }, (k, x0, z0, x1, z1) => {
-      Q('wood', [x0, +k.split('|')[1], z0], [x1 - x0, 0, 0], [0, 0, z1 - z0]);
+      const ch = roofCell(M.ch(c, r));
+      if (ch === 'W') return M.windowAt(c, r).head;
+      return ROOF[ch] ? ROOF[ch][0] : null;
+    }, (y, x0, z0, x1, z1) => {
+      Q('wood', [x0, y, z0], [x1 - x0, 0, 0], [0, 0, z1 - z0]);
     });
     // floor material of prop cells comes from their open neighbours
     function floorOf(c, r) {
@@ -268,8 +274,8 @@
         const c = 2 * i + 1;
         const pc = f.point(c, 1.0);
         const oc = M.colOf(pc[0]), orow = M.rowOf(pc[1]), outCh = M.ch(oc, orow);
-        const open = M.walkable(oc, orow) || 'cCbw+p'.includes(outCh);
-        const covered = ROOF[outCh] !== undefined;
+        const open = M.walkable(oc, orow) || 'cCkKbow+p'.includes(outCh);
+        const covered = ROOF[roofCell(outCh)] !== undefined;
         const rng = rand(hash3(pc[0], pc[1], s.di + 1));
         const roll = rng();
         if (ground && M.walkable(oc, orow) && !M.floorH(oc, orow) && !covered && (hash3(pc[0], pc[1], 73) % 8 === 0)) {
@@ -382,6 +388,8 @@
       } else if (kind === 'terraceRail') {
         box('wood', x0, y0, z0, x1, y1 - .1, z1, { tint: [.52, .76, .72], skip: 'ny', occ: false });
         box('wood', x0 - .025, y1 - .1, z0 - .025, x1 + .025, y1, z1 + .025, { tint: [.82, .84, .65], occ: false });
+      } else if (kind === 'windowSill') {
+        Q('trim', [x0, y1, z1], [x1 - x0, 0, 0], [0, 0, z0 - z1]);
       } else if (kind === 'lamp') {
         box('metal',x0,y0,z0,x1,y0+.06,z1);
         box('trim',x0+.02,y0+.06,z0+.02,x1-.02,y1-.07,z1-.02,{tint:[1.15,.94,.62]});
@@ -411,6 +419,9 @@
       } else if (kind === 'lowwall') {
         box('rubble', x0, 0, z0, x1, y1 - 0.12, z1, { skip: 'ny' });
         box('trim', x0 - 0.05, y1 - 0.12, z0 - 0.05, x1 + 0.05, y1, z1 + 0.05);
+      } else if (kind === 'wellWall') {
+        box('rubble', x0, y0, z0, x1, y1 - .16, z1, { skip: 'ny' });
+        box('trim', x0, y1 - .16, z0, x1, y1, z1);
       } else if (kind === 'pillar') {
         box('trim', x0, 0, z0, x1, y1, z1, { skip: 'ny' });
         box('trim', x0 - 0.16, 0, z0 - 0.16, x1 + 0.16, 0.34, z1 + 0.16, { skip: 'ny' });
@@ -429,7 +440,6 @@
     box('trim', -2, 0, -20.15, 0, .018, -17.85, { skip: 'ny', occ: false });
     box('trim', -18.16, 1.02, -12, -15.84, 1.10, -10, { occ: false });
     box('wood', -18.12, 2.26, -12, -15.88, 2.36, -10, { occ: false });
-    Q('wood', [-18, 2.35, -12], [2, 0, 0], [0, 0, 2]);
     for (const z of [-15.6, -13.6, -11.6, -9.6]) box('wood', -16, 2.84, z, -8, 3, z + .16, { occ: false });
     Q('sign', [-18.025, 2.66, -11.72], [0, 0, 1.42], [0, .53, 0], { uv: MG.SIGNS[0] });
     Q('sign', [21.98, 2.82, -15.76], [0, 0, 1.52], [0, .58, 0], { uv: MG.SIGNS[1] });
