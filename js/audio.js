@@ -186,11 +186,14 @@
   // ---------- recorded sounds (assets/sfx, built by tools/sfx-build.js) ----------
   // Real gunshot and gun-handling recordings (Snake's Authentic Gun Sounds packs) and an English announcer
   // (WARLORD by VoiceBosch, CC BY-SA 4.0). Until a file has loaded, the synthesised version plays instead.
-  const SFX = ['g_9mm', 'g_556', 'g_762', 'g_308', 'g_762r', 'g_20ga', 'm_dry', 'm_bolt', 'm_pump', 'm_shell',
+  const SFX = ['g_9mm', 'g_556', 'g_762', 'g_308', 'g_762r', 'g_20ga',
+    'f_sand_l1', 'f_sand_l2', 'f_sand_l3', 'f_sand_r1', 'f_sand_r2', 'f_sand_r3',
+    'f_stone_l1', 'f_stone_l2', 'f_stone_l3', 'f_stone_r1', 'f_stone_r2', 'f_stone_r3',
+    'm_dry', 'm_bolt', 'm_pump', 'm_shell',
     'm_ar_out', 'm_ar_in', 'm_ar_bolt', 'm_ak_out', 'm_ak_in', 'm_ak_rack', 'm_pistol_out', 'm_pistol_in', 'm_pistol_slide',
     'v_headshot', 'v_double_kill', 'v_triple_kill', 'v_rampage', 'v_unstoppable', 'v_annihilation', 'v_first_blood',
     'v_dominating', 'v_start', 'v_round_winner', 'v_mission_failed', 'v_last_man_standing', 'v_team_deathmatch',
-    'mu_victory'];
+    'mu_roundstart', 'mu_victory'];
   const sfx = {};
   let sfxLoading = false;
   function loadSfx() {
@@ -261,10 +264,89 @@
     noise(o, t, 0.06, { type: 'bandpass', f: G.rand(700, 1300), q: 1.2, g: 0.9 });
     noise(o, t + 0.012, 0.09, { type: 'lowpass', f: 400, g: 0.7, brown: true });
   };
-  A.land = function (pos, local) {
+  // ---------- footsteps ----------
+  // Recorded single steps (Fantozzi, CC0) on sand or stone, left and right feet, with a little pitch and level
+  // variation. An enemy's steps are HRTF-panned (left/right, front/back and some height on headphones), carry to
+  // ~30 m, grow darker with distance and are muffled through walls; a teammate's are quieter and plainly panned,
+  // so the enemy's stand out. Each soldier has one 3D voice that every step moves (HRTF is costly: a handful of
+  // voices instead of one panner per step); phones pan every voice plainly. Whether a step is heard at all
+  // (running) or silent (walking, crouching) is the caller's call (G.Game.loudSteps).
+  const STEP_RANGE = 31;
+  const smooth = (a, b, v) => { const x = G.clamp((v - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+  let lastStep = '';
+  function stepSample(surface, foot) {
+    const base = 'f_' + (surface === 'sand' ? 'sand' : 'stone') + (foot ? '_r' : '_l');
+    const names = [base + 1, base + 2, base + 3].filter((n) => sfx[n] && n !== lastStep);
+    return names.length ? (lastStep = names[Math.floor(Math.random() * names.length)]) : null;
+  }
+  // the straight line from your ears to the step crosses a wall, crate or roof
+  function occluded(pos) {
+    const dx = pos.x - listenerPos.x, dy = pos.y + 0.15 - listenerPos.y, dz = pos.z - listenerPos.z;
+    const d = Math.hypot(dx, dy, dz);
+    return d > 0.6 && !!G.Map.raycast(listenerPos.x, listenerPos.y, listenerPos.z, dx / d, dy / d, dz / d, d - 0.35);
+  }
+  const voices = new Map();
+  // the soldier's voice, placed at pos with this step's brightness: returns its input
+  function stepVoice(id, pos, cutoff, mate, t) {
+    const hrtf = !mate && !(G.Touch && G.Touch.enabled);
+    let v = voices.get(id);
+    if (!v || v.hrtf !== hrtf) {
+      if (v) { v.g.disconnect(); v.p.disconnect(); }
+      const g = ctx.createGain(), f = ctx.createBiquadFilter(), p = ctx.createPanner();
+      f.type = 'lowpass'; f.Q.value = 0.7; f.frequency.value = cutoff;
+      p.panningModel = hrtf ? 'HRTF' : 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = 1; p.rolloffFactor = 0;
+      g.connect(f); f.connect(p); p.connect(mix);
+      v = { g, f, p, hrtf };
+      voices.delete(id); voices.set(id, v);
+      // old matches' soldiers: drop the least recently heard voice
+      if (voices.size > 16) { const [old, ov] = voices.entries().next().value; ov.g.disconnect(); ov.p.disconnect(); voices.delete(old); }
+    } else { voices.delete(id); voices.set(id, v); }
+    const p = v.p;
+    if (p.positionX) { p.positionX.setValueAtTime(pos.x, t); p.positionY.setValueAtTime(pos.y + 0.1, t); p.positionZ.setValueAtTime(pos.z, t); }
+    else p.setPosition(pos.x, pos.y + 0.1, pos.z);
+    v.f.frequency.setTargetAtTime(cutoff, t, 0.01);
+    return v.g;
+  }
+  // how loud and how bright another soldier's step is at pos: null when out of earshot
+  function stepLevel(pos, opts) {
+    const d = dist(pos);
+    if (d > STEP_RANGE) return null;
+    const blocked = occluded(pos);
+    return { d, blocked, gain: Math.pow(1 - smooth(2.5, STEP_RANGE, d), 1.3) * (blocked ? 0.55 : 1) * (opts.mate ? 0.5 : 1),
+      cutoff: blocked ? 700 : 2000 + 16000 / (1 + d / 8) };
+  }
+  A.step = function (pos, surface, foot, opts) {
+    if (!ctx) return false;
+    const o = opts || {}, name = stepSample(surface, foot);
+    if (!name) { A.foot(pos, !!o.local); return true; }   // synthesised until the recordings have loaded
+    const t = ctx.currentTime, rate = G.rand(0.95, 1.05), level = G.rand(0.86, 1);
+    if (o.local) { play(name, out(null, 1, 0.3 * level), t, rate, 1); return true; }
+    const s = stepLevel(pos, o);
+    if (!s) return false;
+    const at = t + Math.min(s.d / 343, 0.09);
+    play(name, stepVoice(o.id || 0, pos, s.cutoff, !!o.mate, at), at, rate, 1.25 * s.gain * level);
+    return true;
+  };
+  // landing from a jump or a drop: both feet at once, lower and heavier
+  A.land = function (pos, local, surface, opts) {
     if (!ctx) return;
-    const t = ctx.currentTime, o = out(local ? null : pos, 3, local ? 0.35 : 0.7);
-    noise(o, t, 0.14, { type: 'lowpass', f: 700, g: 1, brown: true });
+    const o = opts || {}, t = ctx.currentTime, left = stepSample(surface, 0), right = stepSample(surface, 1);
+    if (!left || !right) {
+      const g = out(local ? null : pos, 3, local ? 0.35 : 0.7);
+      noise(g, t, 0.14, { type: 'lowpass', f: 700, g: 1, brown: true });
+      return;
+    }
+    let dest, level = 1;
+    if (local) dest = out(null, 1, 0.42);
+    else {
+      const s = stepLevel(pos, o);
+      if (!s) return;
+      dest = stepVoice(o.id || 0, pos, Math.min(s.cutoff, 6000), !!o.mate, t);
+      level = 1.5 * s.gain;
+    }
+    play(left, dest, t, 0.84, level);
+    play(right, dest, t + 0.014, 0.8, 0.9 * level);
+    noise(dest, t, 0.12, { type: 'lowpass', f: 300, g: 0.7 * level, brown: true });
   };
   // Handling and UI clicks. With a position (another soldier's bolt, plant or defuse) the sound comes from
   // there and fades with distance; without one it is yours (these used to sound in your ears for every bot).
@@ -391,10 +473,30 @@
     return null;
   }
   const cue = (name, opts) => (G.Music && G.Music.cue ? G.Music.cue(name, opts) : null);
+  // Round and practice start: the first four bars of "Battle Theme A" by cynicmusic (CC0), kept under the
+  // footsteps (the synthesised cue only plays until the recording has loaded).
+  let startCue = null;
+  function stopStart(fade) {
+    if (!startCue) return;
+    const g = startCue; startCue = null;
+    g.gain.cancelScheduledValues(ctx.currentTime);
+    g.gain.setTargetAtTime(0, ctx.currentTime, fade);
+    setTimeout(() => g.disconnect(), 1500);
+  }
+  function playStart() {
+    if (!ctx || !A.musicBus || !sfx.mu_roundstart) return false;
+    stopStart(0.05);
+    const t = ctx.currentTime + 0.03, src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = sfx.mu_roundstart; src.connect(g); g.connect(A.musicBus);
+    g.gain.value = 0.5;
+    src.start(t);
+    src.onended = () => { src.disconnect(); g.disconnect(); if (startCue === g) startCue = null; };
+    startCue = g;
+    return true;
+  }
   A.roundLive = function () {
-    A.radio('start');
     A.stopClutch();
-    cue('roundStart');
+    if (!playStart()) cue('roundStart');
     A.announce('v_start', 1, 0.25);
   };
   // ---------- round and match outcome music ----------
@@ -461,6 +563,7 @@
     if (clutch && clutch.stop) clutch.stop(0.25);
     clutch = null;
     if (G.Music && G.Music.stopAll) G.Music.stopAll(0.25);   // the bomb countdown and clutch end with the round
+    if (ctx) stopStart(0.3);
     if (!(won ? A.victory(mvpMine || matchWon) : A.defeat())) A.radio(won ? 'win' : 'lose');
     A.announce(won ? 'v_round_winner' : 'v_mission_failed', 7, 0.3);   // always heard, even after a clutch line
   };
@@ -476,11 +579,11 @@
   };
   A.stopClutch = function () { if (clutch) { clutch.stop(0.6); clutch = null; } };
   A.bombTen = function (seconds) { cue('bombTicking', { seconds }); };
-  A.practiceStart = function () { cue('practiceStart'); A.announce('v_team_deathmatch', 2, 0.3); };
+  A.practiceStart = function () { if (!playStart()) cue('practiceStart'); A.announce('v_team_deathmatch', 2, 0.3); };
   A.stopMusic = function () {
     clutch = null;
     if (G.Music && G.Music.stopAll) G.Music.stopAll(0.4);
-    if (ctx) stopOutcome(0.3);
+    if (ctx) { stopOutcome(0.3); stopStart(0.3); }
   };
   A.deathMix = function (enabled) {
     if (!ctx || !!heartbeat === enabled) return;

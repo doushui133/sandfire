@@ -27,6 +27,9 @@
     };
   };
   Gm.alive = (team) => Gm.agents.filter((a) => a.alive && a.team === team).length;
+  // footsteps are heard while running; walking (shift) and crouching are silent, as in CS
+  Gm.loudSteps = (a) => a.alive && a.onGround && !a.walking && a.crouch < 0.5 &&
+    Math.hypot(a.vel.x, a.vel.z) > W.maxSpeed(a) * 0.6;
   Gm.clearScene = function () {
     G.Audio.stopMusic();
     G.Player.resetSpectate(); G.Nades.clear(); G.HUD.clearMatch();

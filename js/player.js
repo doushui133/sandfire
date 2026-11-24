@@ -259,7 +259,7 @@
     const az = grounded && dt > 0 ? (a.vel.z - vz) / dt : 0;
     a.moveAccelX = ax * c - az * s;
     a.moveAccelZ = ax * s + az * c;
-    if (a.landed) { G.Audio.land(a.pos, true); G.VM.onLand(a.landed); a.landed = 0; }
+    if (a.landed) { G.Audio.land(a.pos, true, G.Map.surfaceAt(a.pos.x, a.pos.y, a.pos.z)); G.VM.onLand(a.landed); a.landed = 0; }
 
     // footsteps (silent when walking or crouched)
     const hs = Math.hypot(a.vel.x, a.vel.z);
@@ -267,8 +267,11 @@
       P.stepDist += hs * dt;
       if (P.stepDist > 2.1) {
         P.stepDist = 0;
-        const loud = !a.walking && hs > G.Weapons.maxSpeed(a) * 0.6 && a.crouch < 0.5;
-        if (loud) { G.Audio.foot(a.pos, true); G.Bots.hearStep(a); }
+        if (G.Game.loudSteps(a)) {
+          P.stepFoot = 1 - (P.stepFoot | 0);
+          G.Audio.step(a.pos, G.Map.surfaceAt(a.pos.x, a.pos.y, a.pos.z), P.stepFoot, { local: true });
+          G.Bots.hearStep(a);
+        }
       }
     }
 

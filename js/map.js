@@ -96,6 +96,11 @@
   M.windowAt = (c, r) => M.ch(c, r) === 'W' ? windows.get(r * W + c) : undefined;
   M.walkable = (c, r) => FLOOR[M.ch(c, r)] !== undefined;
   M.floorH = (c, r) => FH[M.ch(c, r)] || 0;
+  // what a foot lands on: the town's sand (open ground at floor level) or stone (paving, tiles, steps, crates)
+  M.surfaceAt = (x, y, z) => {
+    const c = M.colOf(x), r = M.rowOf(z);
+    return FLOOR[M.ch(c, r)] === 'sand' && y <= M.floorH(c, r) + 0.2 ? 'sand' : 'stone';
+  };
   M.cellX = (c) => OX + c * CELL + CELL / 2;
   M.cellZ = (r) => OZ + r * CELL + CELL / 2;
   M.colOf = (x) => Math.floor((x - OX) / CELL);

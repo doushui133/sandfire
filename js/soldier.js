@@ -626,7 +626,7 @@
   // run on two tracks that pass in front of and behind each other. Standing, turning in place, kneeling and
   // the air keep the world-planted feet above; a stop hands the feet over exactly where the cycle left them.
   const gaitLocal = [new THREE.Vector3(), new THREE.Vector3()], idleLocal = [new THREE.Vector3(), new THREE.Vector3()];
-  const gaitWorld = new THREE.Vector3(), qTwist = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
+  const gaitWorld = new THREE.Vector3(), stepPos = new THREE.Vector3(), qTwist = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
   const BALL = .13;   // ankle to the ball of the foot: the pivot when the heel lifts
   function toWorld(out, a, local, cy, sy, y) {
     return out.set(a.pos.x + local.x * cy + local.z * sy, y, a.pos.z - local.x * sy + local.z * cy);
@@ -665,7 +665,7 @@
     // the hip joints), and a track beside the hip leaves a little less reach
     const hx0 = P.hipR.x, offAlong = (hx0 - w * px) * ux - w * pz * uz, offSide = Math.abs((hx0 - w * px) * px - w * pz * pz);
     const L = Math.sqrt(Math.max(.3, ((P.lThigh + P.lShin) * .985) ** 2 - offSide * offSide));
-    const hipH = P.pelY - .015 - G.lerp(.045, .065, run) * (1 - c) - .33 * c + P.hipR.y - P.footY;
+    const hipH = P.pelY - .015 - (G.lerp(.028, .065, run) + .006 * (1 - run)) * (1 - c) - .33 * c + P.hipR.y - P.footY;
     const heel = G.lerp(.065, .08, run) * (1 - .5 * c);
     const flat = Math.sqrt(Math.max(.0025, L * L - hipH * hipH));
     const raised = Math.sqrt(Math.max(.0025, L * L - (hipH - heel) * (hipH - heel)));
@@ -690,7 +690,7 @@
     const lift = G.lerp(.06, .16, run) * (1 - .4 * c) * sst(.25, 1.5, speed);
     const toeOff = heel * sst(.05, .3, back), heelStrike = .2 * sst(.05, .25, front);
     for (let i = 0; i < 2; i++) {
-      const foot = rig.feet[i], side = LEGS[i].side, phi = (rig.cycle + (i ? .5 : 0)) % 1;
+      const foot = rig.feet[i], side = LEGS[i].side, phi = (rig.cycle + (i ? .5 : 0)) % 1, wasDown = foot.inContact;
       let along, raise, pitch;
       if (phi < duty) {                        // planted
         const s = phi / duty;
@@ -729,6 +729,10 @@
       if (floor > a.pos.y + .46 || floor < a.pos.y - .6) floor = a.pos.y;
       foot.floorY = damp(foot.floorY, floor, foot.inContact ? 40 : 22, dt);
       out.y += foot.floorY - rig.rootY;
+      // a foot has just landed: the step is heard there, in time with the animation
+      if (foot.inContact && !wasDown && rig.footBlend > .5 && G.Bots && G.Bots.onStep) {
+        G.Bots.onStep(a, i, stepPos.set(gaitWorld.x, foot.floorY, gaitWorld.z));
+      }
     }
     // +1 while the left foot is ahead of the right (pelvis turns with the legs, the arms swing against them)
     return (rig.feet[0].gaitAlong - rig.feet[1].gaitAlong) * -uz / Math.max(span, .05);
@@ -825,7 +829,10 @@
     const mid = Math.cos(2 * Math.PI * (rig.cycle - (rig.duty || .5) / 2));
     // weight over the planted foot, a bob under a centimetre (lowest as each foot takes the weight)
     rig.weight = damp(rig.weight, mb * -G.lerp(.012, .007, run) * mid + (1 - mb) * breath * .012, 11, dt);
-    const bob = -mb * G.lerp(.003, .009, run) * Math.cos(4 * Math.PI * (rig.cycle - (rig.duty || .5) / 2));
+    // Walking, the hips ride a little high over the planted leg (an inverted pendulum, ~2 cm, knees nearly
+    // straight); running, they sink a little as each foot takes the weight (~1 cm). Never the old bouncing.
+    const sway = (.0105 * (1 - run) - .009 * run) * (1 - c);
+    const bob = mb * sway * Math.cos(4 * Math.PI * (rig.cycle - (rig.duty || .5) / 2));
     const yaw = G.clamp(G.wrapAngle(rig.poseYaw - a.yaw), -.32, .32) * .63 * (1 - mb) + H - rig.gait * (.05 + run * .04);
     const forward = -(rig.vx * sy + rig.vz * cy) / Math.max(1, speed);
     const strafe = (rig.vx * cy - rig.vz * sy) / Math.max(1, speed);
@@ -835,8 +842,8 @@
     const hipL = tp[1].copy(P.hipL).applyQuaternion(qPel).add(pel);
     const hipR = tp[2].copy(P.hipR).applyQuaternion(qPel).add(pel);
     const reach = (P.lThigh + P.lShin) * .997;
-    // steady hips: slightly lower while moving (soft, athletic knees)
-    const low = mb * G.lerp(.045, .065, run) * (1 - c);
+    // steady hips: slightly lower while moving (soft knees walking, athletic knees running)
+    const low = mb * G.lerp(.028, .065, run) * (1 - c);
     const wantY = P.pelY - .015 - low - .33 * c - .32 * kn * (1 - .55 * c) - rig.landing * .07 - rig.settle * .015 +
       bob + air * .026 - .034 * rig.takeoff + breath * .002 * (1 - mb);
     const maxY = Math.min(reachableHip(hipL, left, reach, contact[0]), reachableHip(hipR, right, reach, contact[1]));
@@ -899,7 +906,8 @@
     const flinch = Math.sin(Math.PI * sst(0, .23, rig.hit)) * .12;
     const hitPitch = flinch * (rig.hitX * sy + rig.hitZ * cy);
     const hitRoll = -flinch * (rig.hitX * cy - rig.hitZ * sy);
-    const counter = rig.gait * (.045 + run * .035) - rig.hipYaw * .55;
+    // the chest turns back against most of the hips' step-to-step twist: the shoulders keep a slight swing
+    const counter = rig.gait * (.03 + run * .025) - rig.hipYaw * .55;
     rig.twist = damp(rig.twist, hold.twist, 18, dt);
     const twist = rig.twist * (1 - kn);
     poseQ(tq[3], .30 * pitch + rig.leanX * .35 - .21 * c + hitPitch, twist * .45 + counter, hitRoll);

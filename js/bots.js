@@ -416,7 +416,11 @@
     a.crouchWant = cmd.crouch; a.walking = cmd.walk;
     const speed = W.maxSpeed(a) * (cmd.walk ? 0.52 : 1) * G.lerp(1, 0.34, a.crouch) * (G.time < a.slowUntil ? 0.55 : 1);
     G.Phys.step(a, wx, wz, wl > 0.05 ? speed : 0, false, dt);
-    if (a.landed) { G.HUD.soundMarker(a, a.pos, 'step'); a.landed = 0; }
+    if (a.landed) {
+      G.HUD.soundMarker(a, a.pos, 'step');
+      G.Audio.land(a.pos, false, G.Map.surfaceAt(a.pos.x, a.pos.y, a.pos.z), { mate: teammate(a), id: a.id });
+      a.landed = 0;
+    }
     // facing
     let fy = cmd.faceYaw, fp = cmd.facePitch;
     if (fy === null || fy === undefined) { if (wl > 0.1) { fy = G.yawTo(wx, wz); fp = 0; } else { fy = a.yaw; fp = 0; } }
@@ -430,16 +434,30 @@
       if (wl > 0.3 && G.dist2D(a.pos, ai.lastPos) < 0.35) { ai.path = null; ai.strafe = G.pick([-1, 1]); ai.unstickUntil = G.time + 0.7; }
       ai.lastPos.copy(a.pos);
     }
-    // footsteps
-    const hs = Math.hypot(a.vel.x, a.vel.z);
-    if (a.onGround && hs > W.maxSpeed(a) * 0.6 && !a.walking && a.crouch < 0.5) {
-      ai.stepDist += hs * dt;
-      if (ai.stepDist > 2.1) { ai.stepDist = 0; G.Audio.foot(a.pos, false); B.hearStep(a); }
+    // footsteps: the sound plays where a foot lands in the walk cycle (onStep below); the bots' hearing runs on
+    // this fixed stride, and so does the sound of a soldier you watch in first person (no body drawn)
+    if (G.Game.loudSteps(a)) {
+      ai.stepDist += Math.hypot(a.vel.x, a.vel.z) * dt;
+      if (ai.stepDist > 2.1) {
+        ai.stepDist = 0; B.hearStep(a);
+        if (!a.rig || a.rig.hidden) {
+          ai.stepFoot = 1 - (ai.stepFoot | 0);
+          G.Audio.step(a.pos, G.Map.surfaceAt(a.pos.x, a.pos.y, a.pos.z), ai.stepFoot,
+            { local: !!(a.rig && a.rig.hidden), mate: teammate(a), id: a.id });
+        }
+      }
     }
     W.update(a, dt, { fire: cmd.fire, firePressed: cmd.firePressed, alt: false, altPressed: cmd.altPressed, reload: cmd.reload });
     G.Game.handleUse(a, cmd.use, dt);
     if (G.Game.mode !== 'practice') W.tryPickup(a);
   }
+
+  const teammate = (a) => { const me = G.Player.agent; return !!me && me.team === a.team; };
+  // called by the walk cycle (soldier.js) each time a foot lands
+  B.onStep = function (a, foot, pos) {
+    if (a.isPlayer || !G.Game.loudSteps(a)) return;
+    G.Audio.step(pos, G.Map.surfaceAt(pos.x, pos.y, pos.z), foot, { mate: teammate(a), id: a.id });
+  };
 
   B.update = function (dt) {
     for (const a of G.Game.agents) {

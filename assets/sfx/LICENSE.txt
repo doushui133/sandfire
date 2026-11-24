@@ -10,6 +10,18 @@ g_*.wav and m_*.wav — gunshots and gun handling
   The author releases the packs for free commercial use with no credit required and has stated they are
   public domain (CC0). Credited here with thanks.
 
+f_*.wav — footsteps
+  "Fantozzi's Footsteps (Grass/Sand & Stone)" by Fantozzi (submitted by qubodup)
+  https://opengameart.org/content/fantozzis-footsteps-grasssand-stone
+  Released under CC0 (public domain dedication). Decoded from the FLAC files, mixed to mono, trimmed,
+  resampled to 32 kHz and normalised with tools/steps-build.js. Credited here with thanks.
+
+mu_roundstart.wav — round-start music
+  "Battle Theme A" by cynicmusic (made for Pixelsphere, http://pixelsphere.org)
+  https://opengameart.org/content/battle-theme-a
+  Released under CC0 (public domain dedication). Its first four bars, decoded from the MP3, resampled to
+  22.05 kHz stereo and normalised with tools/music-build.js. Credited here with thanks.
+
 mu_victory.wav — victory fanfare
   "Victory Fanfare Short" by cynicmusic (made for Pixelsphere, http://pixelsphere.org)
   https://opengameart.org/content/victory-fanfare-short

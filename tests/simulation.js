@@ -968,6 +968,23 @@ console.log('All 20 IDs animated by the original third-person soldier and first-
     strafe:measure('strafe',1,0,5.0,0,{bob:.02,ext:.993}), back:measure('backpedal',0,1,4.0,0,{bob:.02,ext:.996}),
     diagonal:measure('diagonal',-1,-1,5.4,0,{bob:.02,ext:.993}), crouch:measure('crouch walk',0,-1,1.84,1,{bob:.012,ext:.9}),
   };
+  // footsteps are heard while running only, one event per foot landing, alternating feet in time with the cycle
+  {
+    const events = [], onStep = G.Bots.onStep;
+    G.Bots.onStep = (a, foot, pos) => { if (a === walker) events.push([G.time, foot, pos.clone(), a.pos.clone()]); };
+    try {
+      start(M.cellX(19), M.cellZ(44), 0, 0);
+      drive(150, 0, -1, 5.4);
+      walker.walking = false;
+      assert(game.loudSteps(walker), 'running is loud');
+      walker.walking = true; assert(!game.loudSteps(walker), 'walking is silent'); walker.walking = false;
+      walker.crouch = 1; assert(!game.loudSteps(walker), 'crouching is silent'); walker.crouch = 0;
+      const late = events.filter((e) => e[0] > G.time - 1.5);
+      assert(late.length >= 4 && late.length <= 6, 'about three steps a second at a run: ' + late.length);
+      for (let i = 1; i < late.length; i++) assert.notEqual(late[i][1], late[i - 1][1], 'feet alternate');
+      for (const e of late) assert(Math.abs(e[2].y - e[3].y) < 0.05 && Math.hypot(e[2].x - e[3].x, e[2].z - e[3].z) < 0.6, 'the step is under the body');
+    } finally { G.Bots.onStep = onStep; }
+  }
   // A-D counter-strafing: feet and head never jump relative to the body
   start(M.cellX(19),M.cellZ(44),0,0);
   let prev=null, footJump=0, headJump=0;
@@ -1708,7 +1725,8 @@ async function soundChecks() {
     G.Music.cue = (name) => { cues.push(name); return { stop() { cues.push('stop:' + name); } }; };
     ctx.currentTime += 3;
     A.roundLive();
-    assert.deepEqual(cues, ['roundStart']); assert.equal(src('v_start').length, 1);
+    assert.deepEqual(cues, [], 'the recorded round-start music replaces the synthesised cue');
+    assert.equal(src('mu_roundstart').length, 1); assert.equal(src('v_start').length, 1);
     ctx.currentTime += 3;
     A.clutch(); A.clutch();
     assert.equal(cues.filter((c) => c === 'clutch').length, 1); assert.equal(src('v_last_man_standing').length, 1);
@@ -1732,7 +1750,49 @@ async function soundChecks() {
     A.matchEnd(true); assert.equal(src('mu_victory').length, 3, 'a won practice match plays the fanfare');
     A.bombTen(10); assert(cues.includes('bombTicking'));
     ctx.currentTime += 3;
-    A.practiceStart(); assert(cues.includes('practiceStart')); assert.equal(src('v_team_deathmatch').length, 1);
+    A.practiceStart(); assert.equal(src('mu_roundstart').length, 2); assert.equal(src('v_team_deathmatch').length, 1);
+    assert(!cues.includes('practiceStart'));
+
+    // footsteps: recorded left/right steps, HRTF-panned, darker with distance, muffled through walls, quieter for
+    // a teammate, silent out of earshot; your own are not positional
+    assert(A.sfxReady('f_sand_l1') && A.sfxReady('f_stone_r3'), 'footsteps loaded');
+    const M = G.Map, ear = { x: M.cellX(24), y: 1.6, z: M.cellZ(44) };
+    A.updateListener(ear, 0);
+    const blockedLine = (p) => {
+      const dx = p.x - ear.x, dy = p.y + 0.15 - ear.y, dz = p.z - ear.z, d = Math.hypot(dx, dy, dz);
+      return !!M.raycast(ear.x, ear.y, ear.z, dx / d, dy / d, dz / d, d - 0.35);
+    };
+    let clear = null, behind = null;
+    for (let c = 0; c < M.W; c++) for (let r = 0; r < M.H; r++) {
+      const p = { x: M.cellX(c), y: M.floorH(c, r), z: M.cellZ(r) }, d = Math.hypot(p.x - ear.x, p.z - ear.z);
+      if (!M.walkable(c, r) || d < 8 || d > 14) continue;
+      if (!clear && !blockedLine(p)) clear = p;
+      if (!behind && blockedLine(p)) behind = p;
+    }
+    assert(clear && behind, 'test positions');
+    const random = Math.random; Math.random = () => 0.5;
+    try {
+      const stepNodes = (fn) => { const at = made.length; const heard = fn(); return { heard, nodes: made.slice(at) }; };
+      const open = stepNodes(() => A.step(clear, 'sand', 0, { id: 901 }));
+      assert(open.heard && open.nodes.some((n) => n.panningModel === 'HRTF'), 'an enemy\'s step is HRTF-panned');
+      assert(open.nodes.some((n) => n.buffer && /f_sand_l/.test(n.buffer.url)), 'left foot on sand');
+      const wall = stepNodes(() => A.step(behind, 'stone', 1, { id: 902 }));
+      assert(wall.nodes.some((n) => n.buffer && /f_stone_r/.test(n.buffer.url)), 'right foot on stone');
+      const cutoff = (r) => r.nodes.find((n) => n.type === 'lowpass').frequency.value;
+      assert(cutoff(open) > 3000 && cutoff(wall) < 1000, 'muffled through a wall: ' + cutoff(open) + ' / ' + cutoff(wall));
+      // one voice per soldier: a second step reuses it (no new panner)
+      const again = stepNodes(() => A.step(clear, 'sand', 0, { id: 901 }));
+      assert(!again.nodes.some((n) => n.panningModel), 'the soldier\'s voice is reused');
+      const level = (r) => { const s = r.nodes.find((n) => n.buffer); return r.nodes[r.nodes.indexOf(s) + 1].gain.value; };
+      const mate = stepNodes(() => A.step(clear, 'sand', 0, { mate: true, id: 903 }));
+      assert(Math.abs(level(mate) / level(again) - 0.5) < 1e-9, 'a teammate\'s steps are quieter');
+      assert(mate.nodes.some((n) => n.panningModel === 'equalpower'), 'and plainly panned');
+      assert.equal(A.step({ x: ear.x + 40, y: 0, z: ear.z }, 'sand', 0, {}), false, 'out of earshot');
+      const own = stepNodes(() => A.step(ear, 'stone', 0, { local: true }));
+      assert(own.heard && !own.nodes.some((n) => n.panningModel === 'HRTF'), 'your own steps are not positional');
+      const land = stepNodes(() => A.land(clear, false, 'sand', { id: 901 }));
+      assert(land.nodes.filter((n) => n.buffer && /f_sand_/.test(n.buffer.url)).length === 2, 'a landing is both feet');
+    } finally { Math.random = random; }
 
     // the kill ting climbs a pentatonic step per kill of a multi-kill, built from pure sine partials
     const fundamentals = (from) => made.slice(from).filter((n) => n.type === 'sine' && n.frequency.events[0] &&
