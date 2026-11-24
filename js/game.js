@@ -106,7 +106,7 @@
       if (!G.Phys.blocked(p.x, p.y + 0.01, p.z, G.bodyHeight(0) - 0.01)) spawnCells.push(p.clone());
     }
   }
-  function findSpawn(a) {
+  function findSpawn(a, fallback) {
     let enemies = 0;
     for (const other of Gm.agents) {
       if (!other.alive || other === a || other.team === a.team) continue;
@@ -115,7 +115,7 @@
       G.eyePos(other, spawnEyes[enemies++]);
     }
     const start = Math.floor(Math.random() * spawnCells.length);
-    let best = null, bestScore = -Infinity;
+    let best = null, bestTier = -1, bestScore = -Infinity;
     for (let i = 0; i < spawnCells.length; i++) {
       const p = spawnCells[(start + i) % spawnCells.length];
       let enemyDist = Infinity, allyDist = Infinity;
@@ -125,9 +125,11 @@
         if (other.team === a.team) allyDist = Math.min(allyDist, d);
         else enemyDist = Math.min(enemyDist, d);
       }
-      if (enemyDist < 100 || allyDist < 4) continue;
-      const score = Math.min(enemyDist, allyDist * 2.25) - Math.random() * 20;
-      if (best && score <= bestScore) continue;
+      if (!fallback && (enemyDist < 100 || allyDist < 4)) continue;
+      const score = fallback ? enemyDist : Math.min(enemyDist, allyDist * 2.25) - Math.random() * 20;
+      // Prefer room to stand, then cover, then distance from the nearest enemy.
+      let tier = fallback && Math.min(enemyDist, allyDist) >= 4 ? 2 : 0;
+      if (tier + 1 < bestTier || (tier + 1 === bestTier && score <= bestScore)) continue;
       let covered = true;
       spawnEye.set(p.x, p.y + G.eyeHeight(0), p.z);
       for (let j = 0; j < enemies && covered; j++) {
@@ -139,7 +141,11 @@
           if (M.clearLine(spawnEye, spawnPoint)) { covered = false; break; }
         }
       }
-      if (covered) { best = p; bestScore = score; if (score === Infinity) break; }
+      if (covered) tier++;
+      if ((fallback || covered) && (tier > bestTier || (tier === bestTier && score > bestScore))) {
+        best = p; bestTier = tier; bestScore = score;
+        if (score === Infinity && tier === (fallback ? 3 : 1)) break;
+      }
     }
     return best;
   }
@@ -155,8 +161,9 @@
     if (Gm.mode === 'practice') a.protectedUntil = 0;
   };
   function respawn(a) {
-    const spawn = findSpawn(a);
-    if (!spawn) { a.spawnCheckAt = Gm.practiceTime + 0.2; return; }
+    const fallbackAt = a.respawnAt + 1.5;
+    const spawn = findSpawn(a, Gm.practiceTime >= fallbackAt);
+    if (!spawn) { a.spawnCheckAt = Math.min(Gm.practiceTime + 0.2, fallbackAt); return; }
     resetLoadout(a);
     const id = [a.team === 'atk' ? 'ar7' : 'tr4', 'v9', 'r90', 'h50'][a.practiceLoadout];
     a.inv[W.defs[id].slot] = W.item(id);
@@ -535,7 +542,17 @@
     if (d.slot === 'grenade') { if (!W.addGrenade(a, id)) return false; }
     else if (W.defs[id]) {
       const slot = d.slot;
-      if (a.inv[slot]) { if (slot === 'pistol') a.inv[slot] = null; else W.drop(a, slot); }
+      const old = W.current(a);
+      if (old) { old.reloading = false; old.zoom = 0; old.rezoom = 0; }
+      if (a.cur === 'grenade') G.Nades.cancel(a);
+      if (slot !== 'pistol' && a.inv[slot]) {
+        // Drop the old gun without switching away and back during this purchase.
+        if (a.cur === slot) {
+          G.Nades.cancel(a, !!a.throwLatch);
+          a.prevSlot = slot; a.cur = 'pistol'; a.shots = 0;
+        }
+        W.drop(a, slot);
+      }
       a.inv[slot] = W.item(id);
       a.cur = slot; a.switchEnd = G.time + 0.5;
       if (a.isPlayer && G.VM) G.VM.onSwitch();

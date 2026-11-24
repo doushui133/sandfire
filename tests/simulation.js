@@ -886,6 +886,39 @@ W.update(me,.01,{fire:true}); assert(!me.primed);
 G.input.left=false; W.update(me,.01,{}); assert.equal(N.flying.length,0);
 console.log('Keyboard category/item buying, team restrictions and Esc close passed');
 
+{
+  const click = G.Audio.click, clicks = [];
+  const buyGun = id => {
+    clicks.length = 0;
+    assert(game.buy(me, id));
+    assert.equal(W.current(me).id, id);
+    assert.equal(me.switchEnd, G.time + 0.5);
+    assert.deepEqual(clicks, ['buy']);
+  };
+  try {
+    G.Audio.click = kind => clicks.push(kind);
+    me.cur = 'primary'; me.inv.primary = W.item('r90');
+    const old = W.current(me);
+    Object.assign(old, { reloading: true, zoom: 2, rezoom: G.time + 1 });
+    buyGun('h50');
+    assert.deepEqual([old.reloading, old.zoom, old.rezoom], [false, 0, 0]);
+    assert.equal(me.inv.primary, old, 'switching to a purchase keeps the holstered gun');
+    me.cur = 'primary';
+    buyGun('ar7');
+    assert(W.drops.some(d => d.item === old), 'replacing an equipped primary still drops it');
+    W.selectGrenade(me, 'flash'); G.time = me.switchEnd + .01;
+    G.input.left = true; W.update(me, .01, { fire: true });
+    assert(me.primed && dots.visible);
+    const flashes = me.nades.flash;
+    buyGun('v9');
+    assert(!me.primed && !me.pendingThrow && me.throwLatch && !dots.visible);
+    assert.equal(me.nades.flash, flashes);
+    assert.equal(N.flying.length, 0);
+  } finally {
+    G.Audio.click = click; G.input.left = false; W.clearDrops();
+  }
+}
+
 // Fire across a real wooden crate; optical targeting still stops at its surface.
 field(); ally.alive=false; me.pos.copy(cover); me.pos.x-=2;
 foe.pos.copy(cover); foe.pos.x+=2; foe.hp=1;
@@ -895,6 +928,10 @@ const killEvents=[], hudKillFx=G.HUD.killFx;
 G.HUD.killFx=info=>killEvents.push(info);
 W.update(me,.016,{fire:true});
 assert(!foe.alive && killEvents.pop().wallbang);
+me.pos.copy(cover); foe.alive=true; foe.hp=1;
+me.inv.primary=W.item('ar7');
+W.update(me,.016,{fire:true});
+assert(foe.alive && foe.hp === 1, 'a shot starting inside a crate cannot initiate penetration');
 for (const id of ['r90','s40']) for (const range of [1,25,220]) {
   field(); foe.armor=100;
   W.applyDamage(foe,me,W.defs[id],'legs',range,0,-1);
@@ -1090,13 +1127,47 @@ function mapChecks() {
   const crate = cell(12, 26), wellSide = cell(34, 31);
   assert.equal(M.raycast(crate.x, 3, crate.z, 0, 1, 0, 3).box.kind, 'roof', 'Market crate stays covered');
   assert.equal(M.raycast(wellSide.x, .8, wellSide.z, -1, 0, 0, 4).box.kind, 'wellWall');
+  const clipped = M.raycast(crate.x - .849, .65, crate.z, 1, 0, 0, 5);
+  assert(clipped.t === 0 && clipped.box.kind === 'crate', 'an ordinary ray starting 1 mm inside cover stops immediately');
+  assert(!M.clearLine(V(crate.x, .65, crate.z), V(crate.x + 4, .65, crate.z)), 'clipped eyes cannot see through a crate');
+  const wall = cell(16, 16), insideWall = M.raycast(wall.x, 1.62, wall.z, 1, 0, 0, 5);
+  assert(insideWall.t === 0 && insideWall.box.building, 'an interior hit also applies to buildings');
+
+  for (const [site, hc, hr, ec, er, cols, r0, r1] of [
+    ['A', 39, 12, 37, 18, [37, 38], 17, 19], ['B', 8, 16, 8, 21, [7, 8], 20, 22],
+  ]) {
+    for (const c of cols) for (let r = r0; r <= r1; r++) assert(M.walkable(c, r), site + ' side entrance width');
+    const hold = M.holds.find(h => h.site === site && h.pos.equals(cell(hc, hr)));
+    const entry = cell(ec, er), eyeOffset = V(0, G.eyeHeight(0), 0);
+    assert(hold && hold.yaw === G.yawTo(entry.x - hold.pos.x, entry.z - hold.pos.z));
+    assert(M.clearLine(hold.pos.clone().add(eyeOffset), entry.clone().add(eyeOffset)), site + ' hold sees its side entrance');
+    assert(M.routes[site].some(route => route.some(p => cols.includes(M.colOf(p.x)) && M.rowOf(p.z) >= r0 && M.rowOf(p.z) <= r1)),
+      site + ' attacker route uses its side entrance');
+  }
+  const lane = (c0, r0, c1, r1, height) => M.clearLine(V(M.cellX(c0), height, M.cellZ(r0)), V(M.cellX(c1), height, M.cellZ(r1)));
+  assert(lane(37, 14, 37, 17, G.eyeHeight(0)) && !lane(37, 14, 37, 17, 1.35), 'A’s raised crate exposes the head above cover');
+  assert(lane(25, 17, 25, 34, G.eyeHeight(0)) && !lane(25, 17, 25, 34, .9), 'mid has a long sightline with partial cover');
+  runRoute(cell(27, 26), [cell(32, 26), cell(36, 27), cell(38, 27)]);
+  runRoute(cell(38, 27), [cell(34, 26), cell(32, 27), cell(32, 29)]);
+
+  const views = JSON.parse(fs.readFileSync(path.join(root, 'tools', 'e2e', 'views.json'), 'utf8'));
+  const targets = { spawn: [28, 40], mid: [25, 16], siteA: [37, 18], siteB: [8, 21], bot: [24, 12] };
+  for (const v of views) {
+    const c = M.colOf(v.x), r = M.rowOf(v.z);
+    assert(M.walkable(c, r) && v.y === M.floorH(c, r), v.id + ' viewpoint floor');
+    assert(!G.Phys.blocked(v.x, v.y + .01, v.z, G.bodyHeight(0) - .01), v.id + ' viewpoint clearance');
+    const eye = V(v.x, v.y + G.eyeHeight(0), v.z), target = cell(...targets[v.id]);
+    target.y += G.eyeHeight(0);
+    assert(M.clearLine(eye, target) && G.forward(v.yaw, v.pitch).dot(target.sub(eye).normalize()) > .98, v.id + ' viewpoint aim');
+  }
 
   const createElement = document.createElement, radarColors = new Map(), radarSlits = new Set();
+  const radarSites = new Map();
   const ctx = { fillRect(x, y, w, h) {
     if (w === 5 && h === 5) radarColors.set(x + ',' + y, this.fillStyle);
     if (w === 1 && h === 5) radarSlits.add(x + ',' + y);
   },
-    strokeRect: noop, fillText: noop };
+    strokeRect: noop, fillText: (name, x) => radarSites.set(name, x) };
   try {
     document.createElement = () => ({ getContext: () => ctx });
     const radar = M.buildRadar();
@@ -1110,6 +1181,11 @@ function mapChecks() {
     for (const [c, r] of [[22, 28], [16, 10]]) {
       assert(radarSlits.has((c * 5 + 2) + ',' + r * 5), 'Window on radar at ' + [c, r]);
     }
+    for (const [c, r] of [[37, 18], [38, 18], [7, 21], [8, 21], [28, 25], [28, 26]]) {
+      assert.equal(radarColors.get(c * 5 + ',' + r * 5), '#6f6250', 'New lane on radar at ' + [c, r]);
+    }
+    assert.equal(radarColors.get('185,75'), '#4b3f2e', 'Raised crate is cover on radar');
+    assert(radarSites.get('B') < M.W * 2.5 && radarSites.get('A') > M.W * 2.5, 'Radar separates the sites west and east');
   } finally {
     document.createElement = createElement;
   }
@@ -1683,6 +1759,38 @@ function gameplayChecks() {
   G.startMatch('def', true);
   assert(game.phase === 'freeze' && game.bomb.state === 'carried' && game.canBuy(P.agent));
   elem('btnQuit').emit('click');
+
+  G.startMatch('atk', true, 'practice');
+  p = P.agent; foe = game.agents.find(a => a.team === 'def');
+  const roster = game.agents;
+  const covered = M.cellPos(27, 44);
+  try {
+    game.agents = [p, foe];
+    foe.pos.copy(M.cellPos(25, 44));
+    const fallBack = visibility => {
+      M.clearLine = visibility;
+      game.breakSpawnProtection(p);
+      hit(p, foe, 200);
+      game.update(0, p.respawnAt - game.practiceTime + 1.49);
+      assert(!p.alive, 'strict spawn search waits when every candidate fails');
+      game.update(0, .02);
+      assert(p.alive && game.spawnProtected(p), 'fallback spawns within 1.5 extra seconds and applies protection');
+      assert.equal(hit(p, foe, 200), null);
+    };
+    fallBack((a, b) => ![a, b].some(v => v.x === covered.x && v.z === covered.z));
+    assert(p.pos.equals(covered), 'fallback prefers a covered cell even within the normal 10 m exclusion');
+    fallBack(() => true);
+    const distance = G.dist2D(p.pos, foe.pos);
+    for (let r = 0; r < M.H; r++) for (let c = 0; c < M.W; c++) {
+      if (!M.walkable(c, r)) continue;
+      const q = M.cellPos(c, r);
+      if (G.Phys.blocked(q.x, q.y + .01, q.z, G.bodyHeight(0) - .01)) continue;
+      assert(G.dist2D(q, foe.pos) <= distance, 'with no cover, fallback uses the farthest available cell');
+    }
+  } finally {
+    M.clearLine = line; game.agents = roster;
+    elem('btnQuit').emit('click');
+  }
   console.log('Sound marker direction, expiry and pool; safe practice respawns, protection, loadouts and scoring; round MVP and death damage summary passed');
 }
 function ragdollChecks() {

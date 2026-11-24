@@ -2,51 +2,51 @@
   {
     "id": "spawn",
     "name": "Attacker spawn (T)",
-    "x": -1,
-    "y": 1.7,
+    "x": 7,
+    "y": 0,
     "z": 39,
     "yaw": 0,
     "pitch": -0.05,
-    "note": "Map cell (24, 44); facing north along mid street."
+    "note": "Cell (28, 44), looking north from attacker spawn into the loading dock. Y is the floor height passed to debugView."
   },
   {
     "id": "mid",
-    "name": "Mid street gate",
+    "name": "Mid street and crosscut",
     "x": 1,
-    "y": 1.7,
-    "z": -5,
-    "yaw": 1.57,
-    "pitch": 0,
-    "note": "Map cell (25, 22) on the upper mid connector."
+    "y": 0,
+    "z": 15,
+    "yaw": 0,
+    "pitch": -0.01,
+    "note": "Cell (25, 32), looking over the low wall up mid. The crosscut to the bazaar opens on the right."
   },
   {
     "id": "siteA",
     "name": "Bomb site A (market)",
-    "x": 27,
-    "y": 1.7,
-    "z": -21,
-    "yaw": -1.2,
-    "pitch": 0,
-    "note": "Near M.sites.A center at cell (38, 14)."
+    "x": 29,
+    "y": 0.8,
+    "z": -25,
+    "yaw": 2.82,
+    "pitch": -0.07,
+    "note": "Cell (39, 12) on the platform, looking south toward the new arcade and its cover."
   },
   {
     "id": "siteB",
     "name": "Bomb site B (colonnade)",
-    "x": -31,
-    "y": 1.7,
-    "z": -23,
-    "yaw": 0.6,
-    "pitch": 0,
-    "note": "Near M.sites.B center at cell (9, 13)."
+    "x": -33,
+    "y": 0,
+    "z": -17,
+    "yaw": 3.02,
+    "pitch": -0.015,
+    "note": "Cell (8, 16), looking over the low wall toward the split tunnel entrances."
   },
   {
     "id": "bot",
     "name": "Defender lane (bot sightline)",
-    "x": 1,
-    "y": 1.7,
-    "z": -35,
-    "yaw": -1.57,
+    "x": -1,
+    "y": 0,
+    "z": -11,
+    "yaw": 0,
     "pitch": 0,
-    "note": "North of attacker push; live bots often visible toward def spawn after autostart."
+    "note": "Cell (24, 19), looking north through the mid gate toward the defender hold at (24, 12)."
   }
 ]

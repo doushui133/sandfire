@@ -42,6 +42,10 @@
   R(26, 18, 27, 19, '#'); R(20, 30, 21, 32, ',');    // recessed stall court
   R(36, 27, 38, 28, 'h'); R(36, 22, 37, 26, ',');    // bazaar side passage
   R(34, 21, 37, 22, ','); R(34, 17, 35, 20, ',');
+  // A's south arcade branches off the bazaar street, between its two old approaches.
+  R(37, 17, 38, 19, '='); R(37, 20, 39, 21, ',');
+  // B's second tunnel bends around the stone pier before reaching the colonnade.
+  R(7, 20, 8, 23, 'u'); R(6, 22, 8, 23, 'u');
 
   // West market house, with a bend into the recessed mid stall court.
   R(10, 25, 14, 29, 'h'); P(9, 28, 'h');
@@ -53,6 +57,8 @@
   R(30, 28, 34, 32, ','); R(35, 29, 35, 32, ',');
   R(28, 30, 29, 30, ','); R(36, 31, 38, 31, 'h');
   R(32, 30, 33, 31, 'o'); P(34, 28, 'C'); P(35, 32, 'c');
+  // Offset crosscut from exposed mid to the bazaar side passage and north of the well.
+  R(28, 25, 32, 26, ','); R(31, 26, 35, 27, ',');
 
   // Defender overlook. The slit is shorter than a fully crouched player.
   R(17, 9, 20, 11, 'u'); R(21, 10, 22, 10, 'u');
@@ -66,14 +72,17 @@
   R(12, 8, 15, 11, '^'); R(12, 12, 15, 12, 's');
   P(6, 11, '+'); P(9, 11, '+'); P(6, 15, '+'); P(9, 15, '+');
   P(3, 9, 'c'); P(3, 10, 'C'); P(13, 16, 'C'); P(14, 16, 'c'); P(10, 18, 'c'); R(7, 13, 8, 13, 'w');
+  P(8, 17, 'w'); P(6, 19, 'C');
   // site A dressing
   R(36, 9, 41, 12, '^'); R(37, 13, 40, 13, 's'); R(35, 10, 35, 11, 's');
   R(37, 10, 40, 10, 't'); R(37, 8, 40, 9, 'L');      // dyers' drying terrace
   P(41, 8, 't'); P(42, 8, '^'); P(43, 8, 's');        // side stairs from the north arcade
   P(32, 8, 'C'); P(33, 8, 'c'); P(45, 8, 'c'); P(45, 9, 'C'); P(44, 14, 'c'); R(34, 14, 35, 14, 'w'); P(46, 16, 'p');
+  P(41, 15, 'C'); P(37, 15, 's');
+  const raisedCrate = { c: 37, r: 15 };
   // spawns, mid, streets
   P(19, 3, 'c'); P(29, 3, 'C'); P(13, 2, 'b'); P(36, 2, 'c');
-  P(26, 12, 'c'); P(23, 19, 'C'); P(27, 25, 'c'); R(23, 29, 24, 29, 'w');
+  P(26, 12, 'c'); P(23, 19, 'C'); P(27, 23, 'c'); P(25, 26, 'w'); R(23, 29, 24, 29, 'w');
   P(21, 31, 'c'); P(25, 35, 'w'); P(11, 17, 'C'); P(36, 15, 'C');
   P(17, 42, 'C'); P(32, 46, 'c'); P(20, 46, 'b'); P(29, 42, 'b'); P(16, 47, 'p'); P(33, 41, 'p');
   P(3, 27, 'b'); P(45, 36, 'b'); P(8, 40, 'b'); P(8, 27, 'c'); P(4, 38, 'C'); P(3, 46, 'p'); P(45, 46, 'p');
@@ -94,7 +103,8 @@
   M.inside = (c, r) => c >= 0 && r >= 0 && c < W && r < H;
   M.ch = (c, r) => (M.inside(c, r) ? g[r][c] : '#');
   M.windowAt = (c, r) => M.ch(c, r) === 'W' ? windows.get(r * W + c) : undefined;
-  M.walkable = (c, r) => FLOOR[M.ch(c, r)] !== undefined;
+  const hasRaisedCrate = (c, r) => c === raisedCrate.c && r === raisedCrate.r;
+  M.walkable = (c, r) => FLOOR[M.ch(c, r)] !== undefined && !hasRaisedCrate(c, r);
   M.floorH = (c, r) => FH[M.ch(c, r)] || 0;
   // what a foot lands on: the town's sand (open ground at floor level) or stone (paving, tiles, steps, crates)
   M.surfaceAt = (x, y, z) => {
@@ -141,13 +151,13 @@
   };
   const hold = (site, c, r, lc, lr) => ({ site, pos: M.cellPos(c, r), yaw: G.yawTo(M.cellX(lc) - M.cellX(c), M.cellZ(lr) - M.cellZ(r)) });
   M.holds = [
-    hold('A', 39, 8, 43, 19), hold('A', 35, 9, 34, 17), hold('A', 45, 13, 43, 19), hold('A', 44, 9, 38, 15),
-    hold('B', 10, 9, 4, 20), hold('B', 13, 14, 17, 17), hold('B', 3, 15, 4, 21), hold('B', 13, 9, 16, 18),
-    hold('M', 24, 12, 24, 22), hold('M', 17, 10, 13, 10),
+    hold('A', 39, 8, 44, 18), hold('A', 35, 9, 34, 17), hold('A', 45, 13, 44, 19), hold('A', 39, 12, 37, 18),
+    hold('B', 10, 8, 4, 20), hold('B', 13, 14, 16, 17), hold('B', 8, 16, 8, 21), hold('B', 13, 9, 16, 18),
+    hold('M', 24, 12, 25, 24), hold('M', 17, 10, 13, 10),
   ];
   M.routes = {
-    A: [cp([[42, 44], [42, 30], [43, 21]]), cp([[42, 33], [38, 27], [37, 22], [34, 18]]), cp([[28, 41], [26, 38], [30, 30], [36, 31], [43, 21]])],
-    B: [cp([[6, 44], [5, 35], [4, 27], [4, 22]]), cp([[14, 39], [24, 35], [24, 24], [19, 21], [18, 17]]), cp([[25, 36], [21, 29], [16, 28], [9, 28], [4, 22]])],
+    A: [cp([[42, 44], [42, 30], [43, 21]]), cp([[42, 33], [38, 27], [38, 21], [38, 18]]), cp([[28, 41], [26, 38], [27, 26], [32, 26], [36, 27], [37, 22], [34, 18]])],
+    B: [cp([[6, 44], [5, 35], [4, 27], [4, 22]]), cp([[14, 39], [24, 35], [24, 24], [19, 21], [18, 17]]), cp([[25, 36], [21, 29], [16, 28], [9, 28], [4, 23], [7, 22], [8, 20]])],
   };
 
   // ---------- colliders ----------
@@ -192,8 +202,9 @@
   })();
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
     const ch = g[r][c], x0 = OX + c * CELL, z0 = OZ + r * CELL;
-    if ('cCkK'.includes(ch)) {
-      addBox(x0 + 0.15, 0, z0 + 0.15, x0 + 1.85, 1.05, z0 + 1.85, 'crate');
+    if ('cCkK'.includes(ch) || hasRaisedCrate(c, r)) {
+      const y = M.floorH(c, r);
+      addBox(x0 + 0.15, y, z0 + 0.15, x0 + 1.85, y + 1.05, z0 + 1.85, 'crate');
       if (ch === 'C' || ch === 'K') addBox(x0 + 0.4, 1.05, z0 + 0.3, x0 + 1.7, 2.05, z0 + 1.6, 'crate');
     } else if (ch === 'W') {
       const { sill, head, top } = M.windowAt(c, r);
@@ -263,8 +274,9 @@
 
   // ---------- ray cast against boxes and the ground (grid DDA) ----------
   const hit = { t: 0, nx: 0, ny: 0, nz: 0, box: null };
+  let crateContinuation = null;
   function rayBox(b, ox, oy, oz, dx, dy, dz, tmax) {
-    let t0 = 0, t1 = tmax, n = 0, sgn = 0;
+    let t0 = -Infinity, t1 = tmax, n = 0, sgn = 0;
     const ax = [[b.x0, b.x1, ox, dx], [b.y0, b.y1, oy, dy], [b.z0, b.z1, oz, dz]];
     for (let a = 0; a < 3; a++) {
       const [lo, hi, o, d] = ax[a];
@@ -275,11 +287,15 @@
       if (tb < t1) t1 = tb;
       if (t0 > t1) return -1;
     }
-    if (t0 <= 0) return -1;
+    if (t0 <= 0 && !(ox > b.x0 && ox < b.x1 && oy > b.y0 && oy < b.y1 && oz > b.z0 && oz < b.z1)) return -1;
     hit.nx = n === 0 ? sgn : 0; hit.ny = n === 1 ? sgn : 0; hit.nz = n === 2 ? sgn : 0;
-    return t0;
+    return Math.max(0, t0);
   }
   M.raycast = function (ox, oy, oz, dx, dy, dz, maxDist) {
+    const next = crateContinuation;
+    crateContinuation = null;
+    const pierced = next && maxDist === next.dist && dx === next.dx && dy === next.dy && dz === next.dz &&
+      ox === next.x && oy === next.y && oz === next.z ? next.box : null;
     let best = maxDist, bn = [0, 0, 0], bb = null;
     if (dy < -1e-6) { const tg = -oy / dy; if (tg > 0 && tg < best) { best = tg; bn = [0, 1, 0]; } }
     let c = M.colOf(ox), r = M.rowOf(oz);
@@ -294,8 +310,10 @@
         const bin = bins[r * W + c];
         for (let k = 0; k < bin.length; k++) {
           const i = bin[k]; if (marks[i] === stamp) continue; marks[i] = stamp;
-          const t = rayBox(M.boxes[i], ox, oy, oz, dx, dy, dz, best);
-          if (t > 0 && t < best) { best = t; bn = [hit.nx, hit.ny, hit.nz]; bb = M.boxes[i]; }
+          const b = M.boxes[i];
+          if (b === pierced) continue;
+          const t = rayBox(b, ox, oy, oz, dx, dy, dz, best);
+          if (t >= 0 && t < best) { best = t; bn = [hit.nx, hit.ny, hit.nz]; bb = b; }
         }
       } else if (tEnter > 0) break;
       const tExit = Math.min(tmx, tmz);
@@ -304,6 +322,11 @@
       if (tmx < tmz) { c += stepC; tmx += tdx; } else { r += stepR; tmz += tdz; }
     }
     if (best >= maxDist) return null;
+    // Match the immediate follow-up trace in weapons.js, which starts 1 mm past entry.
+    if (maxDist === 220 && best > 0 && bb && bb.kind === 'crate') {
+      const start = best + 0.001;
+      crateContinuation = { x: ox + dx * start, y: oy + dy * start, z: oz + dz * start, dx, dy, dz, dist: maxDist - start, box: bb };
+    }
     return { t: best, nx: bn[0], ny: bn[1], nz: bn[2], box: bb, x: ox + dx * best, y: oy + dy * best, z: oz + dz * best };
   };
   M.clearLine = function (a, b) {
@@ -416,7 +439,8 @@
     const col = { sand: '#7c6a4c', paved: '#6f6250', tiles: '#7a6a52', step: '#8a7a5c', plat: '#93825f', stair: '#ab976d', terrace: '#c4ae82' };
     for (let r = 0; r < H; r++) for (let cc = 0; cc < W; cc++) {
       const ch = g[r][cc], f = FLOOR[ch];
-      if (f) x.fillStyle = col[f];
+      if (hasRaisedCrate(cc, r)) x.fillStyle = '#4b3f2e';
+      else if (f) x.fillStyle = col[f];
       else if ('cCkKbow+pW'.includes(ch)) x.fillStyle = '#4b3f2e';
       else continue;
       x.fillRect(cc * px, r * px, px, px);
