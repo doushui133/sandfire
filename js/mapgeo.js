@@ -473,9 +473,14 @@
     // ---------- lightmap charts (shelf packing) ----------
     const T = MG.TEXEL;
     for (const q of quads) {
-      const lu = Math.hypot(q.u[0], q.u[1], q.u[2]), lv = Math.hypot(q.v[0], q.v[1], q.v[2]);
-      q.tw = Math.max(2, Math.ceil(lu * T) + 1);
-      q.th = Math.max(2, Math.ceil(lv * T) + 1);
+      // The atlas must pack identically in Node (where it is baked) and every browser. Math.hypot is not
+      // exactly rounded and differed between engines on one quad (3.25 vs 3.2500000000000004), which shifted
+      // the whole packing and lit the town with the wrong texels. sqrt of a sum of squares is exact, and the
+      // small tolerance keeps whole texel counts from rounding up on noise.
+      const lu = Math.sqrt(q.u[0] * q.u[0] + q.u[1] * q.u[1] + q.u[2] * q.u[2]);
+      const lv = Math.sqrt(q.v[0] * q.v[0] + q.v[1] * q.v[1] + q.v[2] * q.v[2]);
+      q.tw = Math.max(2, Math.ceil(lu * T - 1e-6) + 1);
+      q.th = Math.max(2, Math.ceil(lv * T - 1e-6) + 1);
       if (q.tw > MG.ATLAS_W - 2) q.tw = MG.ATLAS_W - 2;
     }
     const order = quads.map((q, i) => i).sort((a, b) => quads[b].th - quads[a].th || quads[b].tw - quads[a].tw || a - b);

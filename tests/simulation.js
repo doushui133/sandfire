@@ -63,6 +63,20 @@ function load(name) { vm.runInThisContext(fs.readFileSync(path.join(root,'js',na
 for (const id of ['look','core','audio','music','touch','map','mapgeo','gfx','video','geom','gunmodels','fx','weapons','nades','viewmodel','player','bots','game','hud','main']) load(id);
 const G=global.G, W=G.Weapons, N=G.Nades, game=G.Game;
 const V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
+// The baked lightmap must match the map geometry, and the atlas packing must not depend on floating-point
+// noise (Math.hypot differs between JS engines: a one-ulp change once shifted the whole atlas in browsers).
+{
+  const meta=JSON.parse(fs.readFileSync(path.join(root,'assets','lightmap.json'),'utf8'));
+  const hypot=Math.hypot;
+  const exact=G.MapGeo.build();
+  Math.hypot=(...a)=>hypot(...a)*(1+4e-16);
+  let noisy;
+  try { noisy=G.MapGeo.build(); } finally { Math.hypot=hypot; }
+  assert.equal(noisy.checksum,exact.checksum,'atlas packing depends on Math.hypot rounding');
+  assert.equal(exact.checksum,meta.checksum,'assets/lightmap.* is stale: run node tools/bake.js . vendor/three.min.js');
+  assert(exact.atlasW===meta.w && exact.atlasH===meta.h);
+  console.log('Lightmap matches the map geometry, packing independent of floating-point noise');
+}
 Math.random=G.seeded(20261122);
 const gestures=[];
 G.BotModel={create:noop,remove:noop,update:noop,updateBlobs:noop,ragdollPoint:()=>null,
