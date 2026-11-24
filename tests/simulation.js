@@ -578,8 +578,8 @@ assert(N.blocks(G.eyePos(foe),G.eyePos(me)));
 foe.ai.visT=0; G.Bots.update(.01); assert(!foe.ai.targetVisible);
 tick(20); assert.equal(N.smokes.length,0);
 foe.ai.visT=0; G.Bots.update(.01);
-assert(foe.ai.targetVisible && foe.ai.reactUntil-G.time>=.55);
-assert(foe.ai.reactUntil-G.time<=.8);
+assert(foe.ai.targetVisible && foe.ai.reactUntil-G.time>=.28);
+assert(foe.ai.reactUntil-G.time<=.42);
 console.log('Both fire grenades, area damage, extinguishing, smoke lifetime and delayed target reacquisition passed');
 
 // Fire into a thin low wall in both directions at speeds exceeding a cell per simulation tick.
@@ -1126,6 +1126,137 @@ function mapChecks() {
   console.log('Run times at ' + runSpeed + ' m/s:', JSON.stringify(times), 'A–B rotation', rotation.toFixed(1) + 's');
 }
 
+function botGunfightChecks() {
+  const B = G.Bots, M = G.Map, dt = 1 / 120;
+  const saved = { agents: game.agents, mode: game.mode, phase: game.phase, frozen: game.frozen, bomb: game.bomb, damage: game.damage };
+  const time = G.time, random = Math.random, player = G.Player.agent, plan = B.plan, fx = G.FX;
+  const query = M.query, raycast = M.raycast, clearLine = M.clearLine, findPath = M.findPath, visible = N.visible;
+  function range(distance, difficulty = 2, angle = 0, seed = 114) {
+    Math.random = G.seeded(seed);
+    G.time = 0; B.setDifficulty(difficulty);
+    const bot = game.makeAgent('def', '射手', false), enemy = game.makeAgent('atk', '靶标', true);
+    game.agents = [bot, enemy]; bot.alive = enemy.alive = true;
+    enemy.pos.set(-Math.sin(angle) * distance, 0, -Math.cos(angle) * distance);
+    bot.inv.primary = W.item('tr4'); bot.cur = 'primary';
+    B.resetPractice(bot); bot.ai.visT = 0;
+    return { bot, enemy };
+  }
+  function update() { G.time += dt; B.update(dt); }
+  function advance(sec) { for (let i = 0; i < Math.ceil(sec / dt); i++) update(); }
+  function firstShot(bot) {
+    while (bot.lastShot < 0 && G.time < 2) update();
+    assert(bot.lastShot > 0 && bot.ai.sightAt >= 0, 'the bot saw an exposed target and fired');
+    return bot.lastShot - bot.ai.sightAt;
+  }
+  try {
+    Object.assign(game, { mode: 'competitive', phase: 'live', frozen: false, bomb: { state: 'none' }, damage: () => ({ killed: false }) });
+    G.Player.agent = null; B.plan = null;
+    G.FX = { muzzle: noop, blood: noop, impact: noop, tracer: noop };
+    M.query = () => []; M.raycast = () => null;
+
+    let { bot, enemy } = range(1.8, 2, Math.PI);
+    advance(0.8);
+    assert(!bot.ai.targetVisible && bot.yaw === 0 && bot.lastShot < 0, 'an unheard enemy directly behind stays undetected');
+    B.hearStep(enemy); update();
+    assert(Math.abs(bot.yaw) > 0 && !bot.ai.targetVisible, 'a footstep starts a turn without revealing an enemy behind');
+    firstShot(bot);
+    assert(bot.lastShot - bot.ai.sightAt >= 0.17, 'hearing does not bypass visual reaction time');
+
+    ({ bot, enemy } = range(8, 2, Math.PI));
+    const opening = V(6, 0, 0);
+    M.clearLine = (from, to) => to.z < 2;
+    M.findPath = (from, to) => [from.clone(), opening, to.clone()];
+    B.hearStep(enemy); advance(0.65);
+    assert(Math.abs(G.wrapAngle(bot.yaw + Math.PI / 2)) < 0.10 && bot.lastShot < 0, 'an occluded source draws aim to the corner');
+    M.clearLine = clearLine; M.findPath = findPath;
+
+    // a head over cover is seen and shot at, but noticed later than a whole body
+    ({ bot } = range(10));
+    N.visible = (from, to) => to.y > 1.4;
+    const headOnly = firstShot(bot);
+    assert.equal(bot.ai.aimPart, 1, 'the bot aims at the only part it can see');
+    N.visible = visible;
+    const whole = firstShot(range(10).bot);
+    assert(headOnly > whole + 0.09, 'a head over cover takes longer to notice (' + headOnly.toFixed(3) + ' vs ' + whole.toFixed(3) + ' s)');
+
+    const windows = [[0.45, 0.70], [0.28, 0.42], [0.17, 0.27]];
+    windows.forEach(([min, max], difficulty) => {
+      for (let seed = 114; seed < 134; seed++) {
+        const delay = firstShot(range(8, difficulty, 0, seed).bot);
+        assert(delay >= min - 1e-6 && delay <= max + dt, 'difficulty ' + difficulty + ', first shot delay ' + delay);
+      }
+    });
+    const centered = firstShot(range(8, 1).bot), peripheral = firstShot(range(8, 1, 0.68).bot);
+    assert(peripheral > centered + 0.09, 'an off-crosshair sighting takes longer to engage');
+    assert(firstShot(range(8, 1, 0.14).bot) > centered, 'a bot already on the angle reacts sooner');
+
+    ({ bot, enemy } = range(10));
+    const threat = game.makeAgent(enemy.team, '威胁', true);
+    threat.alive = true; threat.hp = 30; threat.yaw = Math.PI; threat.pos.set(1, 0, -11); game.agents.push(threat);
+    update(); assert.equal(bot.ai.target, enemy);
+    advance(0.12); assert.equal(bot.ai.target, threat, 'the wounded enemy aiming at the bot takes priority');
+
+    for (const [distance, min, max] of [[8, 7, 10], [20, 3, 5], [42, 1, 2]]) {
+      ({ bot } = range(distance));
+      if (distance > 12) bot.vel.x = W.maxSpeed(bot);
+      firstShot(bot);
+      if (distance > 12) assert(Math.hypot(bot.vel.x, bot.vel.z) <= W.maxSpeed(bot) * 0.30, 'the first ranged shot follows braking');
+      let count = 1, last = bot.lastShot;
+      while (G.time < 3) {
+        update();
+        if (bot.lastShot === last) continue;
+        if (bot.lastShot - last > 0.18) break;
+        last = bot.lastShot; count++;
+      }
+      assert(bot.lastShot > last && count >= min && count <= max, distance + ' m first burst contained ' + count + ' rounds');
+      if (distance > 28) assert(bot.lastShot - last >= 0.48, 'long shots leave time for recoil and spread recovery');
+    }
+
+    ({ bot } = range(10));
+    const mate = game.makeAgent(bot.team, '队友', true);
+    mate.alive = true; mate.pos.z = -5; game.agents.push(mate);
+    advance(1);
+    assert(bot.ai.targetVisible && bot.lastShot < 0 && bot.inv.primary.clip === bot.inv.primary.def.clip, 'a teammate blocks the firing lane');
+    mate.pos.z = -14; advance(0.35);
+    assert(bot.lastShot < 0, 'a teammate directly beyond the target also blocks the firing lane');
+    mate.pos.x = 3; advance(0.25);
+    assert(bot.lastShot > 0, 'firing resumes when the teammate moves clear');
+
+    ({ bot } = range(8));
+    bot.inv.primary.clip = 0;
+    advance(0.02);
+    assert.equal(bot.cur, 'pistol', 'an empty primary is traded for a loaded sidearm up close');
+    ({ bot, enemy } = range(8));
+    enemy.alive = false; bot.inv.primary.clip = 4;
+    advance(0.05);
+    assert(bot.inv.primary.reloading, 'a low magazine is reloaded out of contact');
+
+    ({ bot, enemy } = range(6));
+    const sniper = bot.inv.primary = W.item('r90');
+    firstShot(bot);
+    assert(sniper.clip === 4 && !sniper.zoom && !sniper.rezoom, 'a quick-scoped shot leaves the sniper unscoped');
+    const shotPos = bot.pos.clone(); enemy.alive = false; advance(0.25);
+    assert(G.dist2D(shotPos, bot.pos) > 0.2, 'the sniper repositions during the bolt cycle');
+
+    range(10);
+    game.mode = 'practice'; game.agents = [];
+    for (let i = 0; i < 10; i++) {
+      const a = game.makeAgent(i < 5 ? 'def' : 'atk', '巡逻', false);
+      a.alive = true; a.pos.set(i % 5 - 2, 0, i < 5 ? 5 : -5); a.yaw = i < 5 ? 0 : Math.PI;
+      B.resetPractice(a); a.ai.visT = 0; game.agents.push(a);
+    }
+    let samples = 0;
+    N.visible = (...args) => { samples++; return visible(...args); };
+    for (let i = 0; i < 3; i++) { samples = 0; update(); assert(samples <= 12, 'shared sight-ray budget'); }
+    assert(game.agents.every(a => a.ai.targetVisible), 'round-robin serves all ten bots');
+    console.log('Bot sight budget, silhouette and rear FOV, footstep and corner turns, reaction windows, range bursts, braking, teammate hold fire, reload, sidearm and sniper checks passed');
+  } finally {
+    Object.assign(game, saved);
+    G.time = time; Math.random = random; G.Player.agent = player; G.FX = fx; B.plan = plan; B.setDifficulty(G.settings.diff);
+    M.query = query; M.raycast = raycast; M.clearLine = clearLine; M.findPath = findPath; N.visible = visible;
+  }
+}
+
 function botRoundChecks() {
   const M = G.Map, dt = 1 / 30, rounds = 12;
   const random = Math.random, physics = G.Phys.step, findPath = M.findPath;
@@ -1137,8 +1268,8 @@ function botRoundChecks() {
     if (!path) failedPaths.add(from);
     return path;
   };
-  G.Phys.step = function (a, x, z, speed, jump, elapsed) {
-    physics(a, x, z, speed, jump, elapsed);
+  G.Phys.step = function (a, x, z, speed, jump, elapsed, brake) {
+    physics(a, x, z, speed, jump, elapsed, brake);
     if (game.phase !== 'live') return;
     let p = progress.get(a);
     if (!p) progress.set(a, p = { pos: a.pos.clone(), lastMove: G.time, duration: 0 });
@@ -1837,6 +1968,7 @@ async function soundChecks() {
   }
 }
 mapChecks();
+botGunfightChecks();
 botRoundChecks();
 musicChecks();
 captureChecks().then(() => {
