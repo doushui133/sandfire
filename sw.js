@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-globals */
 // Bump CACHE_VERSION when shipping changes to js/ or other cached assets (see README).
-const CACHE_VERSION = 'sandfire-v8';
+const CACHE_VERSION = 'sandfire-v9';
 const CACHE = CACHE_VERSION;
 
 const INDEX = /\/(?:index\.html)?$/;

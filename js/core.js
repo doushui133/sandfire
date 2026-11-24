@@ -139,7 +139,7 @@ window.G = window.G || {};
   };
 
   G.embedded = window.top !== window;
-  const blockKeys = /^(Tab|Space|Arrow(Up|Down|Left|Right)|Digit[0-9]|Key[WASDCQRBEGM]|Shift(Left|Right)|Control(Left|Right)|Escape)$/;
+  const blockKeys = /^(Tab|Space|Arrow(Up|Down|Left|Right)|Digit[0-9]|Key[WASDCQRBEGMF]|Shift(Left|Right)|Control(Left|Right)|Escape)$/;
   const touchMode = () => G.Touch && G.Touch.enabled;
   window.addEventListener('keydown', (e) => {
     if (!input.active || touchMode() || G.paused) return;

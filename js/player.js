@@ -199,15 +199,17 @@
     if (P.orbit && P.clock >= P.orbit.end) P.orbit = null;
     if (inp.hit('KeyB')) G.HUD.toggleBuy();
     G.HUD.showScores(touch ? G.HUD.scoresOpen : inp.down('Tab'));
-    if (!a.alive) { G.HUD.edge(0); spectate(realDt); return; }
-    if (P.orbit) { G.HUD.edge(0); return; }
+    if (!a.alive) { G.HUD.edge(0); P.fov = 0; spectate(realDt); return; }
+    if (P.orbit) { G.HUD.edge(0); P.fov = 0; return; }
 
     // look (while the buy menu is open, the mouse drives its cursor instead)
     const it = G.Weapons.current(a);
-    const zoom = it && it.def.scope ? it.zoom : 0;
-    const zf = zoom === 2 ? 0.2 : zoom === 1 ? 0.45 : 1;
+    const zoom = it && it.def.scope ? it.zoom : 0, aiming = G.Weapons.aiming(it);
+    // Aimed down the sights the view narrows and the mouse slows to match (the same turn per screen distance).
+    const adsFov = aiming ? G.Weapons.adsFov(it.def) : 74;
+    const zf = zoom === 2 ? 0.2 : zoom === 1 ? 0.45 : aiming ? Math.tan(adsFov * Math.PI / 360) / Math.tan(37 * Math.PI / 180) : 1;
     let scopeMul = 1;
-    if (zoom > 0) {
+    if (zoom > 0 || aiming) {
       const n = +(touch ? G.settings.touchScope : G.settings.scopeSens);
       scopeMul = n >= 0.2 && n <= 2 ? n : 1;
     }
@@ -216,7 +218,7 @@
     if (G.HUD.buyOpen) {
       if (inp.locked) G.HUD.moveCursor(inp.dx, inp.dy, inp.leftPressed);
     } else if (!G.Nades.wheel.open && (touch || inp.canAim())) {
-      if (touch) P.touchLook(a, realDt, sens, zoom > 0);
+      if (touch) P.touchLook(a, realDt, sens, zoom > 0 || aiming);
       else { a.yaw = G.wrapAngle(a.yaw - inp.dx * sens); a.pitch = G.clamp(a.pitch - inp.dy * sens, -1.53, 1.53); }
       if (!touch && inp.freeLook && inp.cursorIn) {
         edge = edgeTurn(inp.cursorX);
@@ -288,6 +290,7 @@
         if (inp.hit('Digit9')) W.selectGrenade(a, a.nades.molotov ? 'molotov' : 'incendiary');
       }
       if (inp.hit('KeyQ') && a.prevSlot) W.switchTo(a, a.prevSlot);
+      if (inp.hit('KeyF')) G.VM.inspect();
       if (inp.wheel) {
         const order = ['primary', 'pistol', 'knife', 'grenade', 'bomb'].filter((s) => (s === 'bomb' ? a.inv.bomb : a.inv[s]));
         const i = order.indexOf(a.cur);
@@ -310,7 +313,8 @@
     weaponControls.firePressed = (inp.leftPressed || automatic) && !stopFire;
     weaponControls.alt = inp.right && !stopFire;
     weaponControls.altPressed = inp.rightPressed && !stopFire;
-    weaponControls.reload = inp.hit('KeyR');
+    // no reloading from behind a menu or while planting or defusing (freeze time is fine, as in CS)
+    weaponControls.reload = inp.hit('KeyR') && !blockFire && !a.planting && !a.defusing;
     weaponControls.blocked = stopFire;
     W.update(a, dt, weaponControls);
 
@@ -325,8 +329,12 @@
     const sh = G.FX.shake * 0.02 + shotFov * 0.008 + (G.time < a.punchUntil ? 0.012 : 0);
     const pitch = a.pitch + a.recoilP * 0.5 + a.viewPunch + (Math.random() - 0.5) * sh;
     cam.rotation.set(G.clamp(pitch, -1.56, 1.56), a.yaw + a.recoilY * 0.5 + (Math.random() - 0.5) * sh, a.moveRoll + a.viewRoll, 'YXZ');
-    const baseFov = zoom === 2 ? 12 : zoom === 1 ? 32 : 74;
-    setFov(cam, baseFov * (1 + shotFov / 74 - 0.06 * G.clamp((P.slowUntil - P.clock) / 0.4, 0, 1)));
+    // a scope snaps in within a few frames and out at once; the sights ease in and out
+    const fovWant = zoom === 2 ? 12 : zoom === 1 ? 32 : adsFov;
+    if (!P.fov || (P.fovScoped && !zoom)) P.fov = fovWant;
+    else P.fov += (fovWant - P.fov) * (1 - Math.exp(-realDt * (zoom ? 30 : 14)));
+    P.fovScoped = zoom > 0;
+    setFov(cam, P.fov * (1 + shotFov / 74 - 0.06 * G.clamp((P.slowUntil - P.clock) / 0.4, 0, 1)));
 
     // is the player standing in shade? (dims the viewmodel)
     P.shadeT -= dt;

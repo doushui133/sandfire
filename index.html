@@ -81,9 +81,11 @@ input[type=checkbox]{accent-color:var(--sun);width:16px;height:16px;margin:0}
 #hitmarker::after{transform:rotate(-45deg)}
 #hitmarker.hs::before,#hitmarker.hs::after{background:var(--danger)}
 #hitmarker.kill{filter:drop-shadow(0 0 4px #fff)}
-#scope{position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,transparent 0,transparent 33vmin,#000 33.3vmin)}
-#scope::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:#000}
-#scope::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:#000}
+#scope{position:absolute;inset:0;pointer-events:none;--w:1px;background:radial-gradient(circle at 50% 50%,rgba(0,0,0,0) 0,rgba(0,0,0,0) 22vmin,rgba(4,12,18,.26) 31.4vmin,rgba(0,0,0,.88) 32.8vmin,#000 33.4vmin);animation:scopeIn .1s ease-out}
+#scope::before,#scope::after{content:"";position:absolute;inset:0}
+#scope::before{background:linear-gradient(#000,#000) left center/calc(50% - 14vmin) .7vmin no-repeat,linear-gradient(#000,#000) right center/calc(50% - 14vmin) .7vmin no-repeat,linear-gradient(#000,#000) center/100% var(--w) no-repeat}
+#scope::after{background:linear-gradient(#000,#000) center top/.7vmin calc(50% - 14vmin) no-repeat,linear-gradient(#000,#000) center bottom/.7vmin calc(50% - 14vmin) no-repeat,linear-gradient(#000,#000) center/var(--w) 100% no-repeat}
+@keyframes scopeIn{from{opacity:0;transform:scale(1.08)}to{opacity:1;transform:none}}
 #progress{position:absolute;left:50%;top:62%;transform:translateX(-50%);width:300px;text-align:center}
 #progressLabel{font-size:14px;margin-bottom:6px;text-shadow:0 1px 2px #000}
 #progressTrack{height:8px;background:rgba(0,0,0,.55);border:1px solid var(--line);border-radius:4px;overflow:hidden}
@@ -355,7 +357,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
           </section>
           <div class="keys mouse-only">
             <div><b>W A S D</b>移动</div><div><b>鼠标</b>瞄准 / 左键射击</div>
-            <div><b>右键</b>狙击开镜 / 匕首重击 / 近抛</div><div><b>空格</b>跳跃</div>
+            <div><b>右键</b>开镜（狙击两档，其他枪机瞄）/ 匕首重击 / 近抛</div><div><b>空格</b>跳跃</div>
             <div><b>C</b>蹲下（全屏键盘锁定时也可用 Ctrl）</div><div><b>Shift</b>静步</div>
             <div><b>R</b>换弹</div><div><b>1 至 5</b>主武器 / 手枪 / 匕首 / 投掷物 / 炸弹</div>
             <div><b>4</b>切换投掷物，按住弹出选择轮盘</div><div><b>6 7 8 9</b>直接拿高爆 / 闪光 / 烟雾 / 燃烧</div>
@@ -363,9 +365,9 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
             <div><b>E</b>按住安放 / 拆除炸弹，对着地上的枪按 E 交换</div>
             <div><b>B</b>购买（依次按分类和商品数字）</div><div><b>Tab</b>记分板</div>
             <div><b>G</b>丢弃武器</div><div><b>Esc</b>暂停</div>
-            <div><b>M</b>大地图</div>
+            <div><b>M</b>大地图</div><div><b>F</b>检视武器</div>
           </div>
-          <div class="note touch-only">左侧拖动摇杆移动，摇杆会跟着拇指走：轻推静步，推远奔跑，松开自动急停。右侧滑动瞄准：慢拖更准，快甩更快。开火键在右下，跳、蹲、换弹、开镜和「武器」围在旁边；点下方武器栏也能切枪。长按「投掷」选择投掷物，按住开火蓄力。靠近地上的枪「使用」会亮起，点它交换。右上角可打开地图。暂停或这里的「自定义键位」可拖动按钮。</div>
+          <div class="note touch-only">左侧拖动摇杆移动，摇杆会跟着拇指走：轻推静步，推远奔跑，松开自动急停。右侧滑动瞄准：慢拖更准，快甩更快。开火键在右下，跳、蹲、换弹、开镜和「武器」围在旁边；点下方武器栏也能切枪，点手里那把会检视；所有枪都能「开镜」。长按「投掷」选择投掷物，按住开火蓄力。靠近地上的枪「使用」会亮起，点它交换。右上角可打开地图。暂停或这里的「自定义键位」可拖动按钮。</div>
           <div class="note">进攻方：把炸弹安放在 A 点或 B 点并守住它，或消灭所有防守方。防守方：阻止安放、拆除炸弹，或撑到时间结束。先赢 8 局的一方获胜。<span class="mouse-only">需要键盘和鼠标。</span></div>
           <div id="iosTip" class="note" hidden>在 Safari 点「分享 → 添加到主屏幕」，从主屏幕打开即可全屏游玩。</div>
         </div>

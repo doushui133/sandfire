@@ -365,6 +365,12 @@
     else if (kind === 'bolt') { noise(o, t, 0.06, { type: 'bandpass', f: 1200, q: 2, g: 0.7 }); noise(o, t + 0.18, 0.06, { type: 'bandpass', f: 1700, q: 2, g: 0.7 }); }
     else if (kind === 'tick') tone(o, t, 0.03, { f: 1500, g: 0.12, wave: 'square' });
     else if (kind === 'zoom') noise(o, t, 0.028, { type: 'bandpass', f: 2600, q: 2.2, g: 0.3 });
+    // aiming down the sights: a soft shift of gear and cloth
+    else if (kind === 'ads') { noise(o, t, 0.07, { type: 'bandpass', f: 900, q: 1, g: 0.22 }); noise(o, t + 0.02, 0.025, { type: 'highpass', f: 3000, g: 0.07 }); }
+    // inspecting: the weapon turned in the hands, the knife tossed into a spin and caught
+    else if (kind === 'inspect') { noise(o, t, 0.14, { type: 'bandpass', f: 1100, q: 0.8, g: 0.2 }); noise(o, t + 0.09, 0.06, { type: 'bandpass', f: 1700, q: 1.4, g: 0.12 }); }
+    else if (kind === 'flip') noise(o, t, 0.26, { type: 'bandpass', f: 1500, f2: 3600, q: 1.2, g: 0.16 });
+    else if (kind === 'catch') { noise(o, t, 0.035, { type: 'bandpass', f: 850, q: 1.6, g: 0.4 }); tone(o, t, 0.05, { f: 2900, g: 0.04 }); }
     else if (kind === 'pickup') {
       noise(o, t, 0.05, { type: 'bandpass', f: 1250, q: 1.3, g: 0.34 });
       noise(o, t + 0.045, 0.04, { type: 'highpass', f: 3300, g: 0.18 });

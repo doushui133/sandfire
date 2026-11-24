@@ -8,7 +8,94 @@
   let scene, cam, holder, gunMesh, magMesh, armsMesh, flash, flash2, gunMat, armMats = {};
   const guns = {};
   let curId = null, curTeam = null;
-  const st = { bob: 0, swayX: 0, swayY: 0, lagX: 0, lagZ: 0, kick: 0, kickRot: 0, kickSide: 0, reloadT: -1, reloadDur: 1, drawT: 1, swingT: -1, heavy: false, flashT: 0, land: 0, amb: new THREE.Color(0.5, 0.5, 0.5) };
+  const st = { bob: 0, swayX: 0, swayY: 0, lagX: 0, lagZ: 0, kick: 0, kickRot: 0, kickSide: 0, reloadT: -1, reloadDur: 1, drawT: 1, flashT: 0, land: 0, amb: new THREE.Color(0.5, 0.5, 0.5),
+    move: null, moveT: 0, moveId: null, cue: 0, fade: 0, slash: 0, slashAt: -9, ads: 0 };
+  VM.state = st;   // read by the tests
+
+  // ---------- keyframed moves: inspecting the weapon, the knife's slashes and stab ----------
+  // Each key: [time (s), x, y, z (view-space offset), rx, ry, rz (added to the hold angles), roll about the
+  // forearm, spin of the knife in the hand (about the blade's flat), height the knife is tossed]. The weapon
+  // turns about the right hand's grip, so the hand stays where the offsets put it and the wrist does the work.
+  // The arms are rigid with the weapon: big turns about the grip swing the forearm, so the attacks move the
+  // hand and turn the blade by rolling the forearm, and the inspects keep the forearm hanging below the hand.
+  const NCH = 9;
+  const MOVES = {
+    // a gun: turned muzzle-left and canted to show its left side, then raised and rolled the other way to show
+    // the ejection port side (moderate rolls: the support hand stays on the handguard)
+    gunInspect: { dur: 3.05, inspect: true, cues: [[0, 'inspect'], [1.3, 'inspect']], keys: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0.45, -0.05, 0.035, 0.03, 0.12, 0.72, -0.5, 0, 0, 0],
+      [1.2, -0.055, 0.04, 0.035, 0.15, 0.8, -0.58, 0, 0, 0],
+      [1.75, -0.07, 0.05, 0, 0.35, -0.12, 0.7, 0, 0, 0],
+      [2.4, -0.075, 0.055, 0.005, 0.38, -0.15, 0.76, 0, 0, 0],
+      [3.05, 0, 0, 0, 0, 0, 0, 0, 0, 0]] },
+    // the knife: raised tip up-left with the flat of the blade to the eye, tossed into a spin and caught, then
+    // turned tip up-right to show the other side, and lowered
+    knifeInspect: { dur: 3.4, inspect: true, cues: [[0, 'inspect'], [1.3, 'flip'], [1.8, 'catch']], keys: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0.42, -0.07, 0.045, 0.03, 1.1, 0.19, -1.15, 0, 0, 0],
+      [1.15, -0.075, 0.05, 0.035, 1.16, 0.25, -1.25, 0, 0, 0],
+      [1.3, -0.07, 0.035, 0.03, 1.1, 0.22, -1.2, 0, 0, 0],
+      [1.55, -0.07, 0.06, 0.03, 1.12, 0.22, -1.2, 0, -3.14, 0.07],
+      [1.8, -0.07, 0.035, 0.03, 1.1, 0.22, -1.2, 0, -6.283, 0],
+      [2.3, -0.11, 0.085, -0.02, 1.25, -0.6, 0.95, 0, -6.283, 0],
+      [2.8, -0.105, 0.088, -0.02, 1.3, -0.65, 1, 0, -6.283, 0],
+      [3.4, 0, 0, 0, 0, 0, 0, 0, -6.283, 0]] },
+    // light attacks alternate: a forehand slash from the upper right across to the left with the edge leading,
+    // then a backhand from the left
+    slashR: { dur: 0.42, keys: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0.06, 0.04, 0.06, 0.02, 0.1, -0.2, 0, -0.7, 0, 0],
+      [0.15, -0.24, -0.02, -0.08, -0.15, 0.45, 0, -1, 0, 0],
+      [0.24, -0.28, -0.06, -0.05, -0.2, 0.5, 0, -0.9, 0, 0],
+      [0.42, 0, 0, 0, 0, 0, 0, 0, 0, 0]] },
+    slashL: { dur: 0.42, keys: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0.07, -0.2, 0.06, -0.03, 0.12, 0.45, 0, 0.4, 0, 0],
+      [0.16, -0.02, -0.02, -0.09, -0.1, -0.15, 0, 0.5, 0, 0],
+      [0.25, 0.02, -0.05, -0.06, -0.15, -0.2, 0, 0.45, 0, 0],
+      [0.42, 0, 0, 0, 0, 0, 0, 0, 0, 0]] },
+    // heavy attack: a short draw back, then a thrust into the middle with the blade turned flat
+    stab: { dur: 0.75, keys: [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0.08, 0.02, 0.03, 0.05, 0.15, -0.1, 0, -0.3, 0, 0],
+      [0.17, -0.06, 0, -0.2, -0.35, 0.05, 0, -1, 0, 0],
+      [0.36, -0.07, -0.01, -0.19, -0.37, 0.07, 0, -1.05, 0, 0],
+      [0.75, 0, 0, 0, 0, 0, 0, 0, 0, 0]] },
+  };
+  // A cubic through the keys. A key where a channel turns round gets a flat tangent and other tangents are
+  // limited (Fritsch-Carlson), so a channel never overshoots its keys.
+  function slope(keys, k, c) {
+    if (k === 0 || k === keys.length - 1) return 0;
+    const p = keys[k - 1], q = keys[k], r = keys[k + 1];
+    const d0 = (q[c] - p[c]) / (q[0] - p[0]), d1 = (r[c] - q[c]) / (r[0] - q[0]);
+    if (d0 * d1 <= 0) return 0;
+    const m = (r[c] - p[c]) / (r[0] - p[0]), lim = 3 * Math.min(Math.abs(d0), Math.abs(d1));
+    return Math.abs(m) > lim ? Math.sign(m) * lim : m;
+  }
+  function sampleMove(keys, t, out) {
+    const n = keys.length;
+    if (t >= keys[n - 1][0]) { for (let c = 0; c < NCH; c++) out[c] = keys[n - 1][c + 1]; return out; }
+    let k = 0;
+    while (k < n - 2 && keys[k + 1][0] <= t) k++;
+    const a = keys[k], b = keys[k + 1], h = b[0] - a[0], s = G.clamp((t - a[0]) / h, 0, 1);
+    const s2 = s * s, s3 = s2 * s;
+    const h00 = 2 * s3 - 3 * s2 + 1, h10 = s3 - 2 * s2 + s, h01 = -2 * s3 + 3 * s2, h11 = s3 - s2;
+    for (let c = 1; c <= NCH; c++) out[c - 1] = h00 * a[c] + h01 * b[c] + h * (h10 * slope(keys, k, c) + h11 * slope(keys, k + 1, c));
+    return out;
+  }
+  VM.MOVES = MOVES; VM.sampleMove = sampleMove;
+  const pose = new Float32Array(NCH), shown = new Float32Array(NCH), faded = new Float32Array(NCH);
+  function startMove(name, id) {
+    stopMove();
+    st.move = MOVES[name]; st.moveName = name; st.moveT = 0; st.moveId = id; st.cue = 0;
+  }
+  // an interrupted move eases back from where it was instead of snapping
+  function stopMove() {
+    if (!st.move) return;
+    faded.set(shown); st.fade = 1;
+    st.move = null; st.moveName = '';
+  }
   // where the gun sits in view (x right, y up, z forward is negative)
   const BASE = {
     ar7: [0.14, -0.19, -0.41], tr4: [0.14, -0.19, -0.4], v9: [0.135, -0.172, -0.37], r90: [0.15, -0.2, -0.4],
@@ -285,10 +372,15 @@
       }
       pos.toArray(outP, (offset+i)*3); norm.normalize().toArray(outN, (offset+i)*3);
     }
+    return elbow.sub(wrist).normalize();   // the forearm, wrist to elbow (the inspect turns the hand about it)
   }
   function buildArms(id, team) {
     const data = realArms[team];
-    if (!data) return proceduralArms(id, team);
+    if (!data) {
+      const geo = proceduralArms(id, team), hold = G.GunModels.get(id).hold;
+      geo.userData.fore = new THREE.Vector3(.3, hold === 'knife' ? -.5 : hold === 'rifle' || hold === 'pistol' ? -.42 : -.45, hold === 'knife' || hold === 'rifle' || hold === 'pistol' ? 1 : .8).normalize();
+      return geo;
+    }
     const gm = G.GunModels.get(id), left = gm.hold !== 'knife' && gm.leftHand;
     const shared = left ? data.both : data.right, geo = new THREE.BufferGeometry();
     for (const k of Object.keys(shared.attributes)) geo.setAttribute(k, shared.attributes[k]);
@@ -296,7 +388,7 @@
     const pos = new Float32Array(shared.attributes.uv.count*3), norm = new Float32Array(pos.length);
     const base = new THREE.Vector3().fromArray(BASE[id] || grenadeBase);
     const restRot = new THREE.Quaternion().setFromEuler(new THREE.Euler(restPitch(id), restYaw(id), 0));
-    poseSide(data.R, true, gm, base, restRot, pos, norm, 0);
+    geo.userData.fore = poseSide(data.R, true, gm, base, restRot, pos, norm, 0);
     if (left) poseSide(data.L, false, gm, base, restRot, pos, norm, data.R.n);
     geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
     geo.setAttribute('normal', new THREE.BufferAttribute(norm,3));
@@ -330,7 +422,7 @@
       const arms = new THREE.Mesh(buildArms(id, team), armMat(team));
       const action = gm.action && new THREE.Mesh(gm.action,material);
       [body, mag, action, arms].forEach((m) => { if (m) m.frustumCulled = false; });
-      guns[key] = { body, mag, arms, gm, action, armData: realArms[team] };
+      guns[key] = { body, mag, arms, gm, action, armData: realArms[team], fore: arms.geometry.userData.fore };
     }
     while (holder.children.length) holder.remove(holder.children[0]);
     const g = guns[key];
@@ -356,6 +448,7 @@
   };
 
   VM.onShoot = function (d) {
+    stopMove();
     const m = d.model;
     const heavy = d.scope || d.shell || m === 'box' || m === 'heavy';
     st.kick = Math.min(0.15, st.kick + (heavy ? 0.112 : m === 'smg' ? 0.044 : 0.06));
@@ -369,10 +462,30 @@
     flash2.rotation.set(0, Math.PI / 2, Math.random() * 0.4 - 0.2);
     G.FX.shell(VM.ejectWorld(), d.model);
   };
-  VM.onThrow = function (id, mode) { st.thrown = id; st.throwMode = mode; st.thrownAt = G.time; };
-  VM.onKnife = function (heavy) { st.swingT = 0; st.heavy = heavy; };
-  VM.onReload = function (dur) { st.reloadT = 0; st.reloadDur = dur; };
-  VM.onSwitch = function () { st.drawT = 0; st.reloadT = -1; };
+  VM.onThrow = function (id, mode) { st.thrown = id; st.throwMode = mode; st.thrownAt = G.time; stopMove(); };
+  VM.onKnife = function (heavy) {
+    // a pause starts the next round of slashes from the right again
+    if (heavy) startMove('stab', 'knife');
+    else {
+      st.slash = G.time - st.slashAt > 1.1 ? 0 : 1 - st.slash;
+      st.slashAt = G.time;
+      startMove(st.slash ? 'slashL' : 'slashR', 'knife');
+    }
+  };
+  VM.onReload = function (dur) { st.reloadT = 0; st.reloadDur = dur; stopMove(); };
+  VM.onSwitch = function () { st.drawT = 0; st.reloadT = -1; st.move = null; st.fade = 0; st.ads = 0; };
+  // F (or tapping the weapon already in hand): look the weapon over, CS style. Not while it is being drawn,
+  // reloaded, aimed, swung or thrown; pressing again restarts it. Returns whether it started.
+  VM.inspect = function () {
+    const p = G.Player && G.Player.agent;
+    if (!scene || !p || !p.alive || p.planting || p.defusing || st.drawT < 1 || st.reloadT >= 0) return false;
+    const it = G.Weapons.current(p);
+    if (!it || it.reloading || it.zoom > 0 || it.def.slot === 'grenade' || st.ads > 0.05) return false;
+    if (st.move && !st.move.inspect) return false;
+    startMove(it.id === 'knife' ? 'knifeInspect' : 'gunInspect', it.id);
+    return true;
+  };
+  VM.inspecting = () => !!(st.move && st.move.inspect);
   VM.onLand = function (v) { st.land = Math.min(0.06, v * 0.006); };
   // ejection port in world space (for brass leaving the first-person gun)
   const ej = new THREE.Vector3();
@@ -402,8 +515,13 @@
     st.land *= Math.exp(-dt * 9);
     const muzzleFlash = st.flashT > 0;
     st.flashT = Math.max(0, st.flashT - dt);
-    if (!holder.visible) return;
-    const base = BASE[id] || grenadeBase;
+    if (!holder.visible) { st.move = null; st.fade = 0; st.ads = 0; return; }
+    const gm = VM.cur.gm, base = BASE[id] || grenadeBase;
+    // Aiming down the sights: the sight line slides onto the view axis and the gun steadies.
+    const aimWant = it && id === it.id && G.Weapons.aiming(it) ? 1 : 0;
+    st.ads += (aimWant - st.ads) * (1 - Math.exp(-dt * 15));
+    if (!aimWant && st.ads < 0.002) st.ads = 0;
+    const ads = st.ads, steady = 1 - 0.75 * ads;
     // Bob follows ground speed. The holder trails changes in velocity.
     const sp = Math.hypot(p.vel.x, p.vel.z), f = p.onGround ? G.clamp(sp / G.Weapons.maxSpeed(p), 0, 1) : 0;
     st.bob += dt * sp * 2.2;
@@ -413,10 +531,11 @@
     const ldx = G.HUD.buyOpen ? 0 : G.input.dx, ldy = G.HUD.buyOpen ? 0 : G.input.dy;
     st.swayX = G.clamp(st.swayX - ldx * 0.00016, -0.035, 0.035) * Math.exp(-dt * 10);
     st.swayY = G.clamp(st.swayY + ldy * 0.00016, -0.035, 0.035) * Math.exp(-dt * 10);
-    let x = base[0] + Math.sin(st.bob) * 0.009 * f + st.swayX + st.lagX;
-    let y = base[1] - Math.abs(Math.cos(st.bob)) * 0.01 * f + st.swayY - p.crouch * 0.008 - st.land - (p.onGround ? 0 : 0.012);
-    let z = base[2] + st.kick + st.lagZ;
-    let rx = restPitch(id) + st.kickRot, ry = restYaw(id) + st.swayX * 1.5 + st.kickSide, rz = st.swayX * 2 + st.kickSide * 0.8 + Math.sin(st.bob) * 0.012 * f - st.lagX;
+    let x = G.lerp(base[0], 0, ads) + (Math.sin(st.bob) * 0.009 * f + st.swayX + st.lagX) * steady;
+    let y = G.lerp(base[1], -(gm.sight || 0), ads) + (-Math.abs(Math.cos(st.bob)) * 0.01 * f + st.swayY - p.crouch * 0.008 - (p.onGround ? 0 : 0.012)) * steady - st.land;
+    let z = base[2] + ads * (ADS_IN[id] || 0) + st.kick + st.lagZ * steady;
+    let rx = G.lerp(restPitch(id), 0, ads) + st.kickRot * (1 - 0.55 * ads), ry = G.lerp(restYaw(id), 0, ads) + (st.swayX * 1.5 + st.kickSide) * steady,
+      rz = (st.swayX * 2 + st.kickSide * 0.8 + Math.sin(st.bob) * 0.012 * f - st.lagX) * steady;
     if (st.drawT < 1) {
       st.drawT = Math.min(1, st.drawT + dt / 0.45);
       const e = 1 - Math.pow(1 - st.drawT, 3);
@@ -464,16 +583,46 @@
       if (magMesh) { magMesh.position.set(-pull * 0.075, pull * 0.04, 0); magMesh.visible = !throwing; }
       gunMesh.visible=!throwing || swing<0.26;
     } else gunMesh.visible=true;
-    if (st.swingT >= 0) {
-      st.swingT += dt / (st.heavy ? 0.45 : 0.3);
-      if (st.swingT >= 1) st.swingT = -1;
-      else { const s = Math.sin(Math.PI * st.swingT); ry += (st.heavy ? 1.0 : 0.8) * s; rz -= 0.5 * s; x -= 0.12 * s; z -= 0.1 * s; rx -= st.heavy ? 0.35 * s : 0.1 * s; }
-    }
     if (p.planting || p.defusing) { y -= 0.06; rx -= 0.5; }
-    holder.position.set(x, y, z); holder.rotation.set(rx, ry, rz);
+    // keyframed moves, plus the ease-back of an interrupted one
+    pose.fill(0);
+    const m = st.move;
+    if (m) {
+      if (st.moveId !== id || (m.inspect && (st.drawT < 1 || st.reloadT >= 0 || ads > 0.05 || p.planting || p.defusing || (it && (it.reloading || it.zoom > 0))))) stopMove();
+      else {
+        st.moveT += dt;
+        while (m.cues && st.cue < m.cues.length && st.moveT >= m.cues[st.cue][0]) G.Audio.click(m.cues[st.cue++][1]);
+        if (st.moveT >= m.dur) { st.move = null; st.moveName = ''; }
+        else sampleMove(m.keys, st.moveT, pose);
+      }
+    }
+    if (st.fade > 0) {
+      st.fade = st.fade > 0.01 ? st.fade * Math.exp(-dt * 12) : 0;
+      for (let c = 0; c < NCH; c++) pose[c] += faded[c] * st.fade;
+    }
+    shown.set(pose);
+    // The hold angles turn the weapon about its own origin; a move turns it about the right hand's grip.
+    const grip = gm.rightHand || ORIGIN;
+    q0.setFromEuler(eu.set(rx, ry, rz));
+    holder.quaternion.setFromEuler(eu.set(rx + pose[3], ry + pose[4], rz + pose[5]));
+    if (pose[6]) holder.quaternion.multiply(qT.setFromAxisAngle(VM.cur.fore || FORE, pose[6]));
+    holder.position.set(x + pose[0], y + pose[1], z + pose[2])
+      .add(v1.copy(grip).applyQuaternion(q0)).sub(v2.copy(grip).applyQuaternion(holder.quaternion));
+    // the knife spins in the fingers, or flies up out of the hand, about its balance point
+    if (id === 'knife') {
+      gunMesh.quaternion.setFromAxisAngle(XAXIS, pose[7]);
+      gunMesh.position.copy(KNIFE_C).sub(v1.copy(KNIFE_C).applyQuaternion(gunMesh.quaternion));
+      if (pose[8]) gunMesh.position.add(v1.set(0, pose[8], 0).applyQuaternion(qT.copy(holder.quaternion).invert()));
+    }
     // muzzle flash
     flash.visible = flash2.visible = muzzleFlash && id !== 'knife' && id !== 'bomb';
   };
+  // How far the gun moves toward the eye when aimed (m). A long gun with high sights comes up to the cheek;
+  // low-sighted guns and pistols are pushed out, or the (rigid) forearms rise across the sights.
+  const ADS_IN = { ar7: 0.04, tr4: 0.04, fa2: 0.04, u45: 0.02, k5: -0.06, v9: -0.05, s8: -0.04, l60: -0.06, p10: -0.16, h50: -0.16, m18: -0.16 };
+  const ORIGIN = new THREE.Vector3(), XAXIS = new THREE.Vector3(1, 0, 0), FORE = new THREE.Vector3(.3, -.45, 1).normalize();
+  const KNIFE_C = new THREE.Vector3(0, 0, -0.03);
+  const q0 = new THREE.Quaternion(), qT = new THREE.Quaternion(), eu = new THREE.Euler(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
   const grenadeBase = [.105,-.15,-.34];
   const rotatedPivot = new THREE.Vector3();
   const tmpC = new THREE.Color();

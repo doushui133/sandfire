@@ -915,6 +915,13 @@
     // crosshair & scope
     const scoped = it && it.def.scope && it.zoom > 0 && p.alive;
     hid(el.scope, !scoped);
+    // the reticle thickens while the shot is unsteady (moving, in the air, just fired)
+    if (scoped) {
+      const w = (1 + Math.min(5, Math.round(4 * Math.max(0, W.spread(p, it) - it.def.inacc.stand) * 60) / 4)) + 'px';
+      if (el.scope._w !== w) { el.scope._w = w; el.scope.style.setProperty('--w', w); }
+    }
+    // aimed down the sights only the centre dot stays, to show where the shot goes
+    const aiming = p.alive && W.aiming(it);
     const showCh = p.alive && !scoped;
     const ch = el.crosshair;
     hid(ch, !showCh);
@@ -939,7 +946,8 @@
       const thickness = Math.max(1, Math.round(8 * Math.sqrt(settings.chSize) * scale) / 4);
       const gap = Math.round(4 * G.clamp(ch._gap, 0, 24) * scale) / 4;
       sty(ch, 'color', settings.chColor);
-      hid(el.chDot, !settings.chDot);
+      hid(el.chDot, !settings.chDot && !aiming);
+      hid(el.chL, aiming); hid(el.chR, aiming); hid(el.chT, aiming); hid(el.chB, aiming);
       if (ch._length !== length || ch._thickness !== thickness || ch._paintedGap !== gap) {
         ch._length = length; ch._thickness = thickness; ch._paintedGap = gap;
         const long = length + 'px', short = thickness + 'px', centre = -thickness / 2 + 'px';

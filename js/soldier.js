@@ -942,8 +942,12 @@
     rig.throwing = damp(rig.throwing, Math.max(wind, release), 20, dt);
     const knife = gm.hold === 'knife', pistol = gm.hold === 'pistol', bomb = gm.hold === 'bomb';
     const aimPitch = bomb ? -.03 : pitch - rig.lower * .78 - (knife ? .47 : 0);
-    poseQ(qGun, aimPitch + rig.recoil * .065 + wind * 1.30 - release * .42,
-      wind * -.36 - release * .16, rig.lower * .25 + breath * .013 + wind * .32);
+    // a knife attack (weapons.js stamps a.knifeAt): a slash sweeps the blade across the body from right to
+    // left, a stab drives it forward and level
+    const kt = knife && a.knifeAt !== undefined ? (G.time - a.knifeAt) / (a.knifeHeavy ? .5 : .32) : 1;
+    const strike = kt >= 0 && kt < 1 ? Math.sin(Math.PI * kt) : 0, across = a.knifeHeavy ? 0 : strike * (1 - 2 * kt);
+    poseQ(qGun, aimPitch + rig.recoil * .065 + wind * 1.30 - release * .42 + strike * (a.knifeHeavy ? .55 : .25),
+      wind * -.36 - release * .16 - across * 1.3, rig.lower * .25 + breath * .013 + wind * .32 - (a.knifeHeavy ? 0 : strike * .5));
     const gunPos = tp[10].fromArray(hold.off);
     if (rig.holdOffset.lengthSq() === 0) rig.holdOffset.copy(gunPos);
     else rig.holdOffset.lerp(gunPos, 1 - Math.exp(-19 * dt));
@@ -951,6 +955,7 @@
     gunPos.y += .105 + breath * .006;
     gunPos.x += rig.gait * (knife ? .036 : .016) + breath * .006;
     gunPos.z += rig.recoil * .033;
+    gunPos.z -= strike * (a.knifeHeavy ? .32 : .18); gunPos.x += across * .22; gunPos.y += strike * .09;
     gunPos.lerp(tp[15].set(.25, head.y + .09, .12), wind);
     gunPos.lerp(tp[15].set(.18, chest.y + .235, -.41), release);
     if (bomb) gunPos.y = Math.max(gunPos.y, pel.y - .045);

@@ -274,7 +274,6 @@
 
   // ---------- ray cast against boxes and the ground (grid DDA) ----------
   const hit = { t: 0, nx: 0, ny: 0, nz: 0, box: null };
-  let crateContinuation = null;
   function rayBox(b, ox, oy, oz, dx, dy, dz, tmax) {
     let t0 = -Infinity, t1 = tmax, n = 0, sgn = 0;
     const ax = [[b.x0, b.x1, ox, dx], [b.y0, b.y1, oy, dy], [b.z0, b.z1, oz, dz]];
@@ -291,11 +290,9 @@
     hit.nx = n === 0 ? sgn : 0; hit.ny = n === 1 ? sgn : 0; hit.nz = n === 2 ? sgn : 0;
     return Math.max(0, t0);
   }
-  M.raycast = function (ox, oy, oz, dx, dy, dz, maxDist) {
-    const next = crateContinuation;
-    crateContinuation = null;
-    const pierced = next && maxDist === next.dist && dx === next.dx && dy === next.dy && dz === next.dz &&
-      ox === next.x && oy === next.y && oz === next.z ? next.box : null;
+  // A ray that starts inside a solid box hits it at t = 0; `skip` is a box the ray has already passed into
+  // (a bullet continuing through the crate it pierced).
+  M.raycast = function (ox, oy, oz, dx, dy, dz, maxDist, skip) {
     let best = maxDist, bn = [0, 0, 0], bb = null;
     if (dy < -1e-6) { const tg = -oy / dy; if (tg > 0 && tg < best) { best = tg; bn = [0, 1, 0]; } }
     let c = M.colOf(ox), r = M.rowOf(oz);
@@ -311,7 +308,7 @@
         for (let k = 0; k < bin.length; k++) {
           const i = bin[k]; if (marks[i] === stamp) continue; marks[i] = stamp;
           const b = M.boxes[i];
-          if (b === pierced) continue;
+          if (b === skip) continue;
           const t = rayBox(b, ox, oy, oz, dx, dy, dz, best);
           if (t >= 0 && t < best) { best = t; bn = [hit.nx, hit.ny, hit.nz]; bb = b; }
         }
@@ -322,11 +319,6 @@
       if (tmx < tmz) { c += stepC; tmx += tdx; } else { r += stepR; tmz += tdz; }
     }
     if (best >= maxDist) return null;
-    // Match the immediate follow-up trace in weapons.js, which starts 1 mm past entry.
-    if (maxDist === 220 && best > 0 && bb && bb.kind === 'crate') {
-      const start = best + 0.001;
-      crateContinuation = { x: ox + dx * start, y: oy + dy * start, z: oz + dz * start, dx, dy, dz, dist: maxDist - start, box: bb };
-    }
     return { t: best, nx: bn[0], ny: bn[1], nz: bn[2], box: bb, x: ox + dx * best, y: oy + dy * best, z: oz + dz * best };
   };
   M.clearLine = function (a, b) {

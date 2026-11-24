@@ -957,6 +957,83 @@ for (const id of G.GunModels.IDS) {
 G.BotModel.remove(mannequin);
 console.log('All 20 IDs animated by the original third-person soldier and first-person viewmodel');
 
+// First-person moves: inspecting, the knife's slashes and stab, aiming down the sights; steep shots.
+{
+  const VM = G.VM, st = VM.state, out = new Float64Array(9);
+  for (const name in VM.MOVES) {
+    const m = VM.MOVES[name], keys = m.keys;
+    for (let c = 1; c <= 9; c++) {
+      const lo = Math.min(...keys.map(k => k[c])), hi = Math.max(...keys.map(k => k[c]));
+      for (let t = 0; t <= m.dur + 1e-9; t += 0.005) {
+        VM.sampleMove(keys, t, out);
+        assert(out[c - 1] >= lo - 1e-9 && out[c - 1] <= hi + 1e-9, name + ' channel ' + c + ' overshoots its keys at ' + t.toFixed(3));
+      }
+    }
+    VM.sampleMove(keys, m.dur, out);
+    assert([0, 1, 2, 3, 4, 5, 6, 8].every(c => out[c] === 0) && Math.abs(Math.sin(out[7] / 2)) < 1e-3, name + ' ends at rest');
+  }
+  const saved = G.Player.agent, time = G.time, p = game.makeAgent('atk', '检视测试', true);
+  const listed = game.agents.indexOf(p) >= 0;
+  try {
+    G.Player.agent = p; p.alive = true; p.onGround = true; p.inacc = 0;
+    p.inv.primary = W.item('ar7'); p.inv.knife = W.item('knife'); p.cur = 'knife';
+    const frame = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { G.time += dt; VM.update(dt, p, G.camera); } };
+    W.switchTo(p, 'primary'); G.time = p.switchEnd; frame(40);
+    const rifle = p.inv.primary;
+    assert(VM.inspect() && VM.inspecting() && st.moveName === 'gunInspect', 'F starts the gun inspect');
+    frame(30);
+    VM.onShoot(W.defs.ar7); frame();
+    assert(!VM.inspecting() && st.fade > 0, 'firing ends the inspect, easing back instead of snapping');
+    // aiming down the sights: right mouse toggles, the sights come up, and the gun is steadier but slower
+    W.update(p, 1 / 60, { altPressed: true });
+    assert(W.aiming(rifle) && rifle.zoom === 1, 'right mouse aims a rifle down its sights');
+    frame(40);
+    assert(st.ads > 0.99, 'the sights come up onto the view axis');
+    assert(!VM.inspect(), 'no inspect while aiming');
+    assert(Math.abs(W.maxSpeed(p) - W.defs.ar7.speed * W.ADS_SPEED) < 1e-9, 'walking while aimed is slower');
+    const aimed = W.spread(p, rifle);
+    W.update(p, 1 / 60, { altPressed: true });
+    assert(!W.aiming(rifle), 'right mouse again lowers the sights');
+    assert(Math.abs(aimed / W.spread(p, rifle) - W.ADS_STEADY) < 1e-6, 'aimed, the standing shot is steadier');
+    frame(40);
+    assert(st.ads === 0, 'the gun is back at the hip');
+    rifle.zoom = 1; W.startReload(p, rifle);
+    assert(rifle.zoom === 0, 'reloading lowers the sights');
+    rifle.reloading = false;
+    assert(!W.canAim(W.defs.knife) && !W.canAim(W.defs.r90) && !W.canAim(W.defs.he) && W.canAim(W.defs.p10), 'snipers scope, knives and grenades do not aim');
+    // the knife: light attacks alternate sides and start from the right again after a pause; the inspect tosses it
+    W.switchTo(p, 'knife'); G.time = p.switchEnd; frame(40);
+    VM.onKnife(false); assert.equal(st.moveName, 'slashR');
+    G.time += 0.45; VM.onKnife(false); assert.equal(st.moveName, 'slashL', 'light attacks alternate');
+    G.time += 0.45; VM.onKnife(false); assert.equal(st.moveName, 'slashR');
+    G.time += 1.5; VM.onKnife(false); assert.equal(st.moveName, 'slashR', 'after a pause the slashes start from the right again');
+    VM.onKnife(true); assert.equal(st.moveName, 'stab', 'the heavy attack is a stab');
+    frame(60);
+    assert(VM.inspect() && st.moveName === 'knifeInspect', 'F starts the knife inspect');
+    st.moveT = 1.55 - 1e-4; frame(1, 1e-4);
+    assert(VM.cur.body.position.length() > 0.03, 'the knife is tossed out of the hand');
+    st.moveT = 3.39; frame(2);
+    assert(!VM.inspecting() && VM.cur.body.position.length() < 1e-9, 'and is back in the hand at the end');
+    // A steep shot from above enters the body through the top of its hit cylinder (it used to pass through).
+    const target = game.makeAgent('def', '靶标', false), addTarget = game.agents.indexOf(target) < 0;
+    if (addTarget) game.agents.push(target);
+    try {
+      target.alive = true; target.pos.set(60, 0, 60); target.crouch = 0;
+      const h = W.hitboxes(target), r = W.trace(p, h.x + 0.2, h.bodyTop + 3, h.z, 0, -1, 0, 6);
+      assert(r.agent === target && r.group === 'body', 'a shot straight down hits the body: ' + r.group);
+      const side = W.trace(p, h.x - 3, (h.legTop + h.bodyTop) / 2, h.z, 1, 0, 0, 6);
+      assert(side.agent === target && side.group === 'body' && Math.abs(side.t - (3 - 0.24)) < 1e-6, 'a level shot still enters at the side');
+    } finally {
+      target.alive = false;
+      if (addTarget) game.agents.splice(game.agents.indexOf(target), 1);
+    }
+  } finally {
+    G.Player.agent = saved; G.time = time;
+    if (!listed && game.agents.indexOf(p) >= 0) game.agents.splice(game.agents.indexOf(p), 1);
+  }
+  console.log('Inspect (gun and knife toss), alternating slashes and stab, aiming down the sights and capped hit cylinders passed');
+}
+
 // Locomotion: steady hips, soft knees, planted feet that do not slide, no pops on counter-strafes or steps.
 {
   const walker=game.makeAgent('def','步态测试',false);

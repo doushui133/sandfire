@@ -408,7 +408,7 @@
       layer.classList.toggle('spectator', spectator);
       if (spectator) T.reset();
     }
-    setHidden(buttons.scope, !(nade || (it && it.def.scope)));
+    setHidden(buttons.scope, !(nade || (it && (it.def.scope || G.Weapons.canAim(it.def)))));
     const label = nade ? '近抛' : '开镜';
     if (label !== scopeLabel) {
       scopeLabel = label;
@@ -483,6 +483,8 @@
     if (slot) {
       const a = G.Player.agent, nade = slot.dataset.nade;
       if (nade && a.nades[nade]) selectGrenade(a, nade);
+      // tapping the weapon already in hand looks it over
+      else if (a.cur === slot.dataset.slot) G.VM.inspect();
       else G.Weapons.switchTo(a, slot.dataset.slot);
       return true;
     }

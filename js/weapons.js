@@ -95,11 +95,21 @@
     return { id, def: d, clip: d.clip || 0, reserve: d.reserve || 0, nextFire: 0, reloadEnd: 0, reloading: false, zoom: 0, rezoom: 0 };
   };
   W.current = (a) => (a.cur === 'bomb' ? null : a.inv[a.cur]);
+  // Every gun but the scoped rifles can aim down its sights (right mouse, 开镜 on touch): a narrower view,
+  // a steadier first shot (base inaccuracy x0.75; moving still throws the shot) and a slower walk (x0.8).
+  // The scoped rifles keep their two-step scope.
+  const ADS_FOV = { pistol: 62, heavy: 62, smg: 60, ar: 54, tr: 54, pump: 64, box: 58 };
+  W.ADS_SPEED = 0.8; W.ADS_STEADY = 0.75;
+  W.canAim = (d) => !!(d && d.inacc && !d.scope && d.slot !== 'grenade');
+  W.adsFov = (d) => ADS_FOV[d.model] || 60;
+  W.aiming = (it) => !!(it && it.zoom > 0 && !it.def.scope);
+  function moveSpeed(it) {
+    const d = it.def;
+    return it.zoom > 0 ? (d.scope ? d.scopeSpeed : d.speed * W.ADS_SPEED) : d.speed;
+  }
   W.maxSpeed = function (a) {
     const it = W.current(a);
-    if (!it) return 5.9;
-    if (it.def.scope && it.zoom > 0) return it.def.scopeSpeed;
-    return it.def.speed;
+    return it ? moveSpeed(it) : 5.9;
   };
 
   // ---------- gun models (built in gunmodels.js; shared geometry, so meshes are cheap) ----------
@@ -166,8 +176,8 @@
 
   W.spread = function (a, it) {
     const d = it.def, ia = d.inacc;
-    let s = G.lerp(ia.stand, ia.crouch, a.crouch);
-    const maxSpeed = d.scope && it.zoom > 0 ? d.scopeSpeed : d.speed;
+    let s = G.lerp(ia.stand, ia.crouch, a.crouch) * (W.aiming(it) ? W.ADS_STEADY : 1);
+    const maxSpeed = moveSpeed(it);
     const speed = Math.hypot(a.vel.x, a.vel.z);
     const f = G.clamp((speed / maxSpeed - 0.3) / 0.7, 0, 1);
     s += ia.move * f * f * (3 - 2 * f);
@@ -194,19 +204,25 @@
     const t = -b - Math.sqrt(disc);
     return t > 0 ? t : -1;
   }
+  // An upright cylinder with its caps: a steep shot from above can enter through the top. Returns the entry
+  // distance (the exit when the ray starts inside), -1 for a miss.
   function rayCyl(ox, oy, oz, dx, dy, dz, cx, cz, r, y0, y1) {
-    const lx = ox - cx, lz = oz - cz, A = dx * dx + dz * dz;
-    if (A < 1e-9) return -1;
-    const B = 2 * (lx * dx + lz * dz), C = lx * lx + lz * lz - r * r, disc = B * B - 4 * A * C;
-    if (disc < 0) return -1;
-    const sq = Math.sqrt(disc);
-    for (let i=0; i<2; i++) {
-      const t=(-B + (i ? sq : -sq))/(2*A);
-      if (t <= 0) continue;
-      const y = oy + dy * t;
-      if (y >= y0 && y <= y1) return t;
+    const lx = ox - cx, lz = oz - cz, A = dx * dx + dz * dz, C = lx * lx + lz * lz - r * r;
+    let t0 = -Infinity, t1 = Infinity;
+    if (A < 1e-9) { if (C > 0) return -1; }
+    else {
+      const B = 2 * (lx * dx + lz * dz), disc = B * B - 4 * A * C;
+      if (disc < 0) return -1;
+      const sq = Math.sqrt(disc);
+      t0 = (-B - sq) / (2 * A); t1 = (-B + sq) / (2 * A);
     }
-    return -1;
+    if (Math.abs(dy) < 1e-9) { if (oy < y0 || oy > y1) return -1; }
+    else {
+      const a = (y0 - oy) / dy, b = (y1 - oy) / dy;
+      t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b));
+    }
+    if (t0 > t1 || t1 <= 0) return -1;
+    return t0 > 0 ? t0 : t1;
   }
   const traceBox = {};
   W.hitboxes = function (a, out) {
@@ -222,8 +238,8 @@
     }
     return h;
   };
-  W.trace = function (shooter, ox, oy, oz, dx, dy, dz, maxDist) {
-    const wh = G.Map.raycast(ox, oy, oz, dx, dy, dz, maxDist);
+  W.trace = function (shooter, ox, oy, oz, dx, dy, dz, maxDist, skip) {
+    const wh = G.Map.raycast(ox, oy, oz, dx, dy, dz, maxDist, skip);
     let best = wh ? wh.t : maxDist;
     res.agent = null; res.world = !!wh; res.box = wh && wh.box; res.wallbang = false;
     if (wh) { res.nx = wh.nx; res.ny = wh.ny; res.nz = wh.nz; }
@@ -271,13 +287,14 @@
 
   const barrel = new THREE.Vector3(), victims = [], pelletHits = new Map();
   // Only a fired rifle, LMG or scoped round can cross one wooden crate.
-  // Sight, touch targeting and all other ray queries still stop at its surface.
+  // Sight, touch targeting and all other ray queries still stop at its surface, and a shot fired from inside
+  // a crate (a clipped muzzle) never starts a wallbang.
   function bulletTrace(a, d, dir) {
     const r = W.trace(a, eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 220);
-    if (!r.world || !r.box || r.box.kind !== 'crate' || !(d.scope || d.model === 'ar' || d.model === 'tr' || d.model === 'box')) return r;
+    if (!r.world || !r.box || r.box.kind !== 'crate' || r.t <= 0 || !(d.scope || d.model === 'ar' || d.model === 'tr' || d.model === 'box')) return r;
     const entry = Object.assign({}, r);
     const start = r.t + 0.001;
-    const next = W.trace(a, eye.x + dir.x * start, eye.y + dir.y * start, eye.z + dir.z * start, dir.x, dir.y, dir.z, 220 - start);
+    const next = W.trace(a, eye.x + dir.x * start, eye.y + dir.y * start, eye.z + dir.z * start, dir.x, dir.y, dir.z, 220 - start, entry.box);
     if (!next.agent) return entry;
     G.FX.impact(entry.wx, entry.wy, entry.wz, entry.nx, entry.ny, entry.nz);
     next.t += start; next.wallbang = true;
@@ -367,6 +384,7 @@
       hitSomething = true;
     } else if (r.world) { G.FX.impact(r.wx, r.wy, r.wz, r.nx, r.ny, r.nz); hitSomething = true; }
     G.Audio.knife(eye, a.isPlayer, hitSomething);
+    a.knifeAt = G.time; a.knifeHeavy = heavy;   // the third-person slash (soldier.js)
     if (a.isPlayer && G.VM) G.VM.onKnife(heavy);
   }
 
@@ -405,9 +423,14 @@
       else if (ctl.alt && G.time >= it.nextFire) knife(a, true);
       return;
     }
-    if (ctl.altPressed && d.scope && !it.reloading) {
-      it.zoom = (it.zoom + 1) % 3; it.rezoom = 0;
-      if (a.isPlayer) G.Audio.click('zoom');
+    if (ctl.altPressed && !it.reloading) {
+      if (d.scope) {
+        it.zoom = (it.zoom + 1) % 3; it.rezoom = 0;
+        if (a.isPlayer) G.Audio.click('zoom');
+      } else if (W.canAim(d)) {
+        it.zoom = it.zoom ? 0 : 1;
+        if (a.isPlayer) G.Audio.click('ads');
+      }
     }
     if (d.shell && it.clip && (ctl.fire || ctl.firePressed)) it.reloading = false;
     if (ctl.reload && !it.reloading && it.clip < d.clip && it.reserve > 0) W.startReload(a, it);
