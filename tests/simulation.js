@@ -983,8 +983,26 @@ function mapChecks() {
   assert.equal(M.raycast(terrace.x, 4, terrace.z, 0, -1, 0, 5).y, 1.6);
   runRoute(M.sites.A.center, [terrace, M.cellPos(44, 8)]);
   runRoute(V(32.65, 0, 7.8001), [M.cellPos(43, 21)]);
-  const createElement = document.createElement, radarColors = new Map();
-  const ctx = { fillRect(x, y, w, h) { if (w === 5 && h === 5) radarColors.set(x + ',' + y, this.fillStyle); },
+
+  const cell = M.cellPos;
+  runRoute(cell(8, 28), [cell(12, 28), cell(21, 28), cell(22, 30)]);
+  runRoute(cell(27, 30), [cell(31, 32), cell(34, 32), cell(39, 31)]);
+  runRoute(cell(28, 42), [cell(28, 40), cell(26, 37)]);
+  runRoute(cell(23, 10), [cell(17, 10)]);
+  const marketZ = M.cellZ(28), overlookZ = M.cellZ(10);
+  assert(M.clearLine(V(M.cellX(21), 1.62, marketZ), V(M.cellX(27), 1.62, marketZ)), 'Market window opens onto mid');
+  assert(M.clearLine(V(M.cellX(18), 1.62, overlookZ), V(M.cellX(12), .9, overlookZ)), 'Overlook sees the raised B platform');
+  const overlook = M.windowAt(16, 10);
+  assert(!M.walkable(16, 10) && overlook.head - overlook.sill < G.bodyHeight(1) - .01, 'B window blocks crouch jumps');
+  const crate = cell(12, 26), wellSide = cell(34, 31);
+  assert.equal(M.raycast(crate.x, 3, crate.z, 0, 1, 0, 3).box.kind, 'roof', 'Market crate stays covered');
+  assert.equal(M.raycast(wellSide.x, .8, wellSide.z, -1, 0, 0, 4).box.kind, 'wellWall');
+
+  const createElement = document.createElement, radarColors = new Map(), radarSlits = new Set();
+  const ctx = { fillRect(x, y, w, h) {
+    if (w === 5 && h === 5) radarColors.set(x + ',' + y, this.fillStyle);
+    if (w === 1 && h === 5) radarSlits.add(x + ',' + y);
+  },
     strokeRect: noop, fillText: noop };
   try {
     document.createElement = () => ({ getContext: () => ctx });
@@ -993,6 +1011,12 @@ function mapChecks() {
     const stairs = [8, 10, 11, 13].map(r => radarColors.get(38 * 5 + ',' + r * 5));
     assert(stairs.every(Boolean) && new Set(stairs).size === 4, 'Radar shades for all four raised levels');
     assert(radarColors.has('120,75') && !radarColors.has('125,75'), 'Single-cell gate on radar');
+    for (const [c, r] of [[12, 28], [31, 30], [18, 10], [28, 40]]) {
+      assert(radarColors.has(c * 5 + ',' + r * 5), 'Room on radar at ' + [c, r]);
+    }
+    for (const [c, r] of [[22, 28], [16, 10]]) {
+      assert(radarSlits.has((c * 5 + 2) + ',' + r * 5), 'Window on radar at ' + [c, r]);
+    }
   } finally {
     document.createElement = createElement;
   }
@@ -1005,6 +1029,7 @@ function mapChecks() {
     assert(def.every(t => t >= 7.5 && t <= 12.5), 'Defender timing ' + JSON.stringify(times));
   }
   const rotation = runRoute(M.sites.A.center, [M.sites.B.center]);
+  assert(rotation >= 13.5 && rotation <= 18.5, 'A–B rotation ' + rotation.toFixed(1) + 's');
   console.log('Run times at ' + runSpeed + ' m/s:', JSON.stringify(times), 'A–B rotation', rotation.toFixed(1) + 's');
 }
 
