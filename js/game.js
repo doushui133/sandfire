@@ -22,6 +22,8 @@
       recoilP: 0, recoilY: 0, inacc: 0, shots: 0, lastShot: -9, kills: 0, deaths: 0, slowUntil: 0, punchUntil: 0,
       planting: false, plantT: 0, defusing: false, defuseT: 0, stepUp: 0, spottedUntil: 0,
       roundKills: 0, roundDamage: 0, clutchKills: 0, damageTo: new Map(),
+      // this match: trigger pulls, pulls that hit an enemy, headshot kills, best streak, damage dealt
+      match: { shots: 0, hits: 0, shot: 0, hitShot: -1, headKills: 0, bestStreak: 0, damage: 0 },
     };
   };
   Gm.alive = (team) => Gm.agents.filter((a) => a.alive && a.team === team).length;
@@ -199,7 +201,7 @@
   function updatePractice(dt, elapsed) {
     if (Gm.phase === 'end') {
       Gm.phaseT -= elapsed;
-      if (Gm.phaseT <= 0) Gm.phase = 'over';
+      if (Gm.phaseT <= 0) { Gm.phase = 'over'; G.Player.resetSpectate(); G.Nades.clear(); G.HUD.matchOver(Gm.over); }
       return;
     }
     Gm.practiceTime += elapsed;
@@ -308,13 +310,17 @@
     const use = pressed || (held && !a.useHeld);
     a.useHeld = held;
     if (held && action === 'defuse') {
-      if (!a.defusing) { G.Nades.cancel(a); a.defusing = true; a.defuseT = 0; b.defuser = a; G.Audio.click('reload1'); }
+      if (!a.defusing) { G.Nades.cancel(a); a.defusing = true; a.defuseT = 0; b.defuser = a; G.Audio.click('reload1', a.isPlayer ? null : a.pos); }
       a.defuseT += dt;
       if (a.defuseT >= (a.kit ? CFG.defuseKit : CFG.defuse)) defuse(a);
       return;
     }
     if (held && action) {
-      if (!a.planting) { G.Nades.cancel(a); a.planting = true; a.plantT = 0; if (a.cur !== 'bomb') { a.prevSlot = a.cur; a.cur = 'bomb'; } G.Audio.click('tick'); }
+      if (!a.planting) {
+        G.Nades.cancel(a); a.planting = true; a.plantT = 0;
+        if (a.cur !== 'bomb') { a.prevSlot = a.cur; a.cur = 'bomb'; }
+        G.Audio.click('tick', a.isPlayer ? null : a.pos);
+      }
       const before = a.plantT; a.plantT += dt;
       if (Math.floor(before / 0.6) !== Math.floor(a.plantT / 0.6)) G.Audio.beep(a.pos, false);
       if (a.plantT >= CFG.plant) plant(a, action);
@@ -377,7 +383,13 @@
       if (!stats) { stats = { damage: 0, hits: 0 }; attacker.damageTo.set(v.id, stats); }
       const applied = Math.min(v.hp, dmg);
       stats.damage += applied; stats.hits++;
-      if (attacker.team !== v.team) attacker.roundDamage += applied;
+      if (attacker.team !== v.team) {
+        attacker.roundDamage += applied;
+        const m = attacker.match;
+        m.damage += applied;
+        // accuracy counts trigger pulls: a shotgun blast that lands any pellet is one hit
+        if (!info.area && info.weapon !== 'knife' && m.hitShot !== m.shot) { m.hits++; m.hitShot = m.shot; }
+      }
     }
     if (attacker && attacker.isPlayer && attacker.team !== v.team) {
       const hit = { head: !!info.head, kill: dmg >= v.hp, dmg: Math.min(v.hp, dmg) };
@@ -414,6 +426,7 @@
     if (practice) v.respawnAt = Gm.practiceTime + PRACTICE.respawn;
     if (attacker && attacker.team !== v.team) {
       attacker.kills++; attacker.roundKills++;
+      if (info.head) attacker.match.headKills++;
       if (!practice && attacker.alive && Gm.alive(attacker.team) === 1) attacker.clutchKills++;
       const d = W.defs[info.weapon];
       if (practice) Gm.score[attacker.team]++;
@@ -421,6 +434,7 @@
       Gm.roundKills++;
       if (attacker.isPlayer) {
         Gm.playerKills++;
+        attacker.match.bestStreak = Math.max(attacker.match.bestStreak, Gm.playerKills);
         const now = G.Player.clock;
         Gm.recentKills = Gm.recentKills.filter(t => now - t <= 4);
         Gm.recentKills.push(now);
@@ -487,7 +501,7 @@
   }
   function announceEnd(winner, reason, mvp) {
     const mine = G.Player.agent.team === winner;
-    G.Audio.roundEnd(mine, !!(mvp && mvp.mine));
+    G.Audio.roundEnd(mine, !!(mvp && mvp.mine), mine && Gm.over === winner);
     G.HUD.roundEnd(winner, reason, mvp);
   }
 

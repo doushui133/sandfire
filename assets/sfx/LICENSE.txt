@@ -10,6 +10,12 @@ g_*.wav and m_*.wav — gunshots and gun handling
   The author releases the packs for free commercial use with no credit required and has stated they are
   public domain (CC0). Credited here with thanks.
 
+mu_victory.wav — victory fanfare
+  "Victory Fanfare Short" by cynicmusic (made for Pixelsphere, http://pixelsphere.org)
+  https://opengameart.org/content/victory-fanfare-short
+  Released under CC0 (public domain dedication). Trimmed, resampled to 22.05 kHz stereo and normalised with
+  tools/music-build.js. Credited here with thanks.
+
 v_*.wav — announcer voice lines
   "WARLORD - Video Game Announcer" by VoiceBosch (www.voicebosch.com)
   https://voicebosch.itch.io/warlord-announcer-audio-pack

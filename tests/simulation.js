@@ -1514,7 +1514,15 @@ function gameplayChecks() {
   assert.equal(game.over, 'atk'); assert.equal(game.phase, 'end');
   game.phaseT = 0;
   G.frame(1/60, 100);
+  // a finished practice match shows its results (the fanfare keeps playing) until you leave
+  assert(game.phase === 'over' && !elem('endScreen').hidden && elem('practicePick').hidden, 'practice results screen');
+  assert.equal(elem('endTitle').textContent, '胜利');
+  const tiles = elem('endStats').innerHTML;
+  assert(tiles.includes('<b>' + p.kills + '</b><span>击杀</span>') && tiles.includes('最高连杀') && tiles.includes('命中率'), tiles);
+  assert(p.match.bestStreak >= 1 && p.match.bestStreak <= p.kills);
+  elem('btnEndMenu').emit('click');
   assert(game.phase === 'menu' && !P.agent && game.agents.length === 0 && elem('practicePick').hidden);
+  elem('endScreen').hidden = true;
   assert.equal(game.bomb.state, 'none');
   G.startMatch('def', true, 'practice');
   game.score.atk = 4; game.score.def = 5;
@@ -1649,8 +1657,8 @@ async function soundChecks() {
   global.fetch = async (url) => ({ ok: true, arrayBuffer: async () => ({ url }) });
   try {
     A.init();
-    for (let i = 0; i < 1000 && !A.sfxReady('v_team_deathmatch'); i++) await new Promise((r) => setImmediate(r));
-    assert(A.sfxReady('g_762') && A.sfxReady('m_ak_in') && A.sfxReady('v_team_deathmatch'), 'recordings loaded');
+    for (let i = 0; i < 1000 && !A.sfxReady('mu_victory'); i++) await new Promise((r) => setImmediate(r));
+    assert(A.sfxReady('g_762') && A.sfxReady('m_ak_in') && A.sfxReady('v_team_deathmatch') && A.sfxReady('mu_victory'), 'recordings loaded');
     const ctx = A.ctx, src = (tag) => made.filter((n) => n.buffer && n.buffer.url && n.buffer.url.includes(tag));
     const gainOf = (s) => made[made.indexOf(s) + 1].gain;
 
@@ -1695,7 +1703,7 @@ async function soundChecks() {
     A.reload(W.defs.s8, true); assert.equal(src('m_pump').length, 1);
     A.click('empty'); assert.equal(src('m_dry').length, 1);
 
-    // match moments drive the music cues and the announcer
+    // match moments: music cues, the recorded victory fanfare, the defeat cue and the announcer
     const cues = [];
     G.Music.cue = (name) => { cues.push(name); return { stop() { cues.push('stop:' + name); } }; };
     ctx.currentTime += 3;
@@ -1705,11 +1713,65 @@ async function soundChecks() {
     A.clutch(); A.clutch();
     assert.equal(cues.filter((c) => c === 'clutch').length, 1); assert.equal(src('v_last_man_standing').length, 1);
     A.roundEnd(true, true);
-    assert(cues.includes('mvp')); assert.equal(src('v_round_winner').length, 1, 'round end outranks the clutch line');
+    assert(cues.includes('stop:clutch'), 'the round end stops the clutch music');
+    let fanfare = src('mu_victory');
+    assert.equal(fanfare.length, 1, 'your MVP round plays the victory fanfare');
+    assert(!gainOf(fanfare[0]).events.some((e) => e[0] === 'linear' && e[1] === 0), 'MVP: the whole fanfare, no early fade');
+    assert.equal(src('v_round_winner').length, 1, 'round end outranks the clutch line');
+    ctx.currentTime += 8;
+    A.roundEnd(true, false);
+    fanfare = src('mu_victory');
+    assert.equal(fanfare.length, 2);
+    assert(gainOf(fanfare[1]).events.some((e) => e[0] === 'linear' && e[1] === 0), 'a won round: the fanfare fades early');
+    ctx.currentTime += 8;
+    const saws = () => made.filter((n) => n.type === 'sawtooth').length, sawsBefore = saws();
+    A.roundEnd(false, false);
+    assert.equal(src('mu_victory').length, 2, 'no fanfare for a lost round');
+    assert(saws() - sawsBefore >= 10, 'the defeat cue plays');
+    ctx.currentTime += 8;
+    A.matchEnd(true); assert.equal(src('mu_victory').length, 3, 'a won practice match plays the fanfare');
     A.bombTen(10); assert(cues.includes('bombTicking'));
     ctx.currentTime += 3;
     A.practiceStart(); assert(cues.includes('practiceStart')); assert.equal(src('v_team_deathmatch').length, 1);
-    console.log('Recorded gunshots, burst tail duck, announcer ranks and toggle, reload sounds and match-moment music passed');
+
+    // the kill ting climbs a pentatonic step per kill of a multi-kill, built from pure sine partials
+    const fundamentals = (from) => made.slice(from).filter((n) => n.type === 'sine' && n.frequency.events[0] &&
+      n.frequency.events[0][0] === 'set').map((n) => Math.round(n.frequency.events[0][1]));
+    let mark = made.length; A.killSting({ multi: 1, streak: 1 });
+    assert(fundamentals(mark).includes(880), 'first kill: A5');
+    mark = made.length; A.killSting({ multi: 3, streak: 3 });
+    assert(fundamentals(mark).includes(1109), 'third kill: C#6');
+    assert(!made.slice(mark).some((n) => n.type === 'triangle' || n.type === 'square'), 'no buzzy waveforms in the kill sound');
+
+    // other soldiers' handling sounds come from them and never cut your own reload
+    ctx.currentTime += 3;
+    A.reload(W.defs.ar7, false);
+    const magIn2 = src('m_ak_in');
+    mark = made.length;
+    A.click('bolt', { x: 30, y: 1, z: 0 });
+    assert.equal(src('m_bolt').length, 1);
+    assert(made.slice(mark).some((n) => n.positionX && n.positionX.value === 30), 'a bot\'s bolt is positional');
+    A.click('switch', { x: 30, y: 1, z: 0 });
+    assert(!gainOf(magIn2[magIn2.length - 1]).events.some((e) => e[0] === 'target' && e[1] === 0),
+      'another soldier never cancels your reload sound');
+
+    // a bot scoping in and firing a sniper rifle plays none of your clicks (practice mode was full of them)
+    const clicks = [], realClick = A.click, time = G.time;
+    A.click = (kind, pos) => { clicks.push([kind, !!pos]); return realClick(kind, pos); };
+    const sniper = game.makeAgent('def', '狙击测试', false), listed = game.agents.indexOf(sniper);
+    try {
+      sniper.alive = true; sniper.inv.primary = W.item('r90'); sniper.cur = 'primary'; sniper.switchEnd = 0;
+      sniper.pos.set(30, 0, 30); sniper.yaw = 0; sniper.pitch = 0; G.time = 500;
+      W.update(sniper, 1 / 60, { altPressed: true });
+      sniper.inv.primary.nextFire = 0;
+      W.update(sniper, 1 / 60, { firePressed: true });
+    } finally {
+      A.click = realClick; G.time = time;
+      if (listed < 0 && game.agents.indexOf(sniper) >= 0) game.agents.splice(game.agents.indexOf(sniper), 1);
+    }
+    assert(!clicks.some(([kind, positional]) => !positional), 'a bot plays no clicks in your ears: ' + JSON.stringify(clicks));
+    assert(clicks.some(([kind, positional]) => kind === 'bolt' && positional), 'its bolt is heard from where it is');
+    console.log('Recorded gunshots, burst tail duck, announcer ranks and toggle, reload sounds, victory fanfare, defeat cue, kill ting and positional bot clicks passed');
   } finally {
     global.AudioContext = saved.ac; global.fetch = saved.fetch; G.Music.cue = saved.cue; G.settings.announcer = saved.ann;
   }

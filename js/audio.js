@@ -1,4 +1,4 @@
-// audio.js — procedural 3D sound (WebAudio). Every sound is synthesised, no files.
+// audio.js — 3D sound (WebAudio): recorded guns, voices and the victory fanfare (assets/sfx), the rest synthesised.
 (function (G) {
   'use strict';
   let ctx = null, master = null, noiseBuf = null, brownBuf = null;
@@ -189,7 +189,8 @@
   const SFX = ['g_9mm', 'g_556', 'g_762', 'g_308', 'g_762r', 'g_20ga', 'm_dry', 'm_bolt', 'm_pump', 'm_shell',
     'm_ar_out', 'm_ar_in', 'm_ar_bolt', 'm_ak_out', 'm_ak_in', 'm_ak_rack', 'm_pistol_out', 'm_pistol_in', 'm_pistol_slide',
     'v_headshot', 'v_double_kill', 'v_triple_kill', 'v_rampage', 'v_unstoppable', 'v_annihilation', 'v_first_blood',
-    'v_dominating', 'v_start', 'v_round_winner', 'v_mission_failed', 'v_last_man_standing', 'v_team_deathmatch'];
+    'v_dominating', 'v_start', 'v_round_winner', 'v_mission_failed', 'v_last_man_standing', 'v_team_deathmatch',
+    'mu_victory'];
   const sfx = {};
   let sfxLoading = false;
   function loadSfx() {
@@ -265,12 +266,14 @@
     const t = ctx.currentTime, o = out(local ? null : pos, 3, local ? 0.35 : 0.7);
     noise(o, t, 0.14, { type: 'lowpass', f: 700, g: 1, brown: true });
   };
-  A.click = function (kind) {
+  // Handling and UI clicks. With a position (another soldier's bolt, plant or defuse) the sound comes from
+  // there and fades with distance; without one it is yours (these used to sound in your ears for every bot).
+  A.click = function (kind, pos) {
     if (!ctx) return;
-    const t = ctx.currentTime, o = out(null, 1, 0.5);
-    if (kind === 'switch') cancelReload();
+    const t = ctx.currentTime, o = pos ? out(pos, 2.5, 0.8) : out(null, 1, 0.5);
+    if (kind === 'switch' && !pos) cancelReload();
     if (kind === 'empty' && sfx.m_dry) { play('m_dry', o, t, 1, 1.3); return; }
-    if (kind === 'bolt' && sfx.m_bolt) { play('m_bolt', o, t + 0.26, 1.05, 1.4); return; }
+    if (kind === 'bolt' && sfx.m_bolt) { play('m_bolt', o, t + 0.26, 1.05, pos ? 1.1 : 1.4); return; }
     if (kind === 'empty') noise(o, t, 0.03, { type: 'highpass', f: 3500, g: 0.5 });
     else if (kind === 'reload1') { noise(o, t, 0.05, { type: 'bandpass', f: 2200, q: 2, g: 0.6 }); tone(o, t, 0.04, { f: 600, g: 0.15, wave: 'square' }); }
     else if (kind === 'reload2') { noise(o, t, 0.07, { type: 'bandpass', f: 1500, q: 2, g: 0.8 }); noise(o, t + 0.07, 0.05, { type: 'highpass', f: 3000, g: 0.5 }); }
@@ -279,6 +282,11 @@
     else if (kind === 'deny') tone(o, t, 0.15, { f: 220, g: 0.25, wave: 'square' });
     else if (kind === 'bolt') { noise(o, t, 0.06, { type: 'bandpass', f: 1200, q: 2, g: 0.7 }); noise(o, t + 0.18, 0.06, { type: 'bandpass', f: 1700, q: 2, g: 0.7 }); }
     else if (kind === 'tick') tone(o, t, 0.03, { f: 1500, g: 0.12, wave: 'square' });
+    else if (kind === 'zoom') noise(o, t, 0.028, { type: 'bandpass', f: 2600, q: 2.2, g: 0.3 });
+    else if (kind === 'pickup') {
+      noise(o, t, 0.05, { type: 'bandpass', f: 1250, q: 1.3, g: 0.34 });
+      noise(o, t + 0.045, 0.04, { type: 'highpass', f: 3300, g: 0.18 });
+    }
   };
   A.hit = function (head, helmet) {
     if (!ctx) return;
@@ -295,26 +303,55 @@
       tone(o, t, 0.075, { f: 145, f2: 57, g: 0.46, wave: 'triangle' });
     }
   };
-  const killPitch = [960, 1080, 1215, 1365, 1540];
+  // Kill confirmation: a small struck-metal "ting" (pure partials at bell-like ratios, each with its own
+  // natural decay, a slow 3-cent shimmer) over a soft punch, with a short bright reverb. Each kill of a
+  // multi-kill climbs a major pentatonic step (A5 B5 C#6 E6 F#6); a headshot adds a fifth above.
+  const KILL_NOTES = [880, 987.77, 1108.73, 1318.51, 1479.98];
+  const BELL = [[1, 1, 0.16], [2, 0.3, 0.11], [2.76, 0.38, 0.07], [4.07, 0.13, 0.045], [5.4, 0.09, 0.03]];
+  let killVerb = null;
+  function killReverb() {
+    if (killVerb) return killVerb;
+    const len = Math.round(ctx.sampleRate * 0.7), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2) * 0.35;
+    }
+    killVerb = ctx.createConvolver(); killVerb.buffer = ir;
+    const wet = ctx.createGain(); wet.gain.value = 0.2;
+    killVerb.connect(wet); wet.connect(mix);
+    return killVerb;
+  }
+  function partial(dest, t, f, level, tau) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(f, t);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.0015);
+    g.gain.setTargetAtTime(0, t + 0.0015, tau);
+    o.connect(g); g.connect(dest);
+    o.start(t); o.stop(t + 0.0015 + tau * 7);
+  }
   A.killSting = function (info) {
     if (!ctx) return;
     const t = ctx.currentTime, duck = gunBus.gain;
     duck.cancelScheduledValues(t);
-    duck.setTargetAtTime(0.708, t, 0.004);
-    duck.setTargetAtTime(1, t + 0.15, 0.026);
+    duck.setTargetAtTime(0.72, t, 0.004);
+    duck.setTargetAtTime(1, t + 0.14, 0.03);
     if (sting) sting.gain.setTargetAtTime(0, t, 0.008);
-    sting = out(null, 1, 1.1);
+    sting = out(null, 1, 0.55, mix, killReverb());
 
     const tier = G.clamp(info.multi | 0, 1, 5);
-    const pitch = killPitch[tier - 1] * (info.knife ? 0.88 : info.headshot ? 1.14 : 1);
-    tone(sting, t, 0.12, { f: info.grenade ? 128 : 163, f2: 46, g: 0.99, wave: 'triangle', att: 0.002 });
-    tone(sting, t + 0.006, 0.14, { f: pitch, g: 0.85, wave: 'triangle', att: 0.002 });
-    tone(sting, t + 0.005, 0.066, { f: pitch * 2.31, f2: pitch * 2.18, g: 0.55, att: 0.001 });
-    tone(sting, t + 0.047, 0.15, { f: pitch * 1.34, g: 0.47, att: 0.003 });
-    if (tier > 1) tone(sting, t + 0.09, 0.18, { f: pitch * (tier >= 4 ? 2 : 1.68), g: 0.46, wave: 'triangle' });
-    if (info.headshot) tone(sting, t + 0.017, 0.19, { f: pitch * 3.15, f2: pitch * 2.82, g: 0.38 });
-    if (info.knife) noise(sting, t, 0.092, { type: 'bandpass', f: 4550, f2: 1270, q: 2.8, g: 0.82 });
-    if (info.grenade) noise(sting, t + 0.016, 0.17, { f: 560, f2: 84, g: 0.89, brown: true });
+    const f0 = KILL_NOTES[tier - 1] * (info.knife ? 0.94 : 1), ring = info.headshot ? 1.2 : 1;
+    tone(sting, t, info.grenade ? 0.16 : 0.09, { f: info.grenade ? 110 : 150, f2: info.grenade ? 40 : 62, g: 0.7, att: 0.002 });
+    noise(sting, t, 0.012, { type: 'highpass', f: 4800, g: 0.2, att: 0.0005 });
+    for (const [ratio, level, tau] of BELL) partial(sting, t + 0.003, f0 * ratio, level * 0.5, tau * ring);
+    partial(sting, t + 0.003, f0 * 1.0018, 0.24, 0.16 * ring);
+    if (info.headshot) {
+      partial(sting, t + 0.045, f0 * 1.5, 0.22, 0.14);
+      noise(sting, t, 0.006, { type: 'highpass', f: 7500, g: 0.28, att: 0.0003 });
+    }
+    if (tier >= 3) partial(sting, t + 0.07, f0 * 2, 0.15, 0.12);
+    if (info.knife) noise(sting, t, 0.13, { type: 'bandpass', f: 6000, f2: 2200, q: 3, g: 0.38 });
+    if (info.grenade) noise(sting, t + 0.01, 0.2, { f: 420, f2: 70, g: 0.6, brown: true });
     const line = killLine(info);
     if (line) A.announce(line[0], line[1], 0.13);
   };
@@ -360,10 +397,76 @@
     cue('roundStart');
     A.announce('v_start', 1, 0.25);
   };
-  A.roundEnd = function (won, mvpMine) {
+  // ---------- round and match outcome music ----------
+  // Victory: "Victory Fanfare Short" by cynicmusic (CC0); its first ~6.6 s for a won round, all of it for
+  // your MVP round or a won match. Defeat: a falling low hit under a dark minor swell, no melody.
+  let outcome = null;
+  function stopOutcome(fade) {
+    if (!outcome) return;
+    const g = outcome; outcome = null;
+    g.gain.cancelScheduledValues(ctx.currentTime);
+    g.gain.setTargetAtTime(0, ctx.currentTime, fade);
+    setTimeout(() => g.disconnect(), 1500);
+  }
+  A.victory = function (full) {
+    if (!ctx || !A.musicBus || !sfx.mu_victory) return false;
+    stopOutcome(0.05);
+    const t = ctx.currentTime + 0.04, b = sfx.mu_victory, len = full ? b.duration : Math.min(b.duration, 6.6);
+    const src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = b; src.connect(g); g.connect(A.musicBus);
+    g.gain.setValueAtTime(0.62, t);
+    if (!full) { g.gain.setValueAtTime(0.62, t + len - 1.5); g.gain.linearRampToValueAtTime(0, t + len); }
+    src.start(t, 0, len);
+    src.onended = () => { src.disconnect(); g.disconnect(); if (outcome === g) outcome = null; };
+    outcome = g;
+    return true;
+  };
+  let defeatVerb = null;
+  A.defeat = function () {
+    if (!ctx || !A.musicBus) return false;
+    stopOutcome(0.05);
+    const t = ctx.currentTime + 0.04, g = ctx.createGain();
+    g.gain.value = 0.9; g.connect(A.musicBus);
+    if (!defeatVerb) {
+      const len = Math.round(ctx.sampleRate * 2.4), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const d = ir.getChannelData(c);
+        for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6) * 0.22;
+      }
+      defeatVerb = ctx.createConvolver(); defeatVerb.buffer = ir;
+    }
+    const wet = ctx.createGain(); wet.gain.value = 0.45;
+    defeatVerb.connect(wet); wet.connect(g);
+    // a falling low hit
+    tone(g, t, 1.7, { f: 62, f2: 33, g: 0.75, att: 0.004 });
+    noise(g, t, 1.1, { f: 260, f2: 55, g: 0.42, brown: true, att: 0.003 });
+    // D minor (D2 A2 D3 F3 A3): detuned saw pairs under a dark low-pass that opens a little and closes
+    const lp = ctx.createBiquadFilter(), pad = ctx.createGain();
+    lp.type = 'lowpass'; lp.Q.value = 0.6;
+    lp.frequency.setValueAtTime(360, t); lp.frequency.linearRampToValueAtTime(880, t + 0.9);
+    lp.frequency.linearRampToValueAtTime(380, t + 3.4);
+    pad.gain.setValueAtTime(0, t); pad.gain.linearRampToValueAtTime(0.075, t + 0.7);
+    pad.gain.setTargetAtTime(0, t + 1.9, 0.55);
+    lp.connect(pad); pad.connect(g); pad.connect(defeatVerb);
+    for (const f of [73.42, 110, 146.83, 174.61, 220]) for (const cents of [-7, 6]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = cents;
+      o.connect(lp); o.start(t); o.stop(t + 4.6);
+    }
+    setTimeout(() => { wet.disconnect(); if (outcome === g) outcome = null; g.disconnect(); }, 7000);
+    outcome = g;
+    return true;
+  };
+  A.roundEnd = function (won, mvpMine, matchWon) {
+    if (clutch && clutch.stop) clutch.stop(0.25);
     clutch = null;
-    if (!cue(mvpMine ? 'mvp' : won ? 'win' : 'lose')) A.radio(won ? 'win' : 'lose');
+    if (G.Music && G.Music.stopAll) G.Music.stopAll(0.25);   // the bomb countdown and clutch end with the round
+    if (!(won ? A.victory(mvpMine || matchWon) : A.defeat())) A.radio(won ? 'win' : 'lose');
     A.announce(won ? 'v_round_winner' : 'v_mission_failed', 7, 0.3);   // always heard, even after a clutch line
+  };
+  // practice deathmatch result (no round-end call): the full fanfare or the defeat cue
+  A.matchEnd = function (won) {
+    if (!(won ? A.victory(true) : A.defeat())) A.radio(won ? 'win' : 'lose');
   };
   // the player is the last one standing on their team: tension music until the round is decided
   A.clutch = function () {
@@ -374,7 +477,11 @@
   A.stopClutch = function () { if (clutch) { clutch.stop(0.6); clutch = null; } };
   A.bombTen = function (seconds) { cue('bombTicking', { seconds }); };
   A.practiceStart = function () { cue('practiceStart'); A.announce('v_team_deathmatch', 2, 0.3); };
-  A.stopMusic = function () { clutch = null; if (G.Music && G.Music.stopAll) G.Music.stopAll(0.4); };
+  A.stopMusic = function () {
+    clutch = null;
+    if (G.Music && G.Music.stopAll) G.Music.stopAll(0.4);
+    if (ctx) stopOutcome(0.3);
+  };
   A.deathMix = function (enabled) {
     if (!ctx || !!heartbeat === enabled) return;
     const t = ctx.currentTime;

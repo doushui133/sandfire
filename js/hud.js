@@ -18,7 +18,7 @@
     el = {};
     ['hud', 'radar', 'scoreAtk', 'scoreDef', 'timer', 'aliveAtk', 'aliveDef', 'killfeed', 'hp', 'armor', 'armorIco', 'armorMark', 'hpBar', 'armorBar', 'vitHp', 'money', 'moneyDelta', 'clip', 'reserve', 'ammoIcon', 'slots',
       'crosshair', 'chL', 'chR', 'chT', 'chB', 'chDot', 'hitmarker', 'hitFx', 'scope', 'centerMsg', 'msgTitle', 'msgSub', 'progress', 'progressBar', 'progressLabel', 'hint', 'vignette',
-      'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner',
+      'dmgdir', 'death', 'deathCard', 'buyHint', 'buymenu', 'scoreboard', 'endScreen', 'endTitle', 'endSub', 'endStats', 'ammo', 'vcursor', 'edgeL', 'edgeR', 'bombStat', 'killBanner',
       'mapOverlay', 'mapFull', 'mapClose', 'nadeWheel', 'nadeCharge', 'killPips', 'specName'].forEach((k) => (el[k] = $(k)));
     rctx = el.radar.getContext('2d');
     fctx = el.mapFull ? el.mapFull.getContext('2d') : null;
@@ -193,8 +193,7 @@
       el.roundMvp.innerHTML = '<span class="mvp-icon" title="' + badge[1] + '" aria-label="' + badge[1] + '">' + badge[0] +
         '</span><span>回合最佳 <b>' + esc(mvp.name) + '</b></span><span>' + mvp.kills + ' 杀 · ' + mvp.damage + ' 伤害</span>';
       cls(el.roundMvp, 'mine', mvp.mine);
-      hid(el.roundMvp, false); mvpTime = 3;
-      if (mvp.mine) G.Audio.click('buy');
+      hid(el.roundMvp, false); mvpTime = 3;   // your MVP round already gets the full fanfare
     }
   };
   H.practiceStart = function () {
@@ -206,13 +205,21 @@
     const title = winner === 'draw' ? '平局' : G.Player.agent.team === winner ? '胜利' : '失败';
     H.showScores(false); H.toggleMap(false);
     H.message(title, '练枪死斗 · ' + s.atk + ' : ' + s.def, 3);
-    if (winner !== 'draw') G.Audio.radio(G.Player.agent.team === winner ? 'win' : 'lose');
+    if (winner !== 'draw') G.Audio.matchEnd(G.Player.agent.team === winner);
   };
+  // match results: the outcome, the score and your numbers for the match
   H.matchOver = function (winner) {
-    const p = G.Player.agent, s = G.Game.score;
-    el.endTitle.textContent = p.team === winner ? '胜利' : '失败';
-    el.endTitle.style.color = p.team === winner ? 'var(--ok)' : 'var(--danger)';
-    el.endSub.textContent = '比分 ' + s.atk + ' : ' + s.def + ' · 你的战绩 ' + p.kills + ' 杀 / ' + p.deaths + ' 死';
+    const p = G.Player.agent, s = G.Game.score, m = p.match, practice = G.Game.mode === 'practice';
+    const draw = winner === 'draw', won = p.team === winner;
+    el.endTitle.textContent = draw ? '平局' : won ? '胜利' : '失败';
+    el.endTitle.style.color = draw ? 'var(--sand)' : won ? 'var(--ok)' : 'var(--danger)';
+    el.endSub.textContent = (practice ? '练枪死斗 · ' : '比分 · ') + TEAM.atk + ' ' + s.atk + ' : ' + s.def + ' ' + TEAM.def;
+    const pct = (a, b) => (b > 0 ? Math.round(100 * a / b) + '%' : '—');
+    const tiles = [[p.kills, '击杀'], [p.deaths, '死亡'], [(p.kills / Math.max(1, p.deaths)).toFixed(2), 'K/D'],
+      [pct(m.headKills, p.kills), '爆头率'], [pct(m.hits, m.shots), '命中率'],
+      practice ? [m.bestStreak, '最高连杀'] : [m.damage, '总伤害']];
+    el.endStats.innerHTML = tiles.map(([v, label]) => '<div><b>' + esc(String(v)) + '</b><span>' + label + '</span></div>').join('');
+    H.message('', '', 0);   // the end-of-match banner gives way to the results
     el.endScreen.hidden = false;
     G.input.active = false;
     if (G.Touch.enabled) { H.showScores(false); G.Touch.sync(); }

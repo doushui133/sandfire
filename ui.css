@@ -331,7 +331,11 @@
   background: transparent; border: 1px dashed var(--line); border-radius: 4px; padding: 8px 14px; max-width: 100%;
 }
 .end-slab { text-align: center; }
-#endSub { color: var(--muted); margin-bottom: 16px; }
+#endSub { color: var(--muted); margin-bottom: 14px; }
+.end-stats { display: grid; grid-template-columns: repeat(3, minmax(86px, 1fr)); gap: 8px; max-width: 430px; margin: 0 auto 16px; }
+.end-stats div { background: rgba(255, 255, 255, .04); border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px 6px 7px; }
+.end-stats b { display: block; font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 22px; line-height: 1.15; color: var(--sand); }
+.end-stats span { font-size: 12px; letter-spacing: .08em; color: var(--muted); }
 #scoreboard.overlay { background: rgba(8, 7, 5, .4); }
 
 .bm-slab { width: min(920px, 100%); }

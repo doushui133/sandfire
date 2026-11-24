@@ -285,6 +285,7 @@
   }
   function shoot(a, it, recovery) {
     G.Game.breakSpawnProtection(a);
+    if (a.match) { a.match.shots++; a.match.shot++; }
     const d = it.def;
     it.clip--; it.nextFire = G.time + 60 / d.rpm;
     G.eyePos(a, eye);
@@ -346,7 +347,7 @@
     }
     a.lastShot = G.time;
     a.inacc += d.inacc.shot;
-    if (d.scope) { it.rezoom = it.zoom; it.zoom = 0; G.Audio.click('bolt'); }
+    if (d.scope) { it.rezoom = it.zoom; it.zoom = 0; G.Audio.click('bolt', a.isPlayer ? null : a.pos); }
     if (a.isPlayer && G.VM) G.VM.onShoot(d);
   }
 
@@ -404,7 +405,10 @@
       else if (ctl.alt && G.time >= it.nextFire) knife(a, true);
       return;
     }
-    if (ctl.altPressed && d.scope && !it.reloading) { it.zoom = (it.zoom + 1) % 3; it.rezoom = 0; G.Audio.click('switch'); }
+    if (ctl.altPressed && d.scope && !it.reloading) {
+      it.zoom = (it.zoom + 1) % 3; it.rezoom = 0;
+      if (a.isPlayer) G.Audio.click('zoom');
+    }
     if (d.shell && it.clip && (ctl.fire || ctl.firePressed)) it.reloading = false;
     if (ctl.reload && !it.reloading && it.clip < d.clip && it.reserve > 0) W.startReload(a, it);
     const wants = d.auto ? ctl.fire : ctl.firePressed;
@@ -571,7 +575,7 @@
       }
     }
     removeDrop(dr); W.drops.splice(W.drops.indexOf(dr), 1);
-    if (!(slot === 'primary' && W.switchTo(a, slot)) && a.isPlayer) G.Audio.click('switch');
+    if (!(slot === 'primary' && W.switchTo(a, slot)) && a.isPlayer) G.Audio.click('pickup');
     return true;
   };
   W.clearDrops = function () { W.drops.forEach(removeDrop); W.drops.length = 0; };

@@ -220,7 +220,6 @@
       const simDt = practice ? dt : dt * G.timeScale;
       G.time += simDt;
       G.Game.update(simDt, Math.min(realDt, 0.25));   // the practice clock must not jump after a long stall
-      if (practice && G.Game.phase === 'over') { toMenu(); return; }
       G.Player.update(simDt, realDt);
       G.Bots.update(simDt);
       G.FX.update(simDt);
@@ -450,6 +449,7 @@
     });
     $('btnQuit').addEventListener('click', toMenu);
     $('btnRestart').addEventListener('click', () => startMatch(lastTeam, false, G.Game.mode));
+    $('btnEndMenu').addEventListener('click', toMenu);
     $('pause').addEventListener('click', (e) => {
       if (!G.Touch.enabled && !e.target.closest('input,label,button,.direct-address,summary,details')) resume();
     });
