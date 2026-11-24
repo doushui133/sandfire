@@ -350,6 +350,7 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
             <h2>声音</h2>
             <div class="row"><label for="vol">音量</label><input type="range" id="vol" data-setting="vol" min="0" max="1" step="0.05" value="0.7"></div>
             <div class="row"><label for="musicVol">音乐音量</label><input type="range" id="musicVol" data-setting="musicVol" min="0" max="1" step="0.05" value="0.6"></div>
+            <div class="row"><label><input data-setting="announcer" type="checkbox" checked> 击杀播报（英文语音）</label></div>
           </section>
           <div class="keys mouse-only">
             <div><b>W A S D</b>移动</div><div><b>鼠标</b>瞄准 / 左键射击</div>
@@ -381,8 +382,12 @@ table.sb td.n{font-family:var(--num);font-variant-numeric:tabular-nums;text-alig
     </div>
     <details class="menu-sec pause-settings">
       <summary>设置</summary>
+    <div class="row video-row"><label for="videoQuality2">画质</label><select id="videoQuality2"><option value="auto">自动</option><option value="low">流畅</option><option value="medium">均衡</option><option value="high">高</option><option value="ultra">极致</option></select><span class="inline-note" id="qNote2"></span></div>
+    <div class="note">切换画质会重新载入游戏，当前对局会结束。</div>
+    <div class="row video-row"><label for="videoScale2">渲染分辨率</label><select id="videoScale2"><option value="1">100%</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.5">50%</option></select><label><input type="checkbox" id="videoDynamic2"> 动态分辨率</label><label><input type="checkbox" id="videoFPS2"> 显示帧率</label></div>
       <div class="row"><label for="vol2">音量</label><input type="range" id="vol2" data-setting="vol" min="0" max="1" step="0.05" value="0.7"></div>
       <div class="row"><label for="musicVol2">音乐音量</label><input type="range" id="musicVol2" data-setting="musicVol" min="0" max="1" step="0.05" value="0.6"></div>
+      <div class="row"><label><input data-setting="announcer" type="checkbox" checked> 击杀播报（英文语音）</label></div>
       <div class="row mouse-only" style="justify-content:center"><label for="sens2">灵敏度</label><input type="range" id="sens2" min="0.2" max="3" step="0.05" value="1"></div>
       <div class="row mouse-only"><label>开镜灵敏度 <input data-setting="scopeSens" type="range" min="0.3" max="1.8" step="0.05" value="1"></label></div>
       <div class="row touch-only" style="justify-content:center"><label for="touchSens2">触屏灵敏度</label><input type="range" id="touchSens2" min="0.5" max="3" step="0.05" value="1.5"></div>

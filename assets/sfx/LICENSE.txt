@@ -1,0 +1,20 @@
+Sound files in this folder (assets/sfx)
+=======================================
+
+The files were trimmed, mixed to mono, resampled and normalised with tools/sfx-build.js.
+
+g_*.wav and m_*.wav — gunshots and gun handling
+  "Snake's Authentic Gun Sounds" and "Snake's SECOND Authentic Gun Sounds" by SnakeF8
+  https://f8studios.itch.io/snakes-authentic-gun-sounds
+  https://f8studios.itch.io/snakes-second-authentic-gun-sounds-pack
+  The author releases the packs for free commercial use with no credit required and has stated they are
+  public domain (CC0). Credited here with thanks.
+
+v_*.wav — announcer voice lines
+  "WARLORD - Video Game Announcer" by VoiceBosch (www.voicebosch.com)
+  https://voicebosch.itch.io/warlord-announcer-audio-pack
+  https://opengameart.org/content/warlord-video-game-announcer
+  Licensed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0):
+  https://creativecommons.org/licenses/by-sa/4.0/
+  The trimmed and resampled versions in this folder are adaptations and are shared under the same licence
+  (CC BY-SA 4.0), credit: VoiceBosch.

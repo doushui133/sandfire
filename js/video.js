@@ -12,14 +12,16 @@
     if (typeof s.showFPS !== 'boolean') s.showFPS = false;
     counter = get('videoStats');
   };
+  // The same controls live in the main-menu settings and in the pause menu (…2 ids); they stay in sync.
   V.wire = function () {
-    const s = G.settings, q = get('videoQuality'), scale = get('videoScale');
-    const dr = get('videoDynamic'), fps = get('videoFPS');
+    const s = G.settings, both = (id) => [get(id), get(id + '2')].filter(Boolean);
+    const qs = both('videoQuality'), scales = both('videoScale'), drs = both('videoDynamic'), fpss = both('videoFPS');
     const query = new URL(location.href);
-    q.value = query.searchParams.get('quality') || s.quality || 'auto';
-    get('qNote').textContent = '当前：' + G.Gfx.preset.label;
-    q.onchange = function () {
-      s.quality = q.value;
+    const quality = query.searchParams.get('quality') || s.quality || 'auto';
+    for (const q of qs) q.value = quality;
+    for (const note of [get('qNote'), get('qNote2')]) if (note) note.textContent = '当前：' + G.Gfx.preset.label;
+    const applyQuality = function () {
+      s.quality = this.value;
       let state = history.state;
       if (!G.saveSettings()) state = Object.assign({}, state, {sandfireReload: s});
       else if (state && state.sandfireReload) { state = Object.assign({}, state); delete state.sandfireReload; }
@@ -27,15 +29,31 @@
       try { history.replaceState(state, '', query.href); } catch (e) {}
       location.reload();
     };
-    scale.value = s.renderScale;
-    scale.onchange = function () { s.renderScale = +scale.value; G.setRenderScale(1); G.saveSettings(); };
-    dr.checked = s.dynamicResolution;
-    dr.onchange = function () {
-      G.DR.auto = s.dynamicResolution = dr.checked;
-      G.setRenderScale(1); G.saveSettings();
-    };
-    fps.checked = s.showFPS;
-    fps.onchange = function () { s.showFPS = fps.checked; counter.hidden = !(s.showFPS || detail); G.saveSettings(); };
+    for (const q of qs) q.onchange = applyQuality;
+    for (const scale of scales) {
+      scale.value = s.renderScale;
+      scale.onchange = function () {
+        s.renderScale = +scale.value;
+        for (const other of scales) other.value = s.renderScale;
+        G.setRenderScale(1); G.saveSettings();
+      };
+    }
+    for (const dr of drs) {
+      dr.checked = s.dynamicResolution;
+      dr.onchange = function () {
+        G.DR.auto = s.dynamicResolution = dr.checked;
+        for (const other of drs) other.checked = dr.checked;
+        G.setRenderScale(1); G.saveSettings();
+      };
+    }
+    for (const fps of fpss) {
+      fps.checked = s.showFPS;
+      fps.onchange = function () {
+        s.showFPS = fps.checked;
+        for (const other of fpss) other.checked = fps.checked;
+        counter.hidden = !(s.showFPS || detail); G.saveSettings();
+      };
+    }
     window.addEventListener('keydown', function (e) {
       if (e.code !== 'F3') return;
       e.preventDefault();

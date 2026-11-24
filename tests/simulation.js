@@ -1500,6 +1500,105 @@ function ragdollChecks() {
   }
   console.log('Ragdoll rigid tumble and 16 deaths passed bone matrix and limb length checks');
 }
+// Recorded gun sounds, announcer and match-moment hooks, against a fake AudioContext and fetch.
+async function soundChecks() {
+  const A = G.Audio, made = [];
+  class P {
+    constructor(v) { this.value = v; this.events = []; }
+    setValueAtTime(v, t) { this.events.push(['set', v, t]); this.value = v; }
+    linearRampToValueAtTime(v, t) { this.events.push(['linear', v, t]); }
+    exponentialRampToValueAtTime(v, t) { this.events.push(['exp', v, t]); }
+    setTargetAtTime(v, t) { this.events.push(['target', v, t]); }
+    cancelScheduledValues(t) { this.events = this.events.filter((e) => e[2] < t); }
+  }
+  const PARAMS = ['gain', 'frequency', 'Q', 'detune', 'playbackRate', 'delayTime', 'threshold', 'knee', 'ratio',
+    'attack', 'release', 'positionX', 'positionY', 'positionZ', 'forwardX', 'forwardY', 'forwardZ', 'upX', 'upY', 'upZ'];
+  function node() {
+    const n = { connect: noop, disconnect: noop, setPosition: noop, setOrientation: noop,
+      start(t) { n.started = t; }, stop(t) { n.stopped = t; } };
+    for (const k of PARAMS) n[k] = new P(k === 'gain' || k === 'playbackRate' ? 1 : 0);
+    made.push(n);
+    return n;
+  }
+  class FakeContext {
+    constructor() { this.currentTime = 10; this.state = 'running'; this.sampleRate = 8000; this.destination = node(); this.listener = node(); }
+    resume() { return Promise.resolve(); }
+    suspend() { return Promise.resolve(); }
+    createBuffer(ch, len) { const d = new Float32Array(len); return { getChannelData: () => d, duration: len / 8000 }; }
+    decodeAudioData(data, ok) { ok({ duration: 1.2, url: data.url }); }
+  }
+  for (const m of ['createGain', 'createBiquadFilter', 'createBufferSource', 'createConvolver', 'createDelay',
+    'createDynamicsCompressor', 'createOscillator', 'createPanner', 'createWaveShaper']) FakeContext.prototype[m] = node;
+  const saved = { ac: global.AudioContext, fetch: global.fetch, cue: G.Music.cue, ann: G.settings.announcer };
+  global.AudioContext = FakeContext;
+  global.fetch = async (url) => ({ ok: true, arrayBuffer: async () => ({ url }) });
+  try {
+    A.init();
+    for (let i = 0; i < 1000 && !A.sfxReady('v_team_deathmatch'); i++) await new Promise((r) => setImmediate(r));
+    assert(A.sfxReady('g_762') && A.sfxReady('m_ak_in') && A.sfxReady('v_team_deathmatch'), 'recordings loaded');
+    const ctx = A.ctx, src = (tag) => made.filter((n) => n.buffer && n.buffer.url && n.buffer.url.includes(tag));
+    const gainOf = (s) => made[made.indexOf(s) + 1].gain;
+
+    // the AR-7 plays its real recording; the next shot of a burst ducks the previous tail
+    A.shot('rifle', null, true);
+    const first = src('g_762');
+    assert.equal(first.length, 1);
+    ctx.currentTime += 0.1;
+    A.shot('rifle', null, true);
+    assert.equal(src('g_762').length, 2);
+    assert(gainOf(first[0]).events.some((e) => e[0] === 'target' && Math.abs(e[1] - 0.22) < 1e-9), 'burst tail duck');
+
+    // announcer: multi-kills outrank headshots, the setting turns it off
+    G.settings.announcer = true;
+    ctx.currentTime += 3;
+    A.killSting({ multi: 2, streak: 2 });
+    assert.equal(src('v_double_kill').length, 1);
+    A.killSting({ multi: 1, headshot: true, streak: 3 });
+    assert.equal(src('v_headshot').length, 0, 'a smaller moment never cuts a bigger line');
+    ctx.currentTime += 3;
+    A.killSting({ multi: 1, headshot: true, streak: 4 });
+    assert.equal(src('v_headshot').length, 1);
+    ctx.currentTime += 3;
+    A.killSting({ multi: 5, ace: true, streak: 5 });
+    assert.equal(src('v_annihilation').length, 1);
+    ctx.currentTime += 3;
+    G.settings.announcer = false;
+    A.killSting({ multi: 3, streak: 3 });
+    assert.equal(src('v_triple_kill').length, 0);
+    G.settings.announcer = true;
+
+    // reloads: magazine out, then in; a weapon switch cuts the pending magazine sound
+    ctx.currentTime += 3;
+    A.reload(W.defs.ar7, false);
+    const magOut = src('m_ak_out'), magIn = src('m_ak_in');
+    assert(magOut.length === 1 && magIn.length === 1 && magIn[0].started > magOut[0].started);
+    A.click('switch');
+    assert(gainOf(magIn[0]).events.some((e) => e[0] === 'target' && e[1] === 0), 'switch cancels the reload sound');
+    A.reload(W.defs.ar7, true); assert.equal(src('m_ak_rack').length, 1);
+    A.reload(W.defs.p10, false); assert.equal(src('m_pistol_out').length, 1);
+    A.reload(W.defs.s8, false); assert.equal(src('m_shell').length, 1);
+    A.reload(W.defs.s8, true); assert.equal(src('m_pump').length, 1);
+    A.click('empty'); assert.equal(src('m_dry').length, 1);
+
+    // match moments drive the music cues and the announcer
+    const cues = [];
+    G.Music.cue = (name) => { cues.push(name); return { stop() { cues.push('stop:' + name); } }; };
+    ctx.currentTime += 3;
+    A.roundLive();
+    assert.deepEqual(cues, ['roundStart']); assert.equal(src('v_start').length, 1);
+    ctx.currentTime += 3;
+    A.clutch(); A.clutch();
+    assert.equal(cues.filter((c) => c === 'clutch').length, 1); assert.equal(src('v_last_man_standing').length, 1);
+    A.roundEnd(true, true);
+    assert(cues.includes('mvp')); assert.equal(src('v_round_winner').length, 1, 'round end outranks the clutch line');
+    A.bombTen(10); assert(cues.includes('bombTicking'));
+    ctx.currentTime += 3;
+    A.practiceStart(); assert(cues.includes('practiceStart')); assert.equal(src('v_team_deathmatch').length, 1);
+    console.log('Recorded gunshots, burst tail duck, announcer ranks and toggle, reload sounds and match-moment music passed');
+  } finally {
+    global.AudioContext = saved.ac; global.fetch = saved.fetch; G.Music.cue = saved.cue; G.settings.announcer = saved.ann;
+  }
+}
 mapChecks();
 botRoundChecks();
 musicChecks();
@@ -1509,5 +1608,5 @@ captureChecks().then(() => {
   touchBrakeChecks();
   gameplayChecks();
   ragdollChecks();
-}).catch(err=>{console.error(err);process.exitCode=1;});
+}).then(soundChecks).catch(err=>{console.error(err);process.exitCode=1;});
 

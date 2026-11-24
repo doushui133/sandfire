@@ -73,6 +73,7 @@
     echo.type = 'lowpass'; echo.frequency.value = 1450; echo.Q.value = 0.7;
     const slap = ctx.createGain(); slap.gain.value = 0.19;
     gunTail.connect(delay); delay.connect(echo); echo.connect(slap); slap.connect(gunBus);
+    loadSfx();
   };
   A.pause = function () { if (ctx && ctx.state==='running') ctx.suspend().catch(() => {}); };
   A.setVolume = function (v) { if (master) master.gain.value = v; };
@@ -162,8 +163,8 @@
     s40:    { f: 1720, d: 0.202, crack: 5550, th: 124, end: 45, q: 0.83, g: 1.28 },
     sniper: { f: 1120, d: 0.285, crack: 4320, th: 110, end: 39, q: 0.65, g: 1.52 },
   };
-  A.shot = function (kind, pos, local) {
-    if (!ctx) return;
+  // synthesised gunshot: used until the recordings have loaded
+  function synthShot(kind, pos, local) {
     const p = GUN[kind] || GUN.rifle;
     const d = local ? 0 : dist(pos);
     const t = ctx.currentTime + Math.min(d / 343, 0.23);
@@ -180,6 +181,78 @@
     noise(shot, t, 0.02 + p.d * 0.045, { type: 'highpass', f: p.crack * variation, g: p.g * 1.05, att: 0.0006 });
     noise(shot, t + 0.001, p.d, { type: 'bandpass', f: p.f * variation, f2: p.f * 0.24, q: p.q, g: p.g * 2.2, att: 0.0015 });
     tone(shot, t + 0.002, 0.055 + p.d * 0.42, { f: p.th, f2: p.end, g: p.g * 0.93, wave: 'triangle', att: 0.002 });
+  }
+
+  // ---------- recorded sounds (assets/sfx, built by tools/sfx-build.js) ----------
+  // Real gunshot and gun-handling recordings (Snake's Authentic Gun Sounds packs) and an English announcer
+  // (WARLORD by VoiceBosch, CC BY-SA 4.0). Until a file has loaded, the synthesised version plays instead.
+  const SFX = ['g_9mm', 'g_556', 'g_762', 'g_308', 'g_762r', 'g_20ga', 'm_dry', 'm_bolt', 'm_pump', 'm_shell',
+    'm_ar_out', 'm_ar_in', 'm_ar_bolt', 'm_ak_out', 'm_ak_in', 'm_ak_rack', 'm_pistol_out', 'm_pistol_in', 'm_pistol_slide',
+    'v_headshot', 'v_double_kill', 'v_triple_kill', 'v_rampage', 'v_unstoppable', 'v_annihilation', 'v_first_blood',
+    'v_dominating', 'v_start', 'v_round_winner', 'v_mission_failed', 'v_last_man_standing', 'v_team_deathmatch'];
+  const sfx = {};
+  let sfxLoading = false;
+  function loadSfx() {
+    if (sfxLoading || !ctx || typeof fetch !== 'function') return;
+    sfxLoading = true;
+    (async () => {
+      for (const name of SFX) {   // one at a time, guns first: keeps phones responsive
+        try {
+          const res = await fetch('assets/sfx/' + name + '.wav');
+          if (!res.ok) continue;
+          const data = await res.arrayBuffer();
+          sfx[name] = await new Promise((ok, fail) => ctx.decodeAudioData(data, ok, fail));
+        } catch (e) { /* keep the synthesised fallback */ }
+      }
+    })();
+  }
+  A.sfxReady = (name) => !!sfx[name];
+  function play(name, dest, t, rate, gain) {
+    const b = sfx[name];
+    if (!b) return null;
+    const src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = b; src.playbackRate.value = rate || 1; g.gain.value = gain == null ? 1 : gain;
+    src.connect(g); g.connect(dest); src.start(t);
+    src.onended = () => { src.disconnect(); g.disconnect(); };
+    return g;
+  }
+
+  // weapon sound → [recording, playback rate, gain]
+  const SHOT = {
+    pistol: ['g_9mm', 1.0, 0.92], m18: ['g_9mm', 1.07, 0.86], heavy: ['g_308', 1.18, 1.0],
+    smg: ['g_9mm', 1.1, 0.86], k5: ['g_9mm', 1.18, 0.8], u45: ['g_9mm', 0.9, 0.96],
+    rifle: ['g_762', 1.0, 1.0], rifle2: ['g_556', 1.0, 0.98], fa2: ['g_556', 1.06, 0.94],
+    l60: ['g_308', 0.94, 1.0], s8: ['g_20ga', 1.0, 1.05], sniper: ['g_762r', 1.0, 1.1], s40: ['g_308', 1.0, 1.06],
+  };
+  const lastShot = new Map();
+  A.shot = function (kind, pos, local) {
+    if (!ctx) return;
+    const s = SHOT[kind];
+    if (!s || !sfx[s[0]]) { synthShot(kind, pos, local); return; }
+    const d = local ? 0 : dist(pos);
+    const t = ctx.currentTime + Math.min(d / 343, 0.23);
+    const o = out(local ? null : pos, 7, local ? 1.05 : 1 / (1 + d / 95), gunBus, local ? null : gunTail);
+    let dest = o;
+    if (!local) {
+      dest = ctx.createBiquadFilter();
+      dest.type = 'lowpass';
+      dest.frequency.value = 900 + 16000 / (1 + Math.pow(d / 12, 1.6));
+      dest.Q.value = 0.7;
+      dest.connect(o);
+    }
+    // Automatic fire: duck the previous report's tail so every shot stays crisp instead of smearing.
+    const key = local ? 'me' : Math.round(pos.x * 2) + ',' + Math.round(pos.z * 2);
+    const prev = lastShot.get(key);
+    if (prev && prev.g && t - prev.t < 0.6) prev.g.gain.setTargetAtTime(prev.v * 0.22, t, 0.02);
+    const v = s[2], g = play(s[0], dest, t, s[1] * G.rand(0.97, 1.03), v);
+    lastShot.set(key, { g, t, v });
+    if (lastShot.size > 40) for (const [k, e] of lastShot) if (t - e.t > 1) lastShot.delete(k);
+    if (local) {
+      // a short sub-bass kick under your own shots: the punch big shooters lean on
+      const heavy = kind === 's8' || kind === 'sniper' || kind === 's40';
+      tone(o, t, 0.075, { f: heavy ? 70 : 95, f2: 42, g: 0.6, wave: 'sine', att: 0.001 });
+      if (kind === 's8' && sfx.m_pump) play('m_pump', out(null, 1, 0.55), t + 0.34, 1.08, 1);
+    }
   };
   A.foot = function (pos, local, loud) {
     if (!ctx) return;
@@ -195,6 +268,9 @@
   A.click = function (kind) {
     if (!ctx) return;
     const t = ctx.currentTime, o = out(null, 1, 0.5);
+    if (kind === 'switch') cancelReload();
+    if (kind === 'empty' && sfx.m_dry) { play('m_dry', o, t, 1, 1.3); return; }
+    if (kind === 'bolt' && sfx.m_bolt) { play('m_bolt', o, t + 0.26, 1.05, 1.4); return; }
     if (kind === 'empty') noise(o, t, 0.03, { type: 'highpass', f: 3500, g: 0.5 });
     else if (kind === 'reload1') { noise(o, t, 0.05, { type: 'bandpass', f: 2200, q: 2, g: 0.6 }); tone(o, t, 0.04, { f: 600, g: 0.15, wave: 'square' }); }
     else if (kind === 'reload2') { noise(o, t, 0.07, { type: 'bandpass', f: 1500, q: 2, g: 0.8 }); noise(o, t + 0.07, 0.05, { type: 'highpass', f: 3000, g: 0.5 }); }
@@ -239,7 +315,66 @@
     if (info.headshot) tone(sting, t + 0.017, 0.19, { f: pitch * 3.15, f2: pitch * 2.82, g: 0.38 });
     if (info.knife) noise(sting, t, 0.092, { type: 'bandpass', f: 4550, f2: 1270, q: 2.8, g: 0.82 });
     if (info.grenade) noise(sting, t + 0.016, 0.17, { f: 560, f2: 84, g: 0.89, brown: true });
+    const line = killLine(info);
+    if (line) A.announce(line[0], line[1], 0.13);
   };
+
+  // ---------- announcer and match moments ----------
+  let voice = null, voiceUntil = 0, voiceRank = 0, clutch = null;
+  // rank: a bigger moment (a triple kill) is never cut off by a smaller one (a headshot)
+  A.announce = function (name, rank, delay) {
+    if (!ctx || !sfx[name] || G.settings.announcer === false) return false;
+    const now = ctx.currentTime, t = now + (delay || 0);
+    if (now < voiceUntil && (rank || 0) <= voiceRank) return false;
+    if (voice) voice.gain.setTargetAtTime(0, now, 0.03);
+    voice = ctx.createGain(); voice.gain.value = 1.1; voice.connect(mix);
+    play(name, voice, t, 1, 1);
+    const len = sfx[name].duration;
+    voiceUntil = t + len; voiceRank = rank || 0;
+    // the voice cuts through: gunfire and music duck underneath it
+    const duck = gunBus.gain;
+    duck.cancelScheduledValues(t);
+    duck.setTargetAtTime(0.55, t, 0.03); duck.setTargetAtTime(1, t + len * 0.85, 0.2);
+    if (A.musicBus) {
+      const m = A.musicBus.gain, level = G.clamp(+G.settings.musicVol >= 0 ? +G.settings.musicVol : 0.6, 0, 1);
+      m.cancelScheduledValues(t); m.setTargetAtTime(level * 0.45, t, 0.05); m.setTargetAtTime(level, t + len, 0.3);
+    }
+    return true;
+  };
+  function killLine(info) {
+    const m = info.multi | 0;
+    if (info.ace) return ['v_annihilation', 6];
+    if (m >= 5) return ['v_unstoppable', 5];
+    if (m === 4) return ['v_rampage', 4];
+    if (m === 3) return ['v_triple_kill', 3];
+    if (m === 2) return ['v_double_kill', 2];
+    if (G.Game.mode === 'practice' && info.streak >= 5 && info.streak % 5 === 0) return [info.streak >= 10 ? 'v_unstoppable' : 'v_dominating', 3];
+    if (info.headshot) return ['v_headshot', 1];
+    if (info.first) return ['v_first_blood', 1];
+    return null;
+  }
+  const cue = (name, opts) => (G.Music && G.Music.cue ? G.Music.cue(name, opts) : null);
+  A.roundLive = function () {
+    A.radio('start');
+    A.stopClutch();
+    cue('roundStart');
+    A.announce('v_start', 1, 0.25);
+  };
+  A.roundEnd = function (won, mvpMine) {
+    clutch = null;
+    if (!cue(mvpMine ? 'mvp' : won ? 'win' : 'lose')) A.radio(won ? 'win' : 'lose');
+    A.announce(won ? 'v_round_winner' : 'v_mission_failed', 7, 0.3);   // always heard, even after a clutch line
+  };
+  // the player is the last one standing on their team: tension music until the round is decided
+  A.clutch = function () {
+    if (clutch) return;
+    clutch = cue('clutch');
+    A.announce('v_last_man_standing', 4, 0.2);
+  };
+  A.stopClutch = function () { if (clutch) { clutch.stop(0.6); clutch = null; } };
+  A.bombTen = function (seconds) { cue('bombTicking', { seconds }); };
+  A.practiceStart = function () { cue('practiceStart'); A.announce('v_team_deathmatch', 2, 0.3); };
+  A.stopMusic = function () { clutch = null; if (G.Music && G.Music.stopAll) G.Music.stopAll(0.4); };
   A.deathMix = function (enabled) {
     if (!ctx || !!heartbeat === enabled) return;
     const t = ctx.currentTime;
@@ -286,9 +421,37 @@
     noise(o, t, 0.6, { f: 4000, f2: 300, g: 0.8 });
     tone(o, t, 1.6, { f: 70, f2: 25, g: 1.2 });
   };
+  // reload: magazine out at the start, magazine in a little past half-way, then the bolt / rack / slide
+  const RELOAD = {
+    ak: ['m_ak_out', 'm_ak_in', 'm_ak_rack', 1], ar: ['m_ar_out', 'm_ar_in', 'm_ar_bolt', 1],
+    smg: ['m_ar_out', 'm_ar_in', 'm_ar_bolt', 1.12], pistol: ['m_pistol_out', 'm_pistol_in', 'm_pistol_slide', 1],
+    sniper: ['m_ar_out', 'm_ar_in', 'm_bolt', 0.95],
+  };
+  let reloadVoices = [];
+  function cancelReload() {
+    if (!ctx) return;
+    for (const g of reloadVoices) if (g) g.gain.setTargetAtTime(0, ctx.currentTime, 0.02);
+    reloadVoices = [];
+  }
+  function reloadSet(d) {
+    if (d.slot === 'pistol') return RELOAD.pistol;
+    if (d.scope) return RELOAD.sniper;
+    if (d.model === 'smg') return RELOAD.smg;
+    return d.snd === 'rifle' || d.snd === 'l60' ? RELOAD.ak : RELOAD.ar;
+  }
   A.reload = function (d, finish) {
     if (!ctx) return;
-    const p=GUN[d.snd], t=ctx.currentTime, o=out(null,1,0.45);
+    const t = ctx.currentTime;
+    if (sfx.m_ar_out) {
+      const o = out(null, 1, 0.8);
+      if (d.shell) { play(finish ? 'm_pump' : 'm_shell', o, t, 1.05, 1); return; }
+      const set = reloadSet(d);
+      if (finish) { reloadVoices = []; play(set[2], o, t, set[3], 1); return; }
+      cancelReload();
+      reloadVoices = [play(set[0], o, t + 0.06, set[3], 0.9), play(set[1], o, t + Math.max(0.35, d.reload * 0.55), set[3], 1)];
+      return;
+    }
+    const p=GUN[d.snd], o=out(null,1,0.45);
     noise(o,t,d.shell ? 0.06 : 0.14,{type:'bandpass',f:p.f*(finish ? 0.7 : 1),q:1.6});
     tone(o,t+0.04,0.07,{f:p.th*4,g:0.14,wave:'triangle'});
   };

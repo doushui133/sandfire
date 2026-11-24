@@ -26,6 +26,7 @@
   };
   Gm.alive = (team) => Gm.agents.filter((a) => a.alive && a.team === team).length;
   Gm.clearScene = function () {
+    G.Audio.stopMusic();
     G.Player.resetSpectate(); G.Nades.clear(); G.HUD.clearMatch();
     if (bombMesh) { G.scene.remove(bombMesh); bombMesh = null; }
     bombLed = null; Gm.bomb = { state: 'none' };
@@ -187,6 +188,7 @@
       respawn(a);
     }
     G.HUD.practiceStart();
+    G.Audio.practiceStart();
   }
   function endPractice() {
     const s = Gm.score;
@@ -234,10 +236,11 @@
     const b = Gm.bomb;
     if (Gm.phase === 'freeze') {
       Gm.phaseT -= dt;
-      if (Gm.phaseT <= 0) { Gm.phase = 'live'; Gm.frozen = false; G.Audio.radio('start'); G.HUD.message('', ''); }
+      if (Gm.phaseT <= 0) { Gm.phase = 'live'; Gm.frozen = false; G.Audio.roundLive(); G.HUD.message('', ''); }
     } else if (Gm.phase === 'live') {
       if (b.state === 'planted') {
         b.timer -= dt; b.beepT -= dt;
+        if (b.timer <= 10 && b.timer + dt > 10) G.Audio.bombTen(b.timer);   // 10-second warning music
         if (b.beepT <= 0) {
           b.beepT = Math.max(0.1, (b.timer / CFG.bombTime) * 1.0);
           G.Audio.beep(b.pos, b.timer < 10); if (bombLed) bombLed.visible = true;
@@ -401,6 +404,11 @@
     G.FX.deathBurst(v, dir, info.head);
     if (v.rig && G.BotModel.prepareDeath) G.BotModel.prepareDeath(v);
     v.alive = false; v.hp = 0; v.deaths++; v.planting = v.defusing = false; v.vel.set(0, 0, 0); v.crouch = Math.min(v.crouch, 0.5);
+    // the player left as the last one standing: clutch music and announcer
+    const me = G.Player.agent;
+    if (v === me) G.Audio.stopClutch();
+    else if (Gm.mode !== 'practice' && Gm.phase === 'live' && me && me.alive && v.team === me.team &&
+      Gm.alive(me.team) === 1 && Gm.alive(me.team === 'atk' ? 'def' : 'atk') > 0) G.Audio.clutch();
     if (Gm.bomb.defuser === v) Gm.bomb.defuser = null;
     const practice = Gm.mode === 'practice';
     if (practice) v.respawnAt = Gm.practiceTime + PRACTICE.respawn;
@@ -479,7 +487,7 @@
   }
   function announceEnd(winner, reason, mvp) {
     const mine = G.Player.agent.team === winner;
-    G.Audio.radio(mine ? 'win' : 'lose');
+    G.Audio.roundEnd(mine, !!(mvp && mvp.mine));
     G.HUD.roundEnd(winner, reason, mvp);
   }
 
