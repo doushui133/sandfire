@@ -4,11 +4,64 @@
   'use strict';
   const THREE = G.THREE, MG = G.MapGeo;
   const MM = G.MapMesh = {};
+  const weatherKinds = { sand: 1, cobble: 2, tiles: 3, blocks: 4, rubble: 4, plaster: 5, trim: 6 };
+  const scanChunks = new Map();
 
-  function quadGeometry(list, geo, tex) {
+  function chunkQuads(geo, skipDetails) {
+    const buckets = new Map();
+    for (const q of geo.quads) {
+      if (skipDetails && q.detail) continue;
+      const cx = q.o[0] + (q.u[0] + q.v[0]) / 2, cz = q.o[2] + (q.u[2] + q.v[2]) / 2;
+      const key = q.decal ? 'decal' : Math.min(3, Math.max(0, Math.floor((cx + 50) / 25))) + ',' + Math.min(3, Math.max(0, Math.floor((cz + 50) / 25)));
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(q);
+    }
+    return buckets;
+  }
+
+  function cornerAt(q, along, nx, nz, direction) {
+    const x = q.o[0] + q.u[0] * along + (nx + direction * nz) * .25;
+    const z = q.o[2] + q.u[2] * along + (nz - direction * nx) * .25;
+    const y0 = q.o[1], y1 = y0 + q.v[1];
+    return MG.column(G.Map.colOf(x), G.Map.rowOf(z)).some(iv => Math.min(y1, iv.y1) - Math.max(y0, iv.y0) > .45);
+  }
+
+  function setScanAttribute(g, list, layers) {
+    const { position, normal, tang } = g.attributes;
+    const existing = g.attributes.scan;
+    const data = existing ? existing.array : new Float32Array(position.count * 4);
+    list.forEach((q, k) => {
+      const scan = G.Tex.surfaceScan(q, layers), i = k * 4;
+      if (!scan) {
+        for (let c = 0; c < 4; c++) data[(i + c) * 4 + 2] = -1;
+        return;
+      }
+      const nx = normal.getX(i), ny = normal.getY(i), nz = normal.getZ(i);
+      const tx = tang.getX(i), ty = tang.getY(i), tz = tang.getZ(i);
+      const bx = ny * tz - nz * ty, by = nz * tx - nx * tz, bz = nx * ty - ny * tx;
+      const phase = (q.o[0] * nx + q.o[1] * ny + q.o[2] * nz) * .317 + q.tint[1] * 11.7;
+      for (let c = 0; c < 4; c++) {
+        const v = i + c, offset = v * 4;
+        const x = position.getX(v), y = position.getY(v), z = position.getZ(v);
+        data[offset] = (x * tx + y * ty + z * tz) / scan.tile + phase;
+        data[offset + 1] = (x * bx + y * by + z * bz) / scan.tile + phase * .63;
+        data[offset + 2] = scan.layer; data[offset + 3] = scan.mode;
+      }
+    });
+    if (existing) existing.needsUpdate = true;
+    else g.setAttribute('scan', new THREE.BufferAttribute(data, 4));
+  }
+  MM.setScanLayers = function (geo, layers) {
+    for (const [key, quads] of chunkQuads(geo, false)) {
+      const geometry = scanChunks.get(key);
+      if (geometry) setScanAttribute(geometry, quads, layers);
+    }
+  };
+
+  function quadGeometry(list, geo, tex, rich) {
     const n = list.length, P = new Float32Array(n * 12), N = new Float32Array(n * 12), UV = new Float32Array(n * 8), UV2 = new Float32Array(n * 8);
     const TG = new Float32Array(n * 12), C = new Float32Array(n * 12), MT = new Float32Array(n * 16);
-    const SU = tex.scanLayers && !list[0].decal ? new Float32Array(n * 16) : null;
+    const WT = rich ? new Float32Array(n * 16) : null;
     const idx = n * 4 > 65535 ? new Uint32Array(n * 6) : new Uint16Array(n * 6);
     const W = geo.atlasW, H = geo.atlasH;
     list.forEach((q, k) => {
@@ -17,10 +70,20 @@
       const uh = [q.u[0] / lu, q.u[1] / lu, q.u[2] / lu], vh = [q.v[0] / lv, q.v[1] / lv, q.v[2] / lv];
       let nx = q.u[1] * q.v[2] - q.u[2] * q.v[1], ny = q.u[2] * q.v[0] - q.u[0] * q.v[2], nz = q.u[0] * q.v[1] - q.u[1] * q.v[0];
       const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
-      const scan = SU && G.Tex.surfaceScan(q, tex.scanLayers);
-      // Match adjoining floor quads and use a common offset along each facade plane.
-      const phase = scan ? (q.o[0] * nx + q.o[1] * ny + q.o[2] * nz) * .317 + q.tint[1] * 11.7 : 0;
       const layer = tex.layers ? tex.layers[q.m] : mat.layer;
+      let kind = 0, ground = false, trim = false, start = false, end = false, tint = 1, warmth = 0;
+      if (WT) {
+        kind = weatherKinds[q.m] || 0;
+        trim = q.m === 'trim' && !q.wall;
+        ground = q.wall ? q.wall[0] < .01 : (trim || q.m === 'blocks') && q.o[1] < .015 && Math.abs(ny) < .1;
+        if (q.wall) {
+          start = cornerAt(q, 0, nx, nz, -1); end = cornerAt(q, 1, nx, nz, 1);
+          const plane = Math.round(nx * q.o[0] + nz * q.o[2]);
+          const run = Math.floor((nz * (q.o[0] + q.u[0] * .5) - nx * (q.o[2] + q.u[2] * .5)) / 8);
+          const shade = G.seeded((plane * 73856093) ^ (run * 19349663) ^ ((nx + nz) * 83492791));
+          tint = .92 + .16 * shade(); warmth = (shade() - .5) * .09;
+        }
+      }
       [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([s, t], c) => {
         const v = k * 4 + c;
         const x = q.o[0] + q.u[0] * s + q.v[0] * t, y = q.o[1] + q.u[1] * s + q.v[1] * t, z = q.o[2] + q.u[2] * s + q.v[2] * t;
@@ -29,16 +92,15 @@
         TG[v * 3] = uh[0]; TG[v * 3 + 1] = uh[1]; TG[v * 3 + 2] = uh[2];
         if (q.uv) { UV[v * 2] = s ? q.uv[2] : q.uv[0]; UV[v * 2 + 1] = t ? q.uv[3] : q.uv[1]; }
         else { UV[v * 2] = (x * uh[0] + y * uh[1] + z * uh[2]) / mat.tile; UV[v * 2 + 1] = (x * vh[0] + y * vh[1] + z * vh[2]) / mat.tile; }
-        if (SU) {
-          SU[v * 4 + 2] = scan ? scan.layer : -1;
-          if (scan) {
-            SU[v * 4] = (x * uh[0] + y * uh[1] + z * uh[2]) / scan.tile + phase;
-            SU[v * 4 + 1] = (x * vh[0] + y * vh[1] + z * vh[2]) / scan.tile + phase * .63;
-            SU[v * 4 + 3] = scan.mode;
-          }
+        if (WT) {
+          const shortSide = lu < lv ? lu : lv, along = lu < lv ? s : t;
+          WT[v * 4] = kind;
+          WT[v * 4 + 1] = trim ? along * shortSide : start ? s * lu : 4;
+          WT[v * 4 + 2] = trim ? (1 - along) * shortSide : end ? (1 - s) * lu : 4;
+          WT[v * 4 + 3] = (ground ? 1 : 0) + (trim ? 2 : 0);
         }
         UV2[v * 2] = (q.lx + 0.5 + s * (q.tw - 1)) / W; UV2[v * 2 + 1] = (q.ly + 0.5 + t * (q.th - 1)) / H;
-        C[v * 3] = q.tint[0]; C[v * 3 + 1] = q.tint[1]; C[v * 3 + 2] = q.tint[2];
+        C[v * 3] = q.tint[0] * (tint + warmth); C[v * 3 + 1] = q.tint[1] * tint; C[v * 3 + 2] = q.tint[2] * (tint - warmth);
         MT[v * 4] = layer === undefined ? 0 : layer; MT[v * 4 + 1] = mat.spec;
         MT[v * 4 + 2] = q.wall ? q.wall[0] : 0; MT[v * 4 + 3] = q.wall ? q.wall[1] : -1;
       });
@@ -52,7 +114,7 @@
     g.setAttribute('tang', new THREE.BufferAttribute(TG, 3));
     g.setAttribute('color', new THREE.BufferAttribute(C, 3));
     g.setAttribute('mat', new THREE.BufferAttribute(MT, 4));
-    if (SU) g.setAttribute('scan', new THREE.BufferAttribute(SU, 4));
+    if (WT) g.setAttribute('weather', new THREE.BufferAttribute(WT, 4));
     g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.computeBoundingSphere();
     return g;
@@ -61,19 +123,20 @@
   MM.build = function (scene, geo, tex, preset) {
     const root = new THREE.Group();
     root.name = 'town';
-    const worldMat = G.Gfx.worldMaterial(tex, preset, false), decalMat = G.Gfx.worldMaterial(tex, preset, true);
+    const rich = preset.key !== 'low';
+    const worldMat = G.Gfx.worldMaterial(tex, preset, false, rich ? G.Tex.groundMacro(geo) : null);
+    const decalMat = G.Gfx.worldMaterial(tex, preset, true);
     MM.materials = [worldMat, decalMat];
+    scanChunks.clear();
     // 4×4 chunks so whole districts behind the camera are skipped
-    const buckets = new Map();
-    for (const q of geo.quads) {
-      if (preset.key === 'low' && q.detail) continue;
-      const cx = q.o[0] + (q.u[0] + q.v[0]) / 2, cz = q.o[2] + (q.u[2] + q.v[2]) / 2;
-      const key = q.decal ? 'decal' : Math.min(3, Math.max(0, Math.floor((cx + 50) / 25))) + ',' + Math.min(3, Math.max(0, Math.floor((cz + 50) / 25)));
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(q);
-    }
-    for (const [key, list] of buckets) {
-      const m = new THREE.Mesh(quadGeometry(list, geo, tex), key === 'decal' ? decalMat : worldMat);
+    for (const [key, list] of chunkQuads(geo, !rich)) {
+      const decal = key === 'decal';
+      const geometry = quadGeometry(list, geo, tex, rich && !decal);
+      const m = new THREE.Mesh(geometry, decal ? decalMat : worldMat);
+      if (rich && !decal) {
+        scanChunks.set(key, geometry);
+        if (tex.scanLayers) setScanAttribute(geometry, list, tex.scanLayers);
+      }
       m.matrixAutoUpdate = false;
       if (key === 'decal') m.renderOrder = 1; else m.layers.enable(2);
       root.add(m);

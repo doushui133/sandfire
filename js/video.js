@@ -73,45 +73,52 @@
 
   const vs = 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }';
   const common = 'varying vec2 vUv; uniform sampler2D src; uniform vec2 pixel;';
-  // Extract a soft highlight from four separated source samples into a quarter-width target.
+  // Sky alpha stores brightness below one. Opaque scene pixels contribute zero.
   const bloomFS = common + [
-    'vec3 bright(vec2 p){ vec3 c=texture2D(src,p).rgb; return c*smoothstep(.82,.99,dot(c,vec3(.25,.61,.14))); }',
-    'void main(){vec2 d=pixel*2.; gl_FragColor=vec4(.25*(bright(vUv+d)+bright(vUv-d)+bright(vUv+vec2(d.x,-d.y))+bright(vUv+vec2(-d.x,d.y))),1.);}'
+    'vec3 bright(vec2 p){ vec4 c=texture2D(src,p); return c.rgb*max(0.,.98-c.a); }',
+    'void main(){vec2 d=pixel*vec2(1.75,1.35); gl_FragColor=vec4(.5*(bright(vUv+d)+bright(vUv-d)),1.);}'
   ].join('\n');
   const presentFS = common + [
-    'uniform sampler2D bloom; uniform vec2 halo; uniform float sharpen;',
-    'void main(){vec3 c=texture2D(src,vUv).rgb;',
+    'uniform sampler2D bloom; uniform bool post; uniform float sharpen;',
+    'void main(){vec4 sampleColor=texture2D(src,vUv); vec3 c=sampleColor.rgb;',
     'if(sharpen>0.){vec3 a=texture2D(src,vUv+vec2(pixel.x,0.)).rgb,b=texture2D(src,vUv-vec2(pixel.x,0.)).rgb;',
     'vec3 d=texture2D(src,vUv+vec2(0.,pixel.y)).rgb,e=texture2D(src,vUv-vec2(0.,pixel.y)).rgb;',
     'vec3 lo=min(min(a,b),min(d,e)),hi=max(max(a,b),max(d,e));',
     'c=clamp(c+(c-.25*(a+b+d+e))*sharpen/(1.+4.*(hi-lo)),min(c,lo),max(c,hi));}',
-    '#ifdef BLOOM',
-    'vec3 h=texture2D(bloom,vUv).rgb*.4;',
-    'h+=.15*(texture2D(bloom,vUv+halo).rgb+texture2D(bloom,vUv-halo).rgb+texture2D(bloom,vUv+vec2(-halo.x,halo.y)).rgb+texture2D(bloom,vUv+vec2(halo.x,-halo.y)).rgb);',
-    'c+=h*.075; c*=1.-.045*smoothstep(.1,.5,dot(vUv-.5,vUv-.5));',
-    '#endif',
+    'if(post){',
+    '  if(sampleColor.a<.996) c+=texture2D(bloom,vUv).rgb*.075;',
+    '  float l=dot(c,vec3(.2126,.7152,.0722));',
+    '  vec3 gain=mix(vec3(.966,1.004,1.045),vec3(1.036,1.010,.968),smoothstep(.25,.83,l));',
+    '  c*=gain;',
+    '  c+=c*(1.-c)*(.15*(l-.5)+.018);',
+    '  vec2 edge=(vUv-.5)*vec2(1.,.88);',
+    '  c*=1.-.057*smoothstep(.08,.43,dot(edge,edge));',
+    '}',
     'gl_FragColor=vec4(c,1.);}'
   ].join('\n');
   let rt, glow, scene, cam, quad, extract, present, canvasKey = '';
+  let baseRatio, renderScale, post = false;
   V.init = function (r, p) {
     if (!p.aa) return;
     rt = new THREE.WebGLMultisampleRenderTarget(1,1,{stencilBuffer:false});
     rt.samples = Math.min(r.capabilities.maxSamples, p.key === 'ultra' ? 4 : 2);
-    if (p.movingShadow) glow = new THREE.WebGLRenderTarget(1,1,{depthBuffer:false, stencilBuffer:false});
-    const uniforms = {src:{value:rt.texture}, bloom:{value:glow && glow.texture}, pixel:{value:new THREE.Vector2()},
-      halo:{value:new THREE.Vector2()}, sharpen:{value:0}};
+    glow = new THREE.WebGLRenderTarget(1,1,{depthBuffer:false, stencilBuffer:false});
+    const uniforms = {src:{value:rt.texture}, bloom:{value:glow.texture}, pixel:{value:new THREE.Vector2()},
+      post:{value:false}, sharpen:{value:0}};
     const pass = fs => new THREE.ShaderMaterial({uniforms,vertexShader:vs,fragmentShader:fs,
-      defines:glow ? {BLOOM:1} : {}, depthTest:false,depthWrite:false,toneMapped:false});
+      depthTest:false,depthWrite:false,toneMapped:false});
     present = pass(presentFS); extract = pass(bloomFS);
     scene = new THREE.Scene(); cam = new THREE.Camera();
     quad = new THREE.Mesh(new THREE.PlaneGeometry(2,2),present); quad.frustumCulled = false; scene.add(quad);
     r.compile(scene,cam);
-    if (glow) { quad.material = extract; r.compile(scene,cam); quad.material = present; }
+    quad.material = extract; r.compile(scene,cam); quad.material = present;
   };
   V.resize = function (r, base, scale) {
+    baseRatio = base; renderScale = scale;
+    post = !!rt && G.settings.postEffects;
     V.width = Math.max(1,Math.floor(innerWidth*base*scale));
     V.height = Math.max(1,Math.floor(innerHeight*base*scale));
-    V.offscreen = !!rt && (!!glow || scale < 0.9999);
+    V.offscreen = !!rt && (post || scale < 0.9999);
     // Assigning the canvas size clears it even when nothing changes, so only touch it on a real change
     // (offscreen rendering scales the render targets instead of the canvas).
     const pr = base * (V.offscreen ? 1 : scale), key = pr + 'x' + innerWidth + 'x' + innerHeight;
@@ -121,15 +128,22 @@
     rt.setSize(V.width,V.height);
     const u = present.uniforms;
     u.pixel.value.set(1/V.width,1/V.height); u.sharpen.value = (1-scale)*1.15;
-    if (glow) {
+    u.post.value = post;
+    if (post) {
       glow.setSize(Math.max(1,V.width>>2),Math.max(1,V.height>>2));
-      u.halo.value.set(1.3/glow.width,1.3/glow.height);
     }
   };
-  V.begin = r => r.setRenderTarget(V.offscreen ? rt : null);
+  V.begin = function (r) {
+    if (rt && post !== G.settings.postEffects) V.resize(r, baseRatio, renderScale);
+    if (post) G.Gfx.U.uSkyBloom.value = 1;
+    r.setRenderTarget(V.offscreen ? rt : null);
+  };
   V.end = function (r) {
     if (!V.offscreen) return;
-    if (glow) { r.setRenderTarget(glow); quad.material=extract; r.render(scene,cam); }
+    if (post) {
+      G.Gfx.U.uSkyBloom.value = 0;
+      r.setRenderTarget(glow); quad.material=extract; r.render(scene,cam);
+    }
     r.setRenderTarget(null); quad.material=present; r.render(scene,cam);
   };
 })(window.G);

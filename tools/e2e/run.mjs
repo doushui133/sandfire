@@ -301,8 +301,10 @@ async function setViewpoint(page, view) {
     const v = ${JSON.stringify(view)};
     const G = window.G;
     if (!G?.Player) return { ok: false, reason: 'G.Player missing' };
-    if (typeof G.debugView === 'function') {
+    if (typeof G.debugView === 'function' && G.Player.agent) {
       G.debugView(v.x, v.y, v.z, v.yaw, v.pitch);
+      // the loop is paused for the views (see runViews): draw the new viewpoint ourselves
+      if (typeof G.frame === 'function') for (let i = 0; i < 3; i++) G.frame(1 / 60, (G.time || 0) + 1 / 60);
       return { ok: true, method: 'debugView' };
     }
     const agent = G.Player.agent;
@@ -541,6 +543,14 @@ async function runViews(page, ctx, monitor) {
   await navigate(page, ctx.baseUrl + 'index.html?autostart=atk');
   await waitUntil(page, `(() => window.G?.Game?.phase && G.Game.phase !== 'menu' && G.Player?.agent)`, 180000);
   await pause(3000);
+  // Freeze the match: with the game running, bots shot the player placed at the viewpoints and the next
+  // view found no player agent.
+  await page.evaluate(`(() => {
+    G.loopOn = false;
+    if (G.Bots) G.Bots.update = () => {};
+    for (const x of G.Game.agents) if (!x.isPlayer) x.pos.set(-200, 0, -200);
+    return true;
+  })()`);
   for (const view of views) {
     const placed = await setViewpoint(page, view);
     await pause(200);

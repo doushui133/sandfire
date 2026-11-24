@@ -65,7 +65,7 @@ window.G = window.G || {};
     buttonSize: 1, leftFire: true, aimAssist: true, autoFire: false, gyro: false, touchBrake: true,
     touchSens: 1.5, touchScope: 1, scopeSens: 1, vertRatio: 1, gyroSens: 1,
     chSize: 1, chGap: 1, chColor: '#7dff6a', chStatic: false, chDot: true, radarRot: true, radarScale: 1, touchLayout: null,
-    soundMarkers: null };
+    soundMarkers: null, postEffects: true };
   try {
     const saved = JSON.parse(localStorage.getItem('sandfire.settings') || 'null');
     if (saved) Object.assign(G.settings, saved);
@@ -94,6 +94,7 @@ window.G = window.G || {};
     if (typeof s.chDot !== 'boolean') s.chDot = true;
     if (typeof s.touchBrake !== 'boolean') s.touchBrake = true;
     if (typeof s.soundMarkers !== 'boolean') s.soundMarkers = null;
+    if (typeof s.postEffects !== 'boolean') s.postEffects = true;
     s.radarScale = num(s.radarScale, 0.75, 1.45, 1);
     if (typeof s.chColor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(s.chColor)) s.chColor = '#7dff6a';
     if (typeof s.radarRot !== 'boolean') s.radarRot = true;

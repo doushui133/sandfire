@@ -920,6 +920,82 @@ for (const id of G.GunModels.IDS) {
 G.BotModel.remove(mannequin);
 console.log('All 20 IDs animated by the original third-person soldier and first-person viewmodel');
 
+// Locomotion: steady hips, soft knees, planted feet that do not slide, no pops on counter-strafes or steps.
+{
+  const walker=game.makeAgent('def','步态测试',false);
+  walker.alive=true; G.BotModel.create(walker,false);
+  walker.cur='primary'; walker.inv.primary=W.item('ar7');
+  const M=G.Map, dt=1/60, rig=()=>walker.rig;
+  const world=(p)=>{ const c=Math.cos(walker.yaw), s=Math.sin(walker.yaw); return [walker.pos.x+p.x*c+p.z*s, walker.pos.y+p.y, walker.pos.z-p.x*s+p.z*c]; };
+  const ext=()=>{ const B=rig().bones, P=rig().P; return Math.max(B[10].position.distanceTo(B[12].position), B[13].position.distanceTo(B[15].position))/(P.lThigh+P.lShin); };
+  const start=(x,z,yaw,crouch)=>{
+    walker.pos.set(x,M.floorH(M.colOf(x),M.rowOf(z)),z); walker.vel.set(0,0,0); walker.yaw=yaw; walker.pitch=0;
+    walker.crouch=crouch; walker.crouchWant=crouch>0; walker.onGround=true; G.Game.round++;
+    G.BotModel.update(walker,dt);
+  };
+  // velocity in the walker's own frame (x right, z back), eased like the movement code (30 m/s²)
+  const drive=(frames,wx,wz,speed,follow,probe)=>{
+    for (let f=0;f<frames;f++) {
+      const c=Math.cos(walker.yaw), s=Math.sin(walker.yaw), len=Math.hypot(wx,wz);
+      const tx=len ? (wx*c+wz*s)/len*speed : 0, tz=len ? (-wx*s+wz*c)/len*speed : 0;
+      const dx=tx-walker.vel.x, dz=tz-walker.vel.z, dl=Math.hypot(dx,dz), step=30*dt;
+      if (dl>step) { walker.vel.x+=dx/dl*step; walker.vel.z+=dz/dl*step; } else { walker.vel.x=tx; walker.vel.z=tz; }
+      walker.pos.x+=walker.vel.x*dt; walker.pos.z+=walker.vel.z*dt;
+      if (follow) walker.pos.y=M.floorH(M.colOf(walker.pos.x),M.rowOf(walker.pos.z));
+      G.time+=dt; G.BotModel.update(walker,dt);
+      if (probe) probe();
+    }
+  };
+  const B=()=>rig().bones;
+  const measure=(name,wx,wz,speed,crouch,limits)=>{
+    start(M.cellX(19),M.cellZ(44),0,crouch);
+    drive(80,wx,wz,speed);
+    let hMin=9,hMax=-9,eMax=0,slip=0,n=0,prev=null;
+    drive(120,wx,wz,speed,false,()=>{
+      const h=rig().headLocal.y+walker.pos.y; hMin=Math.min(hMin,h); hMax=Math.max(hMax,h); eMax=Math.max(eMax,ext());
+      const feet=[world(B()[12].position),world(B()[15].position)];
+      for (let i=0;i<2;i++) if (prev && rig().feet[i].inContact && prev.contact[i]) { slip+=Math.hypot(feet[i][0]-prev.feet[i][0],feet[i][2]-prev.feet[i][2])/dt; n++; }
+      for (const b of B()) assert(Number.isFinite(b.position.x+b.position.y+b.position.z), name+' finite');
+      prev={feet,contact:rig().feet.map(f=>f.inContact&&rig().footBlend>.98)};
+    });
+    assert(hMax-hMin<=limits.bob, name+' head bob '+(hMax-hMin).toFixed(3));
+    assert(eMax<=limits.ext, name+' leg extension '+eMax.toFixed(3));
+    assert(n>20 && slip/n<=.08, name+' planted feet slide '+(slip/Math.max(n,1)).toFixed(3)+' m/s');
+    return { bob:+(hMax-hMin).toFixed(3), ext:+eMax.toFixed(3) };
+  };
+  const report={
+    walk:measure('walk',0,-1,2.8,0,{bob:.012,ext:.993}), run:measure('run',0,-1,5.4,0,{bob:.02,ext:.993}),
+    strafe:measure('strafe',1,0,5.0,0,{bob:.02,ext:.993}), back:measure('backpedal',0,1,4.0,0,{bob:.02,ext:.996}),
+    diagonal:measure('diagonal',-1,-1,5.4,0,{bob:.02,ext:.993}), crouch:measure('crouch walk',0,-1,1.84,1,{bob:.012,ext:.9}),
+  };
+  // A-D counter-strafing: feet and head never jump relative to the body
+  start(M.cellX(19),M.cellZ(44),0,0);
+  let prev=null, footJump=0, headJump=0;
+  const jumps=()=>{
+    const f=[world(B()[12].position),world(B()[15].position)].map(p=>[p[0]-walker.pos.x,p[1]-walker.pos.y,p[2]-walker.pos.z]);
+    const h=rig().headLocal.y;
+    if (prev) { for (let i=0;i<2;i++) footJump=Math.max(footJump,Math.hypot(f[i][0]-prev.f[i][0],f[i][1]-prev.f[i][1],f[i][2]-prev.f[i][2])); headJump=Math.max(headJump,Math.abs(h-prev.h)); }
+    prev={f,h};
+  };
+  for (let k=0;k<6;k++) drive(24,k%2 ? -1 : 1,0,5.4,false,jumps);
+  drive(20,0,0,5.4,false,jumps); drive(30,0,-1,5.4,false,jumps); drive(30,0,1,5.4,false,jumps);
+  assert(footJump<.16, 'counter-strafe foot jump '+footJump.toFixed(3));
+  assert(headJump<.03, 'counter-strafe head jump '+headJump.toFixed(3));
+  // up and down the A-site steps (0.4 m, then 0.8 m) at a run: the body eases instead of popping
+  start(M.cellX(38),M.cellZ(16),0,0);
+  let stairJump=0, last=null;
+  const stairs=()=>{ const h=rig().headLocal.y+walker.pos.y; if (last!==null) stairJump=Math.max(stairJump,Math.abs(h-last)); last=h; };
+  drive(90,0,-1,5.0,true,stairs);
+  assert(walker.pos.y>.7, 'reached the platform');
+  walker.yaw=Math.PI; drive(90,0,-1,5.0,true,stairs);
+  assert(walker.pos.y<.05, 'back down the steps');
+  // running down 0.4 m steps at 5 m/s the head descends ~0.04-0.08 m per frame along a smooth curve; a pop
+  // (the hips snapping to a reach limit) used to be 0.24 m in one frame
+  assert(stairJump<.09, 'head change per frame on steps '+stairJump.toFixed(3));
+  G.BotModel.remove(walker);
+  console.log('Gait: steady hips and soft knees '+JSON.stringify(report)+', counter-strafe foot jump '+footJump.toFixed(3)+' m, steps '+stairJump.toFixed(3)+' m/frame');
+}
+
 // Check the actual button rectangles produced by the layout code.
 const probe=elem('safeProbe');
 for (const [width,height] of [[640,360],[740,360],[844,390],[1024,768],[1180,820],[1280,800]]) {

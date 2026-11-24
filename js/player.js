@@ -410,7 +410,7 @@
     return pool.sort(byId);
   }
   const focus = new THREE.Vector3(), offset = new THREE.Vector3(), cameraGoal = new THREE.Vector3();
-  const cameraBackup = new THREE.Vector3(), deathEuler = new THREE.Euler();
+  const cameraBackup = new THREE.Vector3(), deathEuler = new THREE.Euler(), ownPoint = new THREE.Vector3();
   function cameraClear(p, margin) {
     if (p.y < margin) return false;
     const boxes = M.query(p.x - margin, p.z - margin, p.x + margin, p.z + margin);
@@ -493,7 +493,13 @@
       const angle = Math.atan2(d.pos.x - focus.x, d.pos.z - focus.z);
       watchPoint(focus, angle + 0.16 + t * 0.18, 3.55 - 0.5 * t, 0.34 + 0.3 * (1 - t), 60 - 14 * t);
     }
-    showBodies(null);
+    // The camera starts at your eyes, inside your own head: your body is drawn once the camera has pulled
+    // clear of it (drawn from inside it showed as dark shards across the first frames).
+    const RP = G.Ragdoll.P, own = P.agent;
+    let inside = since < IMPACT;
+    if (G.BotModel.ragdollPoint(own, RP.HEA, ownPoint)) inside = cam.position.distanceTo(ownPoint) < 0.55;
+    if (!inside && G.BotModel.ragdollPoint(own, RP.CHE, ownPoint)) inside = cam.position.distanceTo(ownPoint) < 0.45;
+    showBodies(inside ? own : null);
   }
   // first-person view of a living player; changing who you watch is an instant cut
   function spectate(dt) {

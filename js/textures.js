@@ -653,52 +653,11 @@
     return T.worldArrays(data,p.aniso);
   };
 
-  function patchScanMeshes(geo, tex) {
-    if (!tex.scanLayers || !G.MapMesh || !G.MapMesh.root) return;
-    const buckets = new Map();
-    for (const q of geo.quads) {
-      const cx = q.o[0] + (q.u[0] + q.v[0]) / 2, cz = q.o[2] + (q.u[2] + q.v[2]) / 2;
-      const key = q.decal ? 'decal' : Math.min(3, Math.max(0, Math.floor((cx + 50) / 25))) + ',' + Math.min(3, Math.max(0, Math.floor((cz + 50) / 25)));
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(q);
-    }
-    const townMeshes = G.MapMesh.root.children.filter((c) => c.isMesh && c.geometry.attributes.position);
-    for (const [key, list] of buckets) {
-      if (key === 'decal') continue;
-      const mesh = townMeshes.find((m) => m.geometry.attributes.position.count === list.length * 4);
-      if (!mesh) continue;
-      const g = mesh.geometry;
-      let scan = g.attributes.scan;
-      if (!scan) {
-        scan = new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 4), 4);
-        g.setAttribute('scan', scan);
-      }
-      list.forEach((q, k) => {
-        const lu = Math.hypot(q.u[0], q.u[1], q.u[2]), lv = Math.hypot(q.v[0], q.v[1], q.v[2]);
-        const uh = [q.u[0] / lu, q.u[1] / lu, q.u[2] / lu], vh = [q.v[0] / lv, q.v[1] / lv, q.v[2] / lv];
-        let nx = q.u[1] * q.v[2] - q.u[2] * q.v[1], ny = q.u[2] * q.v[0] - q.u[0] * q.v[2], nz = q.u[0] * q.v[1] - q.u[1] * q.v[0];
-        const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
-        const picked = T.surfaceScan(q, tex.scanLayers);
-        const phase = picked ? (q.o[0] * nx + q.o[1] * ny + q.o[2] * nz) * .317 + q.tint[1] * 11.7 : 0;
-        [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([s, t], c) => {
-          const v = k * 4 + c;
-          const x = q.o[0] + q.u[0] * s + q.v[0] * t, y = q.o[1] + q.u[1] * s + q.v[1] * t, z = q.o[2] + q.u[2] * s + q.v[2] * t;
-          scan.array[v * 4 + 2] = picked ? picked.layer : -1;
-          if (picked) {
-            scan.array[v * 4] = (x * uh[0] + y * uh[1] + z * uh[2]) / picked.tile + phase;
-            scan.array[v * 4 + 1] = (x * vh[0] + y * vh[1] + z * vh[2]) / picked.tile + phase * .63;
-            scan.array[v * 4 + 3] = picked.mode;
-          }
-        });
-      });
-      scan.needsUpdate = true;
-    }
-  }
   function enableScanMaterials(tex, preset) {
     if (!G.MapMesh || !G.MapMesh.materials || !tex.scanAlbedo) return;
     const layers = tex.scanLayers || {};
     for (const m of G.MapMesh.materials) {
-      if (!m.uniforms.uScanAlbedo) continue;
+      if (m.transparent || !preset.normals || !m.uniforms.uNormal.value) continue;
       m.defines.SCAN_SURFACES = '';
       m.uniforms.uScanAlbedo.value = tex.scanAlbedo;
       m.uniforms.uScanNormal.value = tex.scanNormal;
@@ -766,8 +725,8 @@
       surfaces.scanNormal = added.scanNormal;
       surfaces.scanLayers = added.scanLayers;
       surfaces.barrelMaps = added.barrelMaps;
+      if (G.MapMesh) G.MapMesh.setScanLayers(geo, surfaces.scanLayers);
       enableScanMaterials(surfaces, preset);
-      patchScanMeshes(geo, surfaces);
     } catch (e) { console.warn('photo scans unavailable', e); }
   };
 
@@ -821,6 +780,66 @@
     const t = dataTex(d, N);
     t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;   // smooth data: plain bilinear is enough and cheaper
     return (T.cache.macro = t);
+  };
+
+  // Keep floor colour noise and the distance to a wall in one lookup.
+  T.groundMacro = function (geo) {
+    const size = 512, span = 100, step = span / size, reach = 1.45;
+    const { data: macro, width } = T.macro().image;
+    const data = new Uint8Array(size * size * 4);
+    const texel = p => Math.floor((p + span * .5) / step);
+    const world = i => (i + .5) * step - span * .5;
+    for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
+      const u = Math.floor(world(x) * .021 * width) & (width - 1);
+      const v = Math.floor(world(z) * .021 * width) & (width - 1);
+      const from = (v * width + u) * 4, to = (z * size + x) * 4;
+      data[to] = macro[from]; data[to + 1] = macro[from + 1]; data[to + 2] = macro[from + 2];
+    }
+    for (const q of geo.quads) {
+      if (!q.wall || q.o[1] > .01) continue;
+      const [x0, , z0] = q.o, [dx, , dz] = q.u;
+      const length = Math.hypot(dx, dz);
+      const tx = dx / length, tz = dz / length, nx = -tz, nz = tx;
+      const minX = Math.max(0, texel(Math.min(x0, x0 + dx) - reach));
+      const maxX = Math.min(size - 1, texel(Math.max(x0, x0 + dx) + reach));
+      const minZ = Math.max(0, texel(Math.min(z0, z0 + dz) - reach));
+      const maxZ = Math.min(size - 1, texel(Math.max(z0, z0 + dz) + reach));
+      for (let z = minZ; z <= maxZ; z++) for (let x = minX; x <= maxX; x++) {
+        const wx = world(x) - x0, wz = world(z) - z0, front = wx * nx + wz * nz;
+        // Extend the mask one texel under the wall for bilinear filtering.
+        if (front < -step || front > reach) continue;
+        const along = wx * tx + wz * tz, end = Math.max(0, -along, along - length);
+        const contact = Math.round(255 * (1 - sat(Math.hypot(Math.max(0, front), end) / reach)));
+        const i = (z * size + x) * 4 + 3;
+        data[i] = Math.max(data[i], contact);
+      }
+    }
+    const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+    t.minFilter = t.magFilter = THREE.LinearFilter;
+    t.needsUpdate = true;
+    return t;
+  };
+
+  // XY slope, roughness variation and fine cavities in a single mipmapped tile.
+  T.surfaceDetail = function () {
+    if (T.cache.surfaceDetail) return T.cache.surfaceDetail;
+    const size = 128, mask = size - 1;
+    const grain = fbm(size, 32, 3, 524, .68), pores = vnoise(size, 45, 525);
+    const d = new Uint8Array(size * size * 4);
+    const height = (x, y) => {
+      const i = (y & mask) * size + (x & mask);
+      return grain[i] - .45 * sat((pores[i] - .62) * 2.6);
+    };
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const i = y * size + x, o = i * 4;
+      d[o] = 255 * sat(.5 + .65 * (height(x - 1, y) - height(x + 1, y)));
+      d[o + 1] = 255 * sat(.5 + .65 * (height(x, y - 1) - height(x, y + 1)));
+      d[o + 2] = 255 * sat(.5 + (grain[i] - .5) * 1.7);
+      d[o + 3] = 255 * sat((pores[i] - .55) * 2.1);
+    }
+    const t = dataTex(d, size);
+    t.anisotropy = 2;
+    return (T.cache.surfaceDetail = t);
   };
 
   // ---------- FX sprites (canvas) ----------

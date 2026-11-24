@@ -201,7 +201,8 @@ async function devToolsAddress(profile, running, signal) {
         return 'ws://127.0.0.1:' + port + endpoint;
       }
     } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
+      // Edge may still hold the file open while writing it (EBUSY/EPERM on Windows): try again
+      if (error.code !== 'ENOENT' && error.code !== 'EBUSY' && error.code !== 'EPERM') throw error;
     }
     await pause(100);
   }
